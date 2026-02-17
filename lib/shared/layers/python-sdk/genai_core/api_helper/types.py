@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: MIT-0
 # ----------------------------------------------------------------------
+import re
 from enum import Enum
 from typing import Optional, Sequence
 
@@ -232,4 +233,129 @@ class AgentConfiguration(BaseModel):
         if invalid_keys:
             raise ValueError(f"toolParameters keys {invalid_keys} not found in tools")
 
+        return self
+
+
+class ArchitectureType(str, Enum):
+    """Distinguishes between single-agent (which supports agents as tools)
+    and swarm (multi-agent) runtime architectures."""
+
+    SINGLE = "SINGLE"
+    SWARM = "SWARM"
+
+
+# ============================================================================ #
+# Swarm Agent Types
+# ============================================================================ #
+
+
+class SwarmOrchestratorConfig(BaseModel):
+    """Configuration for swarm execution controls.
+
+    Attributes:
+        maxHandoffs: Maximum times agents can hand off to each other
+        maxIterations: Maximum total iterations across all agents
+        executionTimeoutSeconds: Total swarm execution timeout in seconds
+        nodeTimeoutSeconds: Timeout per individual agent in seconds
+        repetitiveHandoffDetectionWindow: Window size for detecting handoff loops
+        repetitiveHandoffMinUniqueAgents: Min unique agents required in window
+    """
+
+    maxHandoffs: int = Field(default=20, ge=1)
+    maxIterations: int = Field(default=20, ge=1)
+    executionTimeoutSeconds: float = Field(default=900.0, gt=0)
+    nodeTimeoutSeconds: float = Field(default=300.0, gt=0)
+    repetitiveHandoffDetectionWindow: int = Field(default=8, ge=2)
+    repetitiveHandoffMinUniqueAgents: int = Field(default=3, ge=2)
+
+    @model_validator(mode="after")
+    def validate_timeout_consistency(self):
+        if self.nodeTimeoutSeconds > self.executionTimeoutSeconds:
+            raise ValueError(
+                f"nodeTimeoutSeconds ({self.nodeTimeoutSeconds}) must not exceed "
+                f"executionTimeoutSeconds ({self.executionTimeoutSeconds})"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def validate_detection_window(self):
+        if (
+            self.repetitiveHandoffDetectionWindow
+            <= self.repetitiveHandoffMinUniqueAgents
+        ):
+            raise ValueError(
+                f"repetitiveHandoffDetectionWindow ({self.repetitiveHandoffDetectionWindow}) "
+                f"must be greater than repetitiveHandoffMinUniqueAgents "
+                f"({self.repetitiveHandoffMinUniqueAgents})"
+            )
+        return self
+
+
+class SwarmAgentDefinition(BaseModel):
+    """Definition for an individual agent within a swarm."""
+
+    name: str = Field(..., min_length=1)
+    instructions: str = Field(..., min_length=1)
+    modelInferenceParameters: ModelConfiguration
+    tools: list[str] = []
+    toolParameters: dict[str, dict] = {}
+    mcpServers: list[str] = []
+
+    @model_validator(mode="after")
+    def validate_and_sanitize_name(self):
+        """Validates and sanitizes agent name to match pattern: [a-zA-Z0-9][a-zA-Z0-9-_/]*"""
+        sanitized = re.sub(r"[^a-zA-Z0-9-_/]", "_", self.name)
+        if sanitized and not sanitized[0].isalnum():
+            sanitized = "agent_" + sanitized
+        if not sanitized:
+            sanitized = "agent"
+        self.name = sanitized
+        return self
+
+    @model_validator(mode="after")
+    def validate_tool_parameters(self):
+        """Validates that tool parameters match the defined tools."""
+        tool_names = {tool_name for tool_name in self.tools}
+        invalid_keys = set(self.toolParameters.keys()) - tool_names
+        if invalid_keys:
+            raise ValueError(f"toolParameters keys {invalid_keys} not found in tools")
+        return self
+
+
+class AgentReference(BaseModel):
+    """Reference to an existing agent for use in a swarm."""
+
+    agentName: str = Field(..., min_length=1)
+    endpointName: str = Field(..., min_length=1)
+
+
+class SwarmConfiguration(BaseModel):
+    """Configuration for a swarm of agents using references to existing agents loaded at runtime."""
+
+    agentReferences: list[AgentReference] = Field(..., min_length=1)
+    entryAgent: str = Field(..., min_length=1)
+    orchestrator: SwarmOrchestratorConfig = SwarmOrchestratorConfig()
+    conversationManager: EConversationManagerType = (
+        EConversationManagerType.SLIDING_WINDOW
+    )
+
+    @model_validator(mode="after")
+    def validate_entry_agent(self):
+        """Validates that the entry agent exists in the agent references."""
+        ref_names = {ref.agentName for ref in self.agentReferences}
+        if self.entryAgent not in ref_names:
+            raise ValueError(
+                f"entryAgent '{self.entryAgent}' not found in agentReferences. "
+                f"Available references: {ref_names}"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def validate_unique_agent_names(self):
+        """Validates that all agent reference names are unique."""
+        if self.agentReferences:
+            ref_names = [ref.agentName for ref in self.agentReferences]
+            if len(ref_names) != len(set(ref_names)):
+                duplicates = [name for name in ref_names if ref_names.count(name) > 1]
+                raise ValueError(f"Duplicate agent references found: {set(duplicates)}")
         return self
