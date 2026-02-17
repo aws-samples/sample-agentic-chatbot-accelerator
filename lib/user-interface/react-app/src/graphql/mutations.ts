@@ -191,8 +191,16 @@ export const batchUpdateMetadata = /* GraphQL */ `mutation BatchUpdateMetadata($
   APITypes.BatchUpdateMetadataMutationVariables,
   APITypes.BatchUpdateMetadataMutation
 >;
-export const createAgentCoreRuntime = /* GraphQL */ `mutation CreateAgentCoreRuntime($agentName: String!, $configValue: String!) {
-  createAgentCoreRuntime(agentName: $agentName, configValue: $configValue)
+export const createAgentCoreRuntime = /* GraphQL */ `mutation CreateAgentCoreRuntime(
+  $agentName: String!
+  $configValue: String!
+  $architectureType: ArchitectureType
+) {
+  createAgentCoreRuntime(
+    agentName: $agentName
+    configValue: $configValue
+    architectureType: $architectureType
+  )
 }
 ` as GeneratedMutation<
   APITypes.CreateAgentCoreRuntimeMutationVariables,

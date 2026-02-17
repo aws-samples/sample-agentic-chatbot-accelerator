@@ -52,7 +52,9 @@ SUMMARY_TABLE = boto3.resource("dynamodb").Table(AGENT_CORE_SUMMARY_TABLE)  # ty
 
 # Routes
 @app.resolver(type_name="Mutation", field_name="createAgentCoreRuntime")
-def create_agent_runtime(agentName: str, configValue: str) -> str:
+def create_agent_runtime(
+    agentName: str, configValue: str, architectureType: str = "SINGLE"
+) -> str:
     """Creates a new AgentCore Runtime by starting a Step Function execution.
 
     This function validates the provided agent configuration and initiates an asynchronous

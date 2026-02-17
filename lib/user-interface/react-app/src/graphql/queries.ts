@@ -183,6 +183,7 @@ export const listRuntimeAgents = /* GraphQL */ `query ListRuntimeAgents {
     numberOfVersion
     qualifierToVersion
     status
+    architectureType
     __typename
   }
 }

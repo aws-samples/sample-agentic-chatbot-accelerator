@@ -37,6 +37,12 @@ export enum ResponseStatus {
 }
 
 
+export enum ArchitectureType {
+  SINGLE = "SINGLE",
+  SWARM = "SWARM",
+}
+
+
 export type AgentFactoryNotification = {
   __typename: "AgentFactoryNotification",
   agentName?: string | null,
@@ -113,6 +119,7 @@ export type RuntimeSummary = {
   numberOfVersion: string,
   qualifierToVersion: string,
   status: string,
+  architectureType?: ArchitectureType | null,
 };
 
 export type FavoriteRuntime = {
@@ -311,6 +318,7 @@ export type BatchUpdateMetadataMutation = {
 export type CreateAgentCoreRuntimeMutationVariables = {
   agentName: string,
   configValue: string,
+  architectureType?: ArchitectureType | null,
 };
 
 export type CreateAgentCoreRuntimeMutation = {
@@ -567,6 +575,7 @@ export type ListRuntimeAgentsQuery = {
     numberOfVersion: string,
     qualifierToVersion: string,
     status: string,
+    architectureType?: ArchitectureType | null,
   } > | null,
 };
 
