@@ -34,6 +34,7 @@ export interface ChatbotApiProps {
     readonly userPool: cognito.UserPool;
     // AgentCore Related
     readonly agentCoreContainer: DockerImageAsset;
+    readonly swarmAgentCoreContainer: DockerImageAsset;
     readonly agentCoreRuntimeTable: dynamodb.Table;
     readonly toolRegistryTable: dynamodb.Table;
     readonly mcpServerRegistryTable: dynamodb.Table;

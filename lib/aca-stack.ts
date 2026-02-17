@@ -83,6 +83,7 @@ export class AcaStack extends cdk.Stack {
             kbRole: knowledgeBase?.kbRole,
             // AgentCore
             agentCoreContainer: agentCoreInfra.imageAsset,
+            swarmAgentCoreContainer: agentCoreInfra.swarmImageAsset,
             agentCoreExecutionRole: agentCoreInfra.executionRole,
             agentCoreRuntimeTable: agentCoreInfra.agentCoreRuntimeTable,
             agentCoreSummaryTable: agentCoreInfra.agentCoreSummaryTable,

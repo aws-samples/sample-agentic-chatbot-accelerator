@@ -30,6 +30,7 @@ export interface AgentCoreApisProps {
     readonly shared: Shared;
     readonly config: SystemConfig;
     readonly agentCoreContainer: DockerImageAsset;
+    readonly swarmAgentCoreContainer: DockerImageAsset;
     readonly agentCoreRuntimeTable: dynamodb.Table;
     readonly agentCoreSummaryTable: dynamodb.Table;
     readonly toolRegistryTable: dynamodb.Table;
@@ -75,6 +76,7 @@ export class AgentCoreApis extends Construct {
             environment: {
                 ...props.shared.defaultEnvironmentVariables,
                 CONTAINER_URI: props.agentCoreContainer.imageUri,
+                SWARM_CONTAINER_URI: props.swarmAgentCoreContainer.imageUri,
                 AGENT_CORE_RUNTIME_ROLE_ARN: props.agentCoreExecutionRole.roleArn,
                 AGENT_CORE_RUNTIME_TABLE: props.agentCoreRuntimeTable.tableName,
                 AGENT_CORE_SUMMARY_TABLE: props.agentCoreSummaryTable.tableName,
@@ -568,6 +570,7 @@ export class AgentCoreApis extends Construct {
             envs: {
                 ...props.shared.defaultEnvironmentVariables,
                 CONTAINER_URI: props.agentCoreContainer.imageUri,
+                SWARM_CONTAINER_URI: props.swarmAgentCoreContainer.imageUri,
                 AGENT_CORE_RUNTIME_ROLE_ARN: props.agentCoreExecutionRole.roleArn,
                 AGENT_CORE_RUNTIME_TABLE: props.agentCoreRuntimeTable.tableName,
                 TOOL_REGISTRY_TABLE: props.toolRegistryTable.tableName,
@@ -576,6 +579,8 @@ export class AgentCoreApis extends Construct {
                 ENVIRONMENT_TAG: transformedTags.Environment,
                 STACK_TAG: transformedTags.Stack,
                 AGENT_TOOLS_TOPIC_ARN: props.agentToolsTopic.topicArn,
+                AGENTS_TABLE_NAME: props.agentCoreRuntimeTable.tableName,
+                AGENTS_SUMMARY_TABLE_NAME: props.agentCoreSummaryTable.tableName,
             },
         });
         // TODO - consider using a custom policy with minimal permissions

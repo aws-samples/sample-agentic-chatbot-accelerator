@@ -34,6 +34,7 @@ interface AcaAgentCoreContainerProps {
 
 export class AcaAgentCoreContainer extends Construct {
     public readonly imageAsset: DockerImageAsset;
+    public readonly swarmImageAsset: DockerImageAsset;
     public readonly executionRole: Role;
     public readonly agentCoreRuntimeTable: dynamodb.Table;
     public readonly toolRegistry: dynamodb.Table;
@@ -232,11 +233,18 @@ export class AcaAgentCoreContainer extends Construct {
             platform: Platform.LINUX_ARM64,
         });
 
+        // Swarm AgentCore runtime container
+        const swarmImageAsset = new DockerImageAsset(this, "SwarmAgentCoreRepository", {
+            assetName: `${prefix}-swarm-agent-core`,
+            directory: path.join(__dirname, "docker-swarm"),
+            platform: Platform.LINUX_ARM64,
+        });
+
         const statements = [
             new PolicyStatement({
                 sid: "ECRImageAccess",
                 actions: ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"],
-                resources: [imageAsset.repository.repositoryArn],
+                resources: [imageAsset.repository.repositoryArn, swarmImageAsset.repository.repositoryArn],
             }),
             new PolicyStatement({
                 actions: ["logs:DescribeLogStreams", "logs:CreateLogGroup"],
@@ -353,6 +361,16 @@ export class AcaAgentCoreContainer extends Construct {
                 effect: iam.Effect.ALLOW,
                 actions: ["dynamodb:GetItem"],
                 resources: [agentCoreRuntimeTable.tableArn],
+            }),
+            new iam.PolicyStatement({
+                sid: "DynamoDBQueryForSwarmAgentReferences",
+                effect: iam.Effect.ALLOW,
+                actions: ["dynamodb:Query"],
+                resources: [
+                    agentCoreRuntimeTable.tableArn,
+                    `${agentCoreRuntimeTable.tableArn}/index/*`,
+                    agentCoreSummaryTable.tableArn,
+                ],
             }),
             new iam.PolicyStatement({
                 effect: iam.Effect.ALLOW,
@@ -537,6 +555,7 @@ export class AcaAgentCoreContainer extends Construct {
         this.mcpServerRegistry = mcpServerRegistry;
         this.agentCoreSummaryTable = agentCoreSummaryTable;
         this.imageAsset = imageAsset;
+        this.swarmImageAsset = swarmImageAsset;
         this.executionRole = executionRole;
         this.agentToolsTopic = agentToolsTopic;
 
