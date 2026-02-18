@@ -15,7 +15,11 @@ from aws_lambda_powertools.event_handler import AppSyncResolver
 from aws_lambda_powertools.logging import correlation_paths
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
-from genai_core.api_helper.types import AgentConfiguration
+from genai_core.api_helper.types import (
+    AgentConfiguration,
+    ArchitectureType,
+    SwarmConfiguration,
+)
 from pydantic import ValidationError
 from retry import retry
 
@@ -53,31 +57,28 @@ SUMMARY_TABLE = boto3.resource("dynamodb").Table(AGENT_CORE_SUMMARY_TABLE)  # ty
 # Routes
 @app.resolver(type_name="Mutation", field_name="createAgentCoreRuntime")
 def create_agent_runtime(
-    agentName: str, configValue: str, architectureType: str = "SINGLE"
+    agentName: str, configValue: str, architectureType: Optional[str] = None
 ) -> str:
     """Creates a new AgentCore Runtime by starting a Step Function execution.
 
     This function validates the provided agent configuration and initiates an asynchronous
-    runtime creation process via AWS Step Functions. It performs two-stage validation:
-    first checking if the input is valid JSON, then validating against the AgentConfiguration
-    Pydantic model.
+    runtime creation process via AWS Step Functions. Based on the architectureType, it
+    validates against either AgentConfiguration (single) or SwarmConfiguration (swarm).
 
     Args:
         agentName (str): The unique name identifier for the agent runtime to be created.
-        configValue (str): A JSON string containing the agent configuration that must conform
-            to the AgentConfiguration schema. This includes settings such as model parameters,
-            tools, and other runtime configuration options.
+        configValue (str): A JSON string containing the agent configuration.
+        architectureType (Optional[str]): "SINGLE" or "SWARM". Defaults to "SINGLE".
 
     Returns:
         str: The agentName if the Step Function execution started successfully, or an empty
             string if validation fails or the Step Function execution could not be started.
-            Note that a successful return only indicates the creation process has been initiated,
-            not that the runtime has been fully created.
 
     Raises:
         Does not raise exceptions directly; all errors are logged and result in returning
         an empty string.
     """
+    resolved_architecture = architectureType or ArchitectureType.SINGLE.value
 
     state_machine_arn = os.environ["CREATE_RUNTIME_STATE_MACHINE_ARN"]
     try:
@@ -90,7 +91,14 @@ def create_agent_runtime(
         return ""
 
     try:
-        parsed_config = AgentConfiguration.model_validate_json(configValue)
+        if resolved_architecture == ArchitectureType.SWARM.value:
+            parsed_config = SwarmConfiguration.model_validate_json(configValue)
+        elif resolved_architecture == ArchitectureType.SINGLE.value:
+            parsed_config = AgentConfiguration.model_validate_json(configValue)
+        else:
+            raise AssertionError(
+                f"Add implementation for architecture {resolved_architecture}"
+            )
     except ValidationError as err:
         logger.error(
             "The configuration value is not a valid agent configuration",
@@ -103,6 +111,7 @@ def create_agent_runtime(
         extra={
             "arguments": {
                 "name": agentName,
+                "architectureType": resolved_architecture,
                 "configuration": parsed_config.model_dump(),
             }
         },
@@ -115,6 +124,7 @@ def create_agent_runtime(
                 {
                     "agentName": agentName,
                     "agentConfiguration": parsed_config.model_dump(),
+                    "architectureType": resolved_architecture,
                 }
             ),
         )
@@ -169,6 +179,9 @@ def list_runtime_agents() -> list[dict]:
                 item.get("QualifierToVersion", {}), default=str
             ),
             "status": item.get("Status", "Ready"),
+            "architectureType": item.get(
+                "ArchitectureType", ArchitectureType.SINGLE.value
+            ),
         }
         for item in items
     ]

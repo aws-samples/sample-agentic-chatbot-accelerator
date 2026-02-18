@@ -5,13 +5,13 @@
 # ---------------------------------------------------------------------------- #
 import os
 import time
-from typing import Optional
+from typing import Optional, Union
 
 import boto3
 from aws_lambda_powertools import Logger, Tracer
 from aws_lambda_powertools.utilities.parser import BaseModel, event_parser
 from botocore.exceptions import ClientError
-from genai_core.api_helper.types import AgentConfiguration
+from genai_core.api_helper.types import AgentConfiguration, ArchitectureType
 from genai_core.exceptions import AcaException
 
 # ------------------- Lambda Powertools -------------------- #
@@ -25,12 +25,15 @@ BAC_CLIENT = boto3.client("bedrock-agentcore-control")
 
 # --------------- Boto3 Clients/Resource ------------------- #
 CONTAINER_URI = os.environ["CONTAINER_URI"]
+SWARM_CONTAINER_URI = os.environ.get("SWARM_CONTAINER_URI", "")
 AGENT_CORE_RUNTIME_ROLE_ARN = os.environ["AGENT_CORE_RUNTIME_ROLE_ARN"]
 AGENT_CORE_RUNTIME_TABLE = os.environ["AGENT_CORE_RUNTIME_TABLE"]
 TOOL_REGISTRY_TABLE = os.environ["TOOL_REGISTRY_TABLE"]
 MCP_SERVER_REGISTRY_TABLE = os.environ["MCP_SERVER_REGISTRY_TABLE"]
 AGENT_TOOLS_TOPIC_ARN = os.environ["AGENT_TOOLS_TOPIC_ARN"]
 ACCOUNT_ID = os.environ["ACCOUNT_ID"]
+AGENTS_TABLE_NAME = os.environ.get("AGENTS_TABLE_NAME", "")
+AGENTS_SUMMARY_TABLE_NAME = os.environ.get("AGENTS_SUMMARY_TABLE_NAME", "")
 
 ENVIRONMENT_TAG = os.environ.get("ENVIRONMENT_TAG", None)
 STACK_TAG = os.environ.get("STACK_TAG", None)
@@ -41,8 +44,9 @@ PAGE_SIZE = 20
 
 class InputModel(BaseModel):
     agentName: str
-    agentCfg: AgentConfiguration
-    memoryId: Optional[str]
+    agentCfg: Union[AgentConfiguration, dict]
+    memoryId: Optional[str] = None
+    architectureType: str = ArchitectureType.SINGLE.value
 
 
 class Body(BaseModel):
@@ -157,10 +161,19 @@ def handler(event: InputModel, _) -> dict:
 
     created_at = int(time.time())
 
+    # Select container URI based on architecture type
+    is_swarm = event.architectureType == ArchitectureType.SWARM.value
+    container_uri = SWARM_CONTAINER_URI if is_swarm else CONTAINER_URI
+
+    if is_swarm and not SWARM_CONTAINER_URI:
+        err_msg = f"SWARM_CONTAINER_URI environment variable is not set but architectureType is {ArchitectureType.SWARM.value}"
+        logger.error(err_msg)
+        raise AcaException(err_msg)
+
     api_args = {
         "agentRuntimeArtifact": {
             "containerConfiguration": {
-                "containerUri": CONTAINER_URI,
+                "containerUri": container_uri,
             }
         },
         "networkConfiguration": {"networkMode": "PUBLIC"},
@@ -175,6 +188,16 @@ def handler(event: InputModel, _) -> dict:
             "agentToolsTopicArn": AGENT_TOOLS_TOPIC_ARN,
         },
     }
+
+    if is_swarm:
+        if not AGENTS_TABLE_NAME or not AGENTS_SUMMARY_TABLE_NAME:
+            err_msg = f"AGENTS_TABLE_NAME and AGENTS_SUMMARY_TABLE_NAME environment variables must be set for {ArchitectureType.SWARM.value} architecture"
+            logger.error(err_msg)
+            raise ValueError(err_msg)
+        api_args["environmentVariables"]["agentsTableName"] = AGENTS_TABLE_NAME
+        api_args["environmentVariables"][
+            "agentsSummaryTableName"
+        ] = AGENTS_SUMMARY_TABLE_NAME
 
     if agent:
         logger.info(
@@ -195,7 +218,18 @@ def handler(event: InputModel, _) -> dict:
         if ENVIRONMENT_TAG:
             api_args["tags"]["Environment"] = ENVIRONMENT_TAG
 
-    if event.agentCfg.useMemory and event.memoryId:
+    if (
+        hasattr(event.agentCfg, "useMemory")
+        and event.agentCfg.useMemory
+        and event.memoryId
+    ):
+        logger.info(f"Attaching created AgentCore memory {event.memoryId}")
+        api_args["environmentVariables"]["memoryId"] = event.memoryId
+    elif (
+        isinstance(event.agentCfg, dict)
+        and event.agentCfg.get("useMemory")
+        and event.memoryId
+    ):
         logger.info(f"Attaching created AgentCore memory {event.memoryId}")
         api_args["environmentVariables"]["memoryId"] = event.memoryId
 
