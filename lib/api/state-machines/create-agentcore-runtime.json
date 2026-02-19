@@ -7,7 +7,8 @@
             "Type": "Pass",
             "Assign": {
                 "agentName": "{% $states.input.agentName %}",
-                "agentCfg": "{% $states.input.agentConfiguration %}"
+                "agentCfg": "{% $states.input.agentConfiguration %}",
+                "architectureType": "{% $exists($states.input.architectureType) ? $states.input.architectureType : 'SINGLE' %}"
             },
             "Next": "Set Status to Creating"
         },
@@ -153,7 +154,8 @@
                 "Payload": {
                     "agentName": "{% $agentName %}",
                     "agentCfg": "{% $agentCfg %}",
-                    "memoryId": "{% $memoryId %}"
+                    "memoryId": "{% $memoryId %}",
+                    "architectureType": "{% $architectureType %}"
                 }
             },
             "Catch": [
@@ -256,13 +258,14 @@
                         "S": "{% $agentName %}"
                     }
                 },
-                "UpdateExpression": "SET #status = :status, #id = :id, #arn = :arn, #nb = :nb, #qtv = :qtv",
+                "UpdateExpression": "SET #status = :status, #id = :id, #arn = :arn, #nb = :nb, #qtv = :qtv, #at = :at",
                 "ExpressionAttributeNames": {
                     "#status": "Status",
                     "#id": "AgentRuntimeId",
                     "#arn": "AgentRuntimeArn",
                     "#nb": "NumberOfVersions",
-                    "#qtv": "QualifierToVersion"
+                    "#qtv": "QualifierToVersion",
+                    "#at": "ArchitectureType"
                 },
                 "ExpressionAttributeValues": {
                     ":id": {
@@ -283,6 +286,9 @@
                                 "N": "1"
                             }
                         }
+                    },
+                    ":at": {
+                        "S": "{% $architectureType %}"
                     }
                 }
             },
@@ -314,11 +320,12 @@
                         "S": "{% $agentName %}"
                     }
                 },
-                "UpdateExpression": "SET #status = :status, QualifierToVersion.#default = :version, #nb = :count",
+                "UpdateExpression": "SET #status = :status, QualifierToVersion.#default = :version, #nb = :count, #at = :at",
                 "ExpressionAttributeNames": {
                     "#status": "Status",
                     "#default": "DEFAULT",
-                    "#nb": "NumberOfVersions"
+                    "#nb": "NumberOfVersions",
+                    "#at": "ArchitectureType"
                 },
                 "ExpressionAttributeValues": {
                     ":version": {
@@ -329,6 +336,9 @@
                     },
                     ":status": {
                         "S": "Ready"
+                    },
+                    ":at": {
+                        "S": "{% $architectureType %}"
                     }
                 }
             },
