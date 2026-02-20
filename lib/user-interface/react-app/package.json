@@ -1,0 +1,81 @@
+{
+    "name": "aca-app",
+    "private": true,
+    "version": "1.0.0",
+    "type": "module",
+    "scripts": {
+        "dev": "vite",
+        "build": "tsc && vite build",
+        "build:dev": "tsc && cross-env NODE_ENV=development vite build",
+        "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+        "preview": "vite preview",
+        "format": "npx prettier --ignore-path .gitignore --write \"**/*.+(tsx|js|ts|json)\""
+    },
+    "dependencies": {
+        "@aws-amplify/ui-react": "^6.8.1",
+        "@cloudscape-design/chat-components": "^1.0.91",
+        "@cloudscape-design/code-view": "^3.0.98",
+        "@cloudscape-design/component-toolkit": "^1.0.0-beta.133",
+        "@cloudscape-design/components": "^3.0.1184",
+        "@cloudscape-design/design-tokens": "^3.0.69",
+        "@cloudscape-design/global-styles": "^1.0.50",
+        "@fortawesome/fontawesome-svg-core": "^6.7.2",
+        "@fortawesome/free-solid-svg-icons": "^6.7.2",
+        "@fortawesome/react-fontawesome": "^0.2.2",
+        "ace-builds": "^1.39.0",
+        "ace-code": "^1.39.0",
+        "aws-amplify": "^6.12.0",
+        "events": "^3.3.0",
+        "i18next": "^24.2.2",
+        "luxon": "^3.5.0",
+        "react": "^18.2.0",
+        "react-dom": "^18.2.0",
+        "react-i18next": "^15.4.1",
+        "react-json-view-lite": "^2.3.0",
+        "react-markdown": "^9.0.3",
+        "react-router-dom": "^7.1.2",
+        "react-syntax-highlighter": "^15.6.1",
+        "react-textarea-autosize": "^8.5.7",
+        "react-use-websocket": "^4.11.1",
+        "regenerator-runtime": "^0.14.1",
+        "rehype-raw": "^7.0.0",
+        "remark-gfm": "^4.0.0",
+        "stream-browserify": "^3.0.0",
+        "util": "^0.12.5",
+        "uuid": "^11.0.5"
+    },
+    "devDependencies": {
+        "@types/luxon": "^3.4.2",
+        "@types/react": "^18.0.6",
+        "@types/react-dom": "^18.0.3",
+        "@types/react-syntax-highlighter": "^15.5.13",
+        "@types/uuid": "^10.0.0",
+        "@types/zen-observable": "^0.8.7",
+        "@typescript-eslint/eslint-plugin": "^8.19.1",
+        "@typescript-eslint/parser": "^8.19.1",
+        "@vitejs/plugin-react": "^4.3.4",
+        "autoprefixer": "^10.4.20",
+        "cross-env": "^7.0.3",
+        "esbuild": "^0.25.0",
+        "eslint": "^9.18.0",
+        "eslint-plugin-react-hooks": "^5.1.0",
+        "eslint-plugin-react-refresh": "^0.4.18",
+        "postcss": "^8.4.49",
+        "sass": "^1.83.1",
+        "typescript": "^5.7.3",
+        "vite": "^6.0.7",
+        "zen-observable": "^0.10.0"
+    },
+    "overrides": {
+        "fast-xml-parser": "^5.3.4",
+        "@aws-amplify/geo@2.3.12": {
+            "fast-xml-parser": "4.4.1"
+        },
+        "rollup@<3.29.5": "3.29.5",
+        "prismjs": "^1.30.0",
+        "lodash": "^4.17.21"
+    },
+    "resolutions": {
+        "cross-spawn": "^7.0.5"
+    }
+}

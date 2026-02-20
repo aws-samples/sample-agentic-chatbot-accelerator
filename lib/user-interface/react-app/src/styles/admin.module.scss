@@ -1,0 +1,14 @@
+// ----------------------------------------------------------------------
+// Copyright 2026 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+//
+// SPDX-License-Identifier: MIT-0
+// ----------------------------------------------------------------------
+@use "@cloudscape-design/design-tokens/index" as awsui;
+@use '@cloudscape-design/design-tokens' as cs;
+
+.document_container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 32px;
+}

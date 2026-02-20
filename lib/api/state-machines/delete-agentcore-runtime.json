@@ -1,0 +1,500 @@
+{
+    "QueryLanguage": "JSONata",
+    "Comment": "Agentic Chatbot Accelerator - delete AgentCore Runtime",
+    "StartAt": "Initialize Request",
+    "States": {
+        "Initialize Request": {
+            "Type": "Pass",
+            "Assign": {
+                "agentName": "{% $states.input.agentName %}",
+                "agentRuntimeId": "{% $states.input.agentRuntimeId %}"
+            },
+            "Next": "Set Status to Deleting"
+        },
+        "Set Status to Deleting": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::dynamodb:updateItem",
+            "Arguments": {
+                "TableName": "${summaryTableArn}",
+                "Key": {
+                    "AgentName": {
+                        "S": "{% $agentName %}"
+                    }
+                },
+                "UpdateExpression": "SET #status = :status",
+                "ExpressionAttributeNames": {
+                    "#status": "Status"
+                },
+                "ExpressionAttributeValues": {
+                    ":status": {
+                        "S": "Deleting"
+                    }
+                }
+            },
+            "Next": "Fetch Endpoints"
+        },
+        "Fetch Endpoints": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Arguments": {
+                "FunctionName": "${listRuntimeEndpointFunctionArn}",
+                "Payload": {
+                    "agentRuntimeId": "{% $agentRuntimeId %}"
+                }
+            },
+            "Catch": [
+                {
+                    "ErrorEquals": [
+                        "States.ALL"
+                    ],
+                    "Next": "Set Status to Broken"
+                }
+            ],
+            "Assign": {
+                "endpoints": "{% $states.result.Payload.body.endpoints %}"
+            },
+            "Next": "Check Number Endpoints"
+        },
+        "Check Number Endpoints": {
+            "Type": "Choice",
+            "Choices": [
+                {
+                    "Condition": "{% $count($endpoints) > 0 %}",
+                    "Next": "Delete Endpoints Map"
+                }
+            ],
+            "Default": "Remove Runtime and Memory"
+        },
+        "Delete Endpoints Map": {
+            "Type": "Map",
+            "Items": "{% $endpoints %}",
+            "ItemProcessor": {
+                "StartAt": "Assign Endpoint",
+                "States": {
+                    "Assign Endpoint": {
+                        "Type": "Pass",
+                        "Assign": {
+                            "endpoint": "{% $states.input %}"
+                        },
+                        "Next": "Start Endpoint Deletion"
+                    },
+                    "Start Endpoint Deletion": {
+                        "Type": "Task",
+                        "Resource": "arn:aws:states:::lambda:invoke",
+                        "Arguments": {
+                            "FunctionName": "${startRuntimeEndpointDeletionFunctionArn}",
+                            "Payload": {
+                                "agentRuntimeId": "{% $agentRuntimeId %}",
+                                "endpoint": "{% $endpoint %}"
+                            }
+                        },
+                        "Catch": [
+                            {
+                                "ErrorEquals": [
+                                    "States.ALL"
+                                ],
+                                "Next": "Mark Failed"
+                            }
+                        ],
+                        "Next": "Wait"
+                    },
+                    "Wait": {
+                        "Type": "Wait",
+                        "Seconds": 15,
+                        "Next": "Check Deletion Status"
+                    },
+                    "Check Deletion Status": {
+                        "Type": "Task",
+                        "Resource": "arn:aws:states:::lambda:invoke",
+                        "Arguments": {
+                            "FunctionName": "${checkOnEndpointDeleteFunctionArn}",
+                            "Payload": {
+                                "agentRuntimeId": "{% $agentRuntimeId %}",
+                                "endpoint": "{% $endpoint %}"
+                            }
+                        },
+                        "Assign": {
+                            "status": "{% $states.result.Payload.body.status %}"
+                        },
+                        "Catch": [
+                            {
+                                "ErrorEquals": [
+                                    "States.ALL"
+                                ],
+                                "Next": "Mark Failed"
+                            }
+                        ],
+                        "Next": "Deletion Done?"
+                    },
+                    "Deletion Done?": {
+                        "Type": "Choice",
+                        "Choices": [
+                            {
+                                "Condition": "{% $status = 'DELETED' %}",
+                                "Next": "Mark Success"
+                            },
+                            {
+                                "Condition": "{% $status = 'FAILED' %}",
+                                "Next": "Mark Failed"
+                            }
+                        ],
+                        "Default": "Wait"
+                    },
+                    "Mark Success": {
+                        "Type": "Pass",
+                        "Output": "{% $endpoint %}",
+                        "End": true
+                    },
+                    "Mark Failed": {
+                        "Type": "Pass",
+                        "Output": null,
+                        "End": true
+                    }
+                }
+            },
+            "Assign": {
+                "successfulDeletions": "{% [$states.result[$ != null]] %}"
+            },
+            "Next": "Query Qualifier To Version"
+        },
+        "Query Qualifier To Version": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::dynamodb:getItem",
+            "Arguments": {
+                "TableName": "${summaryTableArn}",
+                "Key": {
+                    "AgentName": {
+                        "S": "{% $agentName %}"
+                    }
+                }
+            },
+            "Assign": {
+                "qualifierToVersion": "{% $states.result.Item.QualifierToVersion.M %}"
+            },
+            "Next": "Remove Endpoint References"
+        },
+        "Remove Endpoint References": {
+            "Type": "Pass",
+            "Assign": {
+                "updatedQualifierToVersion": "{% $qualifierToVersion ~> $sift(function($v, $k) { $not($k in $successfulDeletions) }) %}"
+            },
+            "Next": "Update Table Attribute"
+        },
+        "Update Table Attribute": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::dynamodb:updateItem",
+            "Arguments": {
+                "TableName": "${summaryTableArn}",
+                "Key": {
+                    "AgentName": {
+                        "S": "{% $agentName %}"
+                    }
+                },
+                "UpdateExpression": "SET QualifierToVersion = :qtv",
+                "ExpressionAttributeValues": {
+                    ":qtv": {
+                        "M": "{% $updatedQualifierToVersion %}"
+                    }
+                }
+            },
+            "Next": "Check on Deleted Endpoints"
+        },
+        "Check on Deleted Endpoints": {
+            "Type": "Choice",
+            "Choices": [
+                {
+                    "Condition": "{% $count($successfulDeletions) != $count($endpoints) %}",
+                    "Next": "Set Status to Broken"
+                }
+            ],
+            "Default": "Remove Runtime and Memory"
+        },
+        "Remove Runtime and Memory": {
+            "Type": "Parallel",
+            "Assign": {
+                "runtimeResult": "{% $states.result[0] %}",
+                "memoryResult": "{% $states.result[1] %}"
+            },
+            "Next": "Check Parallel Task Results",
+            "Branches": [
+                {
+                    "StartAt": "Start Runtime Delete",
+                    "States": {
+                        "Start Runtime Delete": {
+                            "Type": "Task",
+                            "Resource": "arn:aws:states:::lambda:invoke",
+                            "Arguments": {
+                                "FunctionName": "${startDeleteRuntimeFunctionArn}",
+                                "Payload": {
+                                    "agentRuntimeId": "{% $agentRuntimeId %}"
+                                }
+                            },
+                            "Catch": [
+                                {
+                                    "ErrorEquals": [
+                                        "States.ALL"
+                                    ],
+                                    "Next": "Runtime Delete Failed"
+                                }
+                            ],
+                            "Next": "Wait on Deletion"
+                        },
+                        "Wait on Deletion": {
+                            "Type": "Wait",
+                            "Seconds": 30,
+                            "Next": "Check on Runtime Deletion Status"
+                        },
+                        "Check on Runtime Deletion Status": {
+                            "Type": "Task",
+                            "Resource": "arn:aws:states:::lambda:invoke",
+                            "Arguments": {
+                                "FunctionName": "${checkOnDeleteRuntimeFunctionArn}",
+                                "Payload": {
+                                    "agentRuntimeId": "{% $agentRuntimeId %}"
+                                }
+                            },
+                            "Catch": [
+                                {
+                                    "ErrorEquals": [
+                                        "States.ALL"
+                                    ],
+                                    "Next": "Runtime Delete Failed"
+                                }
+                            ],
+                            "Assign": {
+                                "deletionStatus": "{% $states.result.Payload.body.status %}"
+                            },
+                            "Next": "Runtime Deletion Done?"
+                        },
+                        "Runtime Deletion Done?": {
+                            "Type": "Choice",
+                            "Choices": [
+                                {
+                                    "Condition": "{% $deletionStatus = 'DELETED' %}",
+                                    "Next": "Remove from DynamoDB"
+                                },
+                                {
+                                    "Condition": "{% $deletionStatus = 'FAILED' %}",
+                                    "Next": "Runtime Delete Failed"
+                                }
+                            ],
+                            "Default": "Wait on Deletion"
+                        },
+                        "Remove from DynamoDB": {
+                            "Type": "Task",
+                            "Resource": "arn:aws:states:::dynamodb:deleteItem",
+                            "Arguments": {
+                                "TableName": "${summaryTableArn}",
+                                "Key": {
+                                    "AgentName": {
+                                        "S": "{% $agentName %}"
+                                    }
+                                }
+                            },
+                            "Next": "Remove Version Refs"
+                        },
+                        "Remove Version Refs": {
+                            "Type": "Task",
+                            "Resource": "arn:aws:states:::lambda:invoke",
+                            "Arguments": {
+                                "FunctionName": "${removeRuntimeVersionsFunctionArn}",
+                                "Payload": {
+                                    "agentName": "{% $agentName %}"
+                                }
+                            },
+                            "Catch": [
+                                {
+                                    "ErrorEquals": [
+                                        "States.ALL"
+                                    ],
+                                    "Next": "Runtime Delete Failed"
+                                }
+                            ],
+                            "Next": "Runtime Delete Successful"
+                        },
+                        "Runtime Delete Successful": {
+                            "Type": "Pass",
+                            "Output": {
+                                "runtimeBranchStatus": "success",
+                                "reason": "Runtime deletion succeeded"
+                            },
+                            "End": true
+                        },
+                        "Runtime Delete Failed": {
+                            "Type": "Pass",
+                            "Output": {
+                                "runtimeBranchStatus": "error",
+                                "reason": "Runtime deletion failed"
+                            },
+                            "End": true
+                        }
+                    }
+                },
+                {
+                    "StartAt": "Check on Short Memory",
+                    "States": {
+                        "Check on Short Memory": {
+                            "Type": "Task",
+                            "Resource": "arn:aws:states:::lambda:invoke",
+                            "Arguments": {
+                                "FunctionName": "${checkOnExistingMemoryFunctionArn}",
+                                "Payload": {
+                                    "agentName": "{% $agentName %}"
+                                }
+                            },
+                            "Catch": [
+                                {
+                                    "ErrorEquals": [
+                                        "States.ALL"
+                                    ],
+                                    "Next": "Memory Check Failed"
+                                }
+                            ],
+                            "Assign": {
+                                "memoryId": "{% $states.result.Payload.body.memoryId %}"
+                            },
+                            "Next": "Memory Exists?"
+                        },
+                        "Memory Exists?": {
+                            "Type": "Choice",
+                            "Choices": [
+                                {
+                                    "Condition": "{% $boolean($memoryId) %}",
+                                    "Next": "Start Memory Delete"
+                                }
+                            ],
+                            "Default": "Memory Check Done"
+                        },
+                        "Start Memory Delete": {
+                            "Type": "Task",
+                            "Resource": "arn:aws:states:::lambda:invoke",
+                            "Arguments": {
+                                "FunctionName": "${startDeleteMemoryFunctionArn}",
+                                "Payload": {
+                                    "memoryId": "{% $memoryId %}"
+                                }
+                            },
+                            "Catch": [
+                                {
+                                    "ErrorEquals": [
+                                        "States.ALL"
+                                    ],
+                                    "Next": "Memory Check Failed"
+                                }
+                            ],
+                            "Next": "Wait for Memory Delete"
+                        },
+                        "Wait for Memory Delete": {
+                            "Type": "Wait",
+                            "Seconds": 30,
+                            "Next": "Check Memory Deletion Status"
+                        },
+                        "Check Memory Deletion Status": {
+                            "Type": "Task",
+                            "Resource": "arn:aws:states:::lambda:invoke",
+                            "Arguments": {
+                                "FunctionName": "${checkOnDeleteMemoryFunctionArn}",
+                                "Payload": {
+                                    "memoryId": "{% $memoryId %}"
+                                }
+                            },
+                            "Catch": [
+                                {
+                                    "ErrorEquals": [
+                                        "States.ALL"
+                                    ],
+                                    "Next": "Memory Check Failed"
+                                }
+                            ],
+                            "Assign": {
+                                "memoryDeletionStatus": "{% $states.result.Payload.body.status %}"
+                            },
+                            "Next": "Memory Deleted?"
+                        },
+                        "Memory Deleted?": {
+                            "Type": "Choice",
+                            "Choices": [
+                                {
+                                    "Condition": "{% $memoryDeletionStatus = 'DELETED' %}",
+                                    "Next": "Memory Check Done"
+                                },
+                                {
+                                    "Condition": "{% $memoryDeletionStatus = 'FAILED' %}",
+                                    "Next": "Memory Deletion Failed"
+                                }
+                            ],
+                            "Default": "Wait for Memory Delete"
+                        },
+                        "Memory Check Failed": {
+                            "Type": "Pass",
+                            "Output": {
+                                "memoryBranchStatus": "error",
+                                "reason": "Lambda invocation failed"
+                            },
+                            "End": true
+                        },
+                        "Memory Deletion Failed": {
+                            "Type": "Pass",
+                            "Output": {
+                                "memoryBranchStatus": "error",
+                                "reason": "Memory deletion returned FAILED status"
+                            },
+                            "End": true
+                        },
+                        "Memory Check Done": {
+                            "Type": "Pass",
+                            "Output": {
+                                "memoryBranchStatus": "success",
+                                "action": "memory_processed"
+                            },
+                            "End": true
+                        }
+                    }
+                }
+            ]
+        },
+        "Check Parallel Task Results": {
+            "Type": "Choice",
+            "Choices": [
+                {
+                    "Condition": "{% $runtimeResult.runtimeBranchStatus = 'success' and $memoryResult.memoryBranchStatus = 'success' %}",
+                    "Next": "Notify Client"
+                }
+            ],
+            "Default": "Set Status to Broken"
+        },
+        "Notify Client": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Arguments": {
+                "FunctionName": "${notifyRuntimeUpdateFunctionArn}",
+                "Payload": {
+                    "agentName": "{% $agentName %}"
+                }
+            },
+            "End": true
+        },
+        "Set Status to Broken": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::dynamodb:updateItem",
+            "Arguments": {
+                "TableName": "${summaryTableArn}",
+                "Key": {
+                    "AgentName": {
+                        "S": "{% $agentName %}"
+                    }
+                },
+                "UpdateExpression": "SET #status = :status",
+                "ExpressionAttributeNames": {
+                    "#status": "Status"
+                },
+                "ExpressionAttributeValues": {
+                    ":status": {
+                        "S": "Broken"
+                    }
+                }
+            },
+            "Next": "Notify Client"
+        }
+    }
+}

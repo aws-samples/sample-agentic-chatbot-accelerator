@@ -1,0 +1,178 @@
+type Channel @aws_iam @aws_cognito_user_pools {
+    data: String
+    sessionId: String
+    userId: String
+}
+
+type SessionHistoryItem @aws_cognito_user_pools {
+    type: String!
+    content: String!
+    messageId: String!
+    references: String
+    feedback: String
+    reasoningContent: String
+    toolActions: String
+    executionTimeMs: Int
+    complete: Boolean
+}
+
+type Session @aws_cognito_user_pools {
+    id: String!
+    title: String
+    startTime: AWSDateTime!
+    runtimeId: String!
+    runtimeVersion: String!
+    endpoint: String!
+    history: [SessionHistoryItem]
+}
+
+type DeleteSessionResult @aws_cognito_user_pools {
+    id: String
+    deleted: Boolean!
+}
+
+enum ResponseStatus {
+    SUCCESSFUL
+    INVALID_CONFIG
+    INVALID_NAME
+    SERVICE_ERROR
+    UNKNOWN_ERROR
+    ALREADY_EXISTS
+}
+
+type KnowledgeBase {
+    name: String!
+    id: String!
+    arn: String!
+    owner: String!
+    description: String
+}
+
+type S3DataSource {
+    name: String!
+    id: String!
+    prefixes: [String!]!
+    description: String
+}
+
+type S3Document {
+    id: String!
+    name: String!
+    uri: String!
+    documentType: String!
+    inputPrefix: String!
+}
+
+type DeleteDocumentResult @aws_cognito_user_pools {
+    id: String
+    deleted: Boolean!
+}
+
+type AdminOpsResult @aws_cognito_user_pools {
+    id: String
+    status: ResponseStatus!
+}
+
+type Tool @aws_cognito_user_pools {
+    name: String!
+    description: String!
+    invokesSubAgent: Boolean!
+}
+
+type McpServer @aws_cognito_user_pools {
+    name: String!
+    mcpUrl: String!
+    description: String!
+}
+
+type RuntimeSummary @aws_cognito_user_pools {
+    agentName: String!
+    agentRuntimeId: String!
+    numberOfVersion: String!
+    qualifierToVersion: String!
+    status: String!
+}
+
+type FavoriteRuntime @aws_cognito_user_pools {
+    agentRuntimeId: String!
+    endpointName: String!
+}
+
+type AgentFactoryNotification @aws_iam @aws_cognito_user_pools {
+    agentName: String
+}
+
+type Mutation {
+    # Messages
+    sendQuery(data: String): String @aws_cognito_user_pools
+    publishResponse(sessionId: String, userId: String, data: String): Channel @aws_iam
+    # Sessions
+    deleteUserSessions: [DeleteSessionResult!] @aws_cognito_user_pools
+    deleteSession(id: String!): DeleteSessionResult @aws_cognito_user_pools
+    renameSession(id: String!, title: String!): Boolean @aws_cognito_user_pools
+    updateMessageExecutionTime(sessionId: String!, messageId: String!, executionTimeMs: Int!): Boolean @aws_cognito_user_pools
+    saveToolActions(sessionId: String!, messageId: String!, toolActions: String!): Boolean @aws_cognito_user_pools
+    # Feedback
+    publishFeedback(feedback: String!, messageId: String!, messageType:String!, sessionId: String!): Boolean @aws_cognito_user_pools
+    # Knowledge bases
+    deleteDocument(uri: String!): DeleteDocumentResult @aws_cognito_user_pools
+    createKnowledgeBase(kbName: String!, props: String!): AdminOpsResult @aws_cognito_user_pools
+    deleteKnowledgeBase(kbId: String!): AdminOpsResult @aws_cognito_user_pools
+    createDataSource(kbId: String!, dsName: String!, props: String!): AdminOpsResult @aws_cognito_user_pools
+    deleteDataSource(kbId: String!, dataSourceId: String!): AdminOpsResult @aws_cognito_user_pools
+    syncKnowledgeBase(kbId: String!): AdminOpsResult @aws_cognito_user_pools
+    # Metadata
+    updateMetadata(documentId: String!, metadata: String!): AdminOpsResult @aws_cognito_user_pools
+    batchUpdateMetadata(metadataFile: String!): AdminOpsResult @aws_cognito_user_pools
+    # AgentCore
+    createAgentCoreRuntime(agentName: String!, configValue: String!): String! @aws_cognito_user_pools
+    tagAgentCoreRuntime(agentName: String!, agentRuntimeId: String!, currentQualifierToVersion: String!, agentVersion: String!, qualifier: String!, description: String): String @aws_cognito_user_pools
+    deleteAgentRuntime(agentName: String!, agentRuntimeId: String!): String! @aws_cognito_user_pools
+    deleteAgentRuntimeEndpoints(agentName: String!, agentRuntimeId: String!, endpointNames: [String!]): String! @aws_cognito_user_pools
+    updateFavoriteRuntime(agentRuntimeId: String!, endpointName: String!): String @aws_cognito_user_pools
+    resetFavoriteRuntime: String @aws_cognito_user_pools
+    publishRuntimeUpdate(agentName: String!): AgentFactoryNotification @aws_iam
+}
+
+type Subscription {
+    receiveMessages(sessionId: String): Channel
+        @aws_subscribe(mutations: ["publishResponse"])
+        @aws_cognito_user_pools
+    receiveUpdateNotification(agentName: String!): AgentFactoryNotification
+        @aws_subscribe(mutations: ["publishRuntimeUpdate"])
+        @aws_cognito_user_pools
+}
+
+type Query {
+    # Sessions
+    listSessions: [Session!]! @aws_cognito_user_pools
+    getSession(id: String!): Session @aws_cognito_user_pools
+    # Knowledge bases
+    getPresignedUrl(s3Uri: String!, pageNumber: Int): String @aws_cognito_user_pools
+    listKnowledgeBases: [KnowledgeBase!]! @aws_cognito_user_pools
+    listDataSources(kbId: String!): [S3DataSource!]! @aws_cognito_user_pools
+    listDocuments(prefixes: [String!]!): [S3Document!]! @aws_cognito_user_pools
+    getInputPrefix(kbId: String!, dataSourceID: String!): String @aws_cognito_user_pools
+    checkOnProcessStarted(s3ObjectNames: [String!]!): Boolean @aws_cognito_user_pools
+    checkOnProcessCompleted(s3ObjectNames: [String!]!): Boolean @aws_cognito_user_pools
+    checkOnDocumentsRemoved(s3ObjectNames: [String!]!): Boolean @aws_cognito_user_pools
+    checkOnSyncInProgress(kbId: String!): Boolean @aws_cognito_user_pools
+    # Metadata
+    getDocumentMetadata(documentId: String!): String! @aws_cognito_user_pools
+    # AgentCore
+    listAvailableTools: [Tool!] @aws_cognito_user_pools
+    listAvailableMcpServers: [McpServer!] @aws_cognito_user_pools
+    listRuntimeAgents: [RuntimeSummary!] @aws_cognito_user_pools
+    getRuntimeConfigurationByVersion(agentName: String!, agentVersion: String!): String! @aws_cognito_user_pools
+    getRuntimeConfigurationByQualifier(agentName: String!, qualifier: String!): String! @aws_cognito_user_pools
+    getDefaultRuntimeConfiguration(agentName: String!): String! @aws_cognito_user_pools
+    listAgentVersions(agentRuntimeId: String!): [String] @aws_cognito_user_pools
+    listAgentEndpoints(agentRuntimeId: String!): [String] @aws_cognito_user_pools
+    getFavoriteRuntime: FavoriteRuntime @aws_cognito_user_pools
+}
+
+schema {
+    query: Query
+    mutation: Mutation
+    subscription: Subscription
+}

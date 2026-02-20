@@ -1,0 +1,189 @@
+{
+    "QueryLanguage": "JSONata",
+    "Comment": "Agentic Chatbot Accelerator - delete multiple AgentCore runtime endpoints",
+    "StartAt": "Initialize Request",
+    "States": {
+        "Initialize Request": {
+            "Type": "Pass",
+            "Assign": {
+                "agentName": "{% $states.input.agentName %}",
+                "agentRuntimeId": "{% $states.input.agentRuntimeId %}",
+                "endpoints": "{% $states.input.endpoints %}"
+            },
+            "Next": "Set Status to Updating"
+        },
+        "Set Status to Updating": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::dynamodb:updateItem",
+            "Arguments": {
+                "TableName": "${summaryTableArn}",
+                "Key": {
+                    "AgentName": {
+                        "S": "{% $agentName %}"
+                    }
+                },
+                "UpdateExpression": "SET #status = :status",
+                "ExpressionAttributeNames": {
+                    "#status": "Status"
+                },
+                "ExpressionAttributeValues": {
+                    ":status": {
+                        "S": "Updating"
+                    }
+                }
+            },
+            "Next": "Delete Endpoints Map"
+        },
+        "Delete Endpoints Map": {
+            "Type": "Map",
+            "Items": "{% $endpoints %}",
+            "ItemProcessor": {
+                "StartAt": "Assign Endpoint",
+                "States": {
+                    "Assign Endpoint": {
+                        "Type": "Pass",
+                        "Assign": {
+                            "endpoint": "{% $states.input %}"
+                        },
+                        "Next": "Start Endpoint Deletion"
+                    },
+                    "Start Endpoint Deletion": {
+                        "Type": "Task",
+                        "Resource": "arn:aws:states:::lambda:invoke",
+                        "Arguments": {
+                            "FunctionName": "${startRuntimeEndpointDeletionFunctionArn}",
+                            "Payload": {
+                                "agentRuntimeId": "{% $agentRuntimeId %}",
+                                "endpoint": "{% $endpoint %}"
+                            }
+                        },
+                        "Catch": [
+                            {
+                                "ErrorEquals": [
+                                    "States.ALL"
+                                ],
+                                "Next": "Mark Failed"
+                            }
+                        ],
+                        "Next": "Wait"
+                    },
+                    "Wait": {
+                        "Type": "Wait",
+                        "Seconds": 15,
+                        "Next": "Check Deletion Status"
+                    },
+                    "Check Deletion Status": {
+                        "Type": "Task",
+                        "Resource": "arn:aws:states:::lambda:invoke",
+                        "Arguments": {
+                            "FunctionName": "${checkOnEndpointDeleteFunctionArn}",
+                            "Payload": {
+                                "agentRuntimeId": "{% $agentRuntimeId %}",
+                                "endpoint": "{% $endpoint %}"
+                            }
+                        },
+                        "Assign": {
+                            "status": "{% $states.result.Payload.body.status %}"
+                        },
+                        "Catch": [
+                            {
+                                "ErrorEquals": [
+                                    "States.ALL"
+                                ],
+                                "Next": "Mark Failed"
+                            }
+                        ],
+                        "Next": "Deletion Done?"
+                    },
+                    "Deletion Done?": {
+                        "Type": "Choice",
+                        "Choices": [
+                            {
+                                "Condition": "{% $status = 'DELETED' %}",
+                                "Next": "Mark Success"
+                            },
+                            {
+                                "Condition": "{% $status = 'FAILED' %}",
+                                "Next": "Mark Failed"
+                            }
+                        ],
+                        "Default": "Wait"
+                    },
+                    "Mark Success": {
+                        "Type": "Pass",
+                        "Output": "{% $endpoint %}",
+                        "End": true
+                    },
+                    "Mark Failed": {
+                        "Type": "Pass",
+                        "Output": null,
+                        "End": true
+                    }
+                }
+            },
+            "Assign": {
+                "successfulDeletions": "{% $states.result[$ != null] %}"
+            },
+            "Next": "Query Qualifier To Version"
+        },
+        "Query Qualifier To Version": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::dynamodb:getItem",
+            "Arguments": {
+                "TableName": "${summaryTableArn}",
+                "Key": {
+                    "AgentName": {
+                        "S": "{% $agentName %}"
+                    }
+                }
+            },
+            "Assign": {
+                "qualifierToVersion": "{% $states.result.Item.QualifierToVersion.M %}"
+            },
+            "Next": "Remove Endpoint References"
+        },
+        "Remove Endpoint References": {
+            "Type": "Pass",
+            "Assign": {
+                "updatedQualifierToVersion": "{% $qualifierToVersion ~> $sift(function($v, $k) { $not($k in $successfulDeletions) }) %}"
+            },
+            "Next": "Update Table Attribute"
+        },
+        "Update Table Attribute": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::dynamodb:updateItem",
+            "Arguments": {
+                "TableName": "${summaryTableArn}",
+                "Key": {
+                    "AgentName": {
+                        "S": "{% $agentName %}"
+                    }
+                },
+                "UpdateExpression": "SET QualifierToVersion = :qtv, #status = :status",
+                "ExpressionAttributeNames": {
+                    "#status": "Status"
+                },
+                "ExpressionAttributeValues": {
+                    ":qtv": {
+                        "M": "{% $updatedQualifierToVersion %}"
+                    },
+                    ":status": {
+                        "S": "Ready"
+                    }
+                }
+            },
+            "Next": "Notify Client"
+        },
+        "Notify Client": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Arguments": {
+                "FunctionName": "${notifyRuntimeUpdateFunctionArn}",
+                "Payload": {
+                    "agentName": "{% $agentName %}"
+                }
+            },
+            "End": true
+        }
+    }
+}

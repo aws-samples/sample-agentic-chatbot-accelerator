@@ -1,0 +1,32 @@
+[project]
+name = "aca-dev"
+version = "2.0.0"
+description = "Python is only used for coding in IDEs. Neither the stack nor the web application requires Python."
+readme = "README.md"
+requires-python = ">=3.13"
+
+[dependency-groups]
+dev = [
+    "black>=24.10.0",
+    "isort>=5.13.2",
+    "pre-commit>=4.2.0",
+    "ruff>=0.12.5",
+    "aws-lambda-powertools>=3.4.1",
+    "boto3>=1.40.55",
+    "ipykernel>=6.29.5",
+    "opensearch-py>=2.8.0",
+    "pydantic>=2.10.5",
+    "requests>=2.32.3",
+    "strands-agents>=1.21.0",
+    "bedrock-agentcore>=1.1.0",
+    "retry>=0.9.2",
+]
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88  # To match black's default line length
+
+[tool.ruff]
+select = ["E", "F"]  # Example: select error and flake8 rules
+ignore = ["E501"]

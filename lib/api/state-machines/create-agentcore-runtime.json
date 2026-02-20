@@ -1,0 +1,382 @@
+{
+    "QueryLanguage": "JSONata",
+    "Comment": "Agentic Chatbot Accelerator - create AgentCore Runtime",
+    "StartAt": "Parse Input Arguments",
+    "States": {
+        "Parse Input Arguments": {
+            "Type": "Pass",
+            "Assign": {
+                "agentName": "{% $states.input.agentName %}",
+                "agentCfg": "{% $states.input.agentConfiguration %}"
+            },
+            "Next": "Set Status to Creating"
+        },
+        "Set Status to Creating": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::dynamodb:updateItem",
+            "Arguments": {
+                "TableName": "${summaryTableArn}",
+                "Key": {
+                    "AgentName": {
+                        "S": "{% $agentName %}"
+                    }
+                },
+                "UpdateExpression": "SET #status = :status",
+                "ExpressionAttributeNames": {
+                    "#status": "Status"
+                },
+                "ExpressionAttributeValues": {
+                    ":status": {
+                        "S": "Creating"
+                    }
+                }
+            },
+            "Next": "Check on Memory Required"
+        },
+        "Check on Memory Required": {
+            "Type": "Choice",
+            "Choices": [
+                {
+                    "Condition": "{% $exists($agentCfg.useMemory) and $boolean($agentCfg.useMemory) = true %}",
+                    "Next": "Check on Short Memory Exists"
+                }
+            ],
+            "Default": "Assign Empty Memory ID"
+        },
+        "Assign Empty Memory ID": {
+            "Type": "Pass",
+            "Assign": {
+                "memoryId": null
+            },
+            "Next": "Create New Runtime"
+        },
+        "Check on Short Memory Exists": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Arguments": {
+                "FunctionName": "${checkOnExistingMemoryFunctionArn}",
+                "Payload": {
+                    "agentName": "{% $agentName %}"
+                }
+            },
+            "Catch": [
+                {
+                    "ErrorEquals": [
+                        "States.ALL"
+                    ],
+                    "Next": "Set Status to Failed"
+                }
+            ],
+            "Assign": {
+                "memoryId": "{% $states.result.Payload.body.memoryId %}"
+            },
+            "Next": "Memory Exists?"
+        },
+        "Memory Exists?": {
+            "Type": "Choice",
+            "Choices": [
+                {
+                    "Condition": "{% $boolean($memoryId) %}",
+                    "Next": "Create New Runtime"
+                }
+            ],
+            "Default": "Start Create Memory"
+        },
+        "Start Create Memory": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Arguments": {
+                "FunctionName": "${startMemoryCreationFuncArn}",
+                "Payload": {
+                    "agentName": "{% $agentName %}"
+                }
+            },
+            "Catch": [
+                {
+                    "ErrorEquals": [
+                        "States.ALL"
+                    ],
+                    "Next": "Set Status to Failed"
+                }
+            ],
+            "Assign": {
+                "memoryId": "{% $states.result.Payload.body.memoryId %}"
+            },
+            "Next": "Wait for Memory Ready"
+        },
+        "Wait for Memory Ready": {
+            "Type": "Wait",
+            "Seconds": 30,
+            "Next": "Check Memory Creation Status"
+        },
+        "Check Memory Creation Status": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Arguments": {
+                "FunctionName": "${checkOnCreateMemoryFuncArn}",
+                "Payload": {
+                    "memoryId": "{% $memoryId %}"
+                }
+            },
+            "Catch": [
+                {
+                    "ErrorEquals": [
+                        "States.ALL"
+                    ],
+                    "Next": "Set Status to Failed"
+                }
+            ],
+            "Assign": {
+                "memoryCreationStatus": "{% $states.result.Payload.body.status %}"
+            },
+            "Next": "Memory Ready?"
+        },
+        "Memory Ready?": {
+            "Type": "Choice",
+            "Choices": [
+                {
+                    "Condition": "{% $memoryCreationStatus = 'FAILED' %}",
+                    "Next": "Set Status to Failed"
+                },
+                {
+                    "Condition": "{% $memoryCreationStatus = 'ACTIVE' %}",
+                    "Next": "Create New Runtime"
+                }
+            ],
+            "Default": "Wait for Memory Ready"
+        },
+        "Create New Runtime": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Arguments": {
+                "FunctionName": "${startRuntimeCreationFuncArn}",
+                "Payload": {
+                    "agentName": "{% $agentName %}",
+                    "agentCfg": "{% $agentCfg %}",
+                    "memoryId": "{% $memoryId %}"
+                }
+            },
+            "Catch": [
+                {
+                    "ErrorEquals": [
+                        "States.ALL"
+                    ],
+                    "Next": "Set Status to Failed"
+                }
+            ],
+            "Assign": {
+                "agentRuntimeId": "{% $states.result.Payload.body.agentRuntimeId %}",
+                "agentRuntimeArn": "{% $states.result.Payload.body.agentRuntimeArn %}",
+                "agentRuntimeVersion": "{% $states.result.Payload.body.agentRuntimeVersion %}",
+                "createdAt": "{% $states.result.Payload.body.createdAt %}"
+            },
+            "Next": "Wait for Runtime Ready"
+        },
+        "Wait for Runtime Ready": {
+            "Type": "Wait",
+            "Seconds": 10,
+            "Next": "Check Runtime Creation Status"
+        },
+        "Check Runtime Creation Status": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Arguments": {
+                "FunctionName": "${checkOnRuntimeCreationFunc}",
+                "Payload": {
+                    "agentRuntimeId": "{% $agentRuntimeId %}",
+                    "agentRuntimeVersion": "{% $agentRuntimeVersion %}"
+                }
+            },
+            "Catch": [
+                {
+                    "ErrorEquals": [
+                        "States.ALL"
+                    ],
+                    "Next": "Set Status to Failed"
+                }
+            ],
+            "Assign": {
+                "runtimeCreationStatus": "{% $states.result.Payload.body.status %}"
+            },
+            "Next": "Runtime Ready?"
+        },
+        "Runtime Ready?": {
+            "Type": "Choice",
+            "Choices": [
+                {
+                    "Condition": "{% $runtimeCreationStatus = 'FAILED' %}",
+                    "Next": "Set Status to Failed"
+                },
+                {
+                    "Condition": "{% $runtimeCreationStatus = 'READY' %}",
+                    "Next": "Is New Runtime?"
+                }
+            ],
+            "Default": "Wait for Runtime Ready"
+        },
+        "Set Status to Failed": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::dynamodb:updateItem",
+            "Arguments": {
+                "TableName": "${summaryTableArn}",
+                "Key": {
+                    "AgentName": {
+                        "S": "{% $agentName %}"
+                    }
+                },
+                "UpdateExpression": "SET #status = :status",
+                "ExpressionAttributeNames": {
+                    "#status": "Status"
+                },
+                "ExpressionAttributeValues": {
+                    ":status": {
+                        "S": "Create Failed"
+                    }
+                }
+            },
+            "Next": "Notify Client"
+        },
+        "Is New Runtime?": {
+            "Type": "Choice",
+            "Choices": [
+                {
+                    "Condition": "{% $agentRuntimeVersion = '1' %}",
+                    "Next": "Set Status to Ready (New)"
+                }
+            ],
+            "Default": "Get Current Runtime Summary"
+        },
+        "Set Status to Ready (New)": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::dynamodb:updateItem",
+            "Arguments": {
+                "TableName": "${summaryTableArn}",
+                "Key": {
+                    "AgentName": {
+                        "S": "{% $agentName %}"
+                    }
+                },
+                "UpdateExpression": "SET #status = :status, #id = :id, #arn = :arn, #nb = :nb, #qtv = :qtv",
+                "ExpressionAttributeNames": {
+                    "#status": "Status",
+                    "#id": "AgentRuntimeId",
+                    "#arn": "AgentRuntimeArn",
+                    "#nb": "NumberOfVersions",
+                    "#qtv": "QualifierToVersion"
+                },
+                "ExpressionAttributeValues": {
+                    ":id": {
+                        "S": "{% $agentRuntimeId %}"
+                    },
+                    ":arn": {
+                        "S": "{% $agentRuntimeArn %}"
+                    },
+                    ":status": {
+                        "S": "Ready"
+                    },
+                    ":nb": {
+                        "N": "{% $agentRuntimeVersion %}"
+                    },
+                    ":qtv": {
+                        "M": {
+                            "DEFAULT": {
+                                "N": "1"
+                            }
+                        }
+                    }
+                }
+            },
+            "Next": "Save Configuration"
+        },
+        "Get Current Runtime Summary": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::dynamodb:getItem",
+            "Arguments": {
+                "TableName": "${summaryTableArn}",
+                "Key": {
+                    "AgentName": {
+                        "S": "{% $agentName %}"
+                    }
+                }
+            },
+            "Assign": {
+                "currentNumberOfVersions": "{% $number($states.result.Item.NumberOfVersions.N) %}"
+            },
+            "Next": "Set Status to Ready (Update)"
+        },
+        "Set Status to Ready (Update)": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::dynamodb:updateItem",
+            "Arguments": {
+                "TableName": "${summaryTableArn}",
+                "Key": {
+                    "AgentName": {
+                        "S": "{% $agentName %}"
+                    }
+                },
+                "UpdateExpression": "SET #status = :status, QualifierToVersion.#default = :version, #nb = :count",
+                "ExpressionAttributeNames": {
+                    "#status": "Status",
+                    "#default": "DEFAULT",
+                    "#nb": "NumberOfVersions"
+                },
+                "ExpressionAttributeValues": {
+                    ":version": {
+                        "S": "{% $agentRuntimeVersion %}"
+                    },
+                    ":count": {
+                        "N": "{% $string($currentNumberOfVersions + 1) %}"
+                    },
+                    ":status": {
+                        "S": "Ready"
+                    }
+                }
+            },
+            "Next": "Save Configuration"
+        },
+        "Save Configuration": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::dynamodb:putItem",
+            "Arguments": {
+                "TableName": "${agentVersionTableArn}",
+                "Item": {
+                    "AgentName": {
+                        "S": "{% $agentName %}"
+                    },
+                    "CreatedAt": {
+                        "N": "{% $string($createdAt) %}"
+                    },
+                    "AgentRuntimeArn": {
+                        "S": "{% $agentRuntimeArn %}"
+                    },
+                    "AgentRuntimeId": {
+                        "S": "{% $agentRuntimeId %}"
+                    },
+                    "AgentRuntimeVersion": {
+                        "S": "{% $agentRuntimeVersion %}"
+                    },
+                    "ConfigurationValue": {
+                        "S": "{% $string($agentCfg) %}"
+                    }
+                }
+            },
+            "Next": "Wait Before Notify"
+        },
+        "Wait Before Notify": {
+            "Type": "Wait",
+            "Seconds": 5,
+            "Next": "Notify Client"
+        },
+        "Notify Client": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Arguments": {
+                "FunctionName": "${notifyRuntimeUpdateFunctionArn}",
+                "Payload": {
+                    "agentName": "{% $agentName %}"
+                }
+            },
+            "End": true
+        }
+    }
+}

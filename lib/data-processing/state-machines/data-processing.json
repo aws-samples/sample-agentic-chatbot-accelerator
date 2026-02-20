@@ -1,0 +1,742 @@
+{
+    "QueryLanguage": "JSONata",
+    "Comment": "Agentic Chatbot Accelerator - data processing pipeline",
+    "StartAt": "Process Messages",
+    "States": {
+        "Process Messages": {
+            "Type": "Map",
+            "ItemProcessor": {
+                "StartAt": "Initialize Request",
+                "States": {
+                    "Initialize Request": {
+                        "Type": "Pass",
+                        "Assign": {
+                            "documentId": "{% $states.input.documentId %}",
+                            "documentType": "{% $states.input.documentType %}",
+                            "documentExtension": "{% $states.input.documentExtension %}",
+                            "objectName": "{% $states.input.objectName %}",
+                            "processedOn": "{% $states.input.processedOn %}",
+                            "s3RequestTimestamp": "{% $states.input.s3RequestTimestamp %}",
+                            "bucket": "{% $states.input.bucket %}",
+                            "key": "{% $states.input.key %}",
+                            "eTag": "{% $states.input.etag %}",
+                            "detailType": "{% $states.input.detailType %}",
+                            "prefixInput": "{% $states.input.prefixInput %}",
+                            "prefixProcessing": "{% $states.input.prefixProcessing %}",
+                            "prefixDataSource": "{% $states.input.prefixDataSource %}",
+                            "midfixStaging": "{% $states.input.midfixStaging %}",
+                            "midfixTranscribe": "{% $states.input.midfixTranscribe %}",
+                            "stackName": "{% $states.input.stackName %}",
+                            "transcribeJobPrefix": "{% $states.input.transcribeJobPrefix %}",
+                            "languageCode": "{% $states.input.languageCode %}",
+                            "executionId": "{% $states.context.Execution.Name %}"
+                        },
+                        "Next": "Check Request Timestamp"
+                    },
+                    "Check Request Timestamp": {
+                        "Type": "Task",
+                        "Resource": "arn:aws:states:::dynamodb:updateItem",
+                        "Arguments": {
+                            "TableName": "${tableDocumentProcessingState}",
+                            "Key": {
+                                "DocumentId": {
+                                    "S": "{% $documentId %}"
+                                }
+                            },
+                            "UpdateExpression": "SET S3RequestTimestamp = :s3RequestTimestampValue",
+                            "ExpressionAttributeValues": {
+                                ":s3RequestTimestampValue": {
+                                    "S": "{% $s3RequestTimestamp %}"
+                                }
+                            },
+                            "ConditionExpression": "(attribute_not_exists(S3RequestTimestamp) OR S3RequestTimestamp <= :s3RequestTimestampValue)"
+                        },
+                        "Catch": [
+                            {
+                                "ErrorEquals": [
+                                    "DynamoDB.ConditionalCheckFailedException"
+                                ],
+                                "Next": "Expired Request"
+                            }
+                        ],
+                        "Next": "Check Object Etag"
+                    },
+                    "Check Object Etag": {
+                        "Type": "Task",
+                        "Resource": "arn:aws:states:::dynamodb:updateItem",
+                        "Arguments": {
+                            "TableName": "${tableDocumentProcessingState}",
+                            "Key": {
+                                "DocumentId": {
+                                    "S": "{% $documentId %}"
+                                }
+                            },
+                            "UpdateExpression": "REMOVE NonExistingElement",
+                            "ExpressionAttributeValues": {
+                                ":eTagValue": {
+                                    "S": "{% $eTag %}"
+                                },
+                                ":detailTypeValue": {
+                                    "S": "{% $detailType %}"
+                                },
+                                ":objectCreatedValue": {
+                                    "S": "Object Created"
+                                }
+                            },
+                            "ConditionExpression": "(attribute_not_exists(DocumentId) OR ETag <> :eTagValue OR :detailTypeValue <> :objectCreatedValue)"
+                        },
+                        "Catch": [
+                            {
+                                "ErrorEquals": [
+                                    "DynamoDB.ConditionalCheckFailedException"
+                                ],
+                                "Next": "Expired Request"
+                            }
+                        ],
+                        "Next": "Lock Record"
+                    },
+                    "Lock Record": {
+                        "Type": "Task",
+                        "Resource": "arn:aws:states:::dynamodb:updateItem",
+                        "Arguments": {
+                            "TableName": "${tableDocumentProcessingState}",
+                            "Key": {
+                                "DocumentId": {
+                                    "S": "{% $documentId %}"
+                                }
+                            },
+                            "UpdateExpression": "SET ExecutionId = :executionIdValue, BucketName = :bucketNameValue, ObjectName = :objectNameValue, DocumentStatus = :documentStatusValue, ProcessingStartedOn = :processedOnValue, DocumentType = :documentTypeValue, Extension = :extensionValue, LockedBy = :executionIdValue, TextExtractionStatus= :textExtractionStatusValue, ETag= :eTagValue, RawInputPrefix = :rawPrefix, DataSourcePrefix = :dstPrefix",
+                            "ExpressionAttributeValues": {
+                                ":executionIdValue": {
+                                    "S": "{% $executionId %}"
+                                },
+                                ":bucketNameValue": {
+                                    "S": "{% $bucket %}"
+                                },
+                                ":objectNameValue": {
+                                    "S": "{% $objectName %}"
+                                },
+                                ":documentStatusValue": {
+                                    "S": "NOT_STARTED"
+                                },
+                                ":processedOnValue": {
+                                    "S": "{% $processedOn %}"
+                                },
+                                ":documentTypeValue": {
+                                    "S": "{% $documentType %}"
+                                },
+                                ":extensionValue": {
+                                    "S": "{% $documentExtension %}"
+                                },
+                                ":textExtractionStatusValue": {
+                                    "S": "UNDEFINED"
+                                },
+                                ":eTagValue": {
+                                    "S": "{% $eTag %}"
+                                },
+                                ":rawPrefix": {
+                                    "S": "{% $prefixInput %}"
+                                },
+                                ":dstPrefix": {
+                                    "S": "{% $prefixDataSource %}"
+                                }
+                            },
+                            "ConditionExpression": "(attribute_not_exists(LockedBy))"
+                        },
+                        "Catch": [
+                            {
+                                "ErrorEquals": [
+                                    "DynamoDB.ConditionalCheckFailedException"
+                                ],
+                                "Next": "Wait And Retry Lock"
+                            }
+                        ],
+                        "Next": "CleanUp"
+                    },
+                    "Expired Request": {
+                        "Type": "Succeed"
+                    },
+                    "Wait And Retry Lock": {
+                        "Type": "Wait",
+                        "Seconds": 30,
+                        "Next": "Check Request Timestamp"
+                    },
+                    "CleanUp": {
+                        "Type": "Parallel",
+                        "Branches": [
+                            {
+                                "Comment": "Processing Folder Cleanup",
+                                "StartAt": "CleanUp Processing - List Objects",
+                                "States": {
+                                    "CleanUp Processing - List Objects": {
+                                        "Type": "Task",
+                                        "Resource": "arn:aws:states:::aws-sdk:s3:listObjectsV2",
+                                        "Arguments": {
+                                            "Bucket": "{% $bucket %}",
+                                            "Prefix": "{% $join([$prefixProcessing, $documentId], '/') & '/' %}"
+                                        },
+                                        "Assign": {
+                                            "objectsToDeleteProcessing": "{% $exists($states.result.Contents) ? $states.result.Contents.{'Key': Key} : [] %}"
+                                        },
+                                        "Next": "CleanUp Processing - Delete Objects"
+                                    },
+                                    "CleanUp Processing - Delete Objects": {
+                                        "Type": "Task",
+                                        "Resource": "arn:aws:states:::aws-sdk:s3:deleteObjects",
+                                        "Arguments": {
+                                            "Bucket": "{% $bucket %}",
+                                            "Delete": {
+                                                "Objects": "{% $type($objectsToDeleteProcessing)='array' ? $objectsToDeleteProcessing : [$objectsToDeleteProcessing] %}"
+                                            }
+                                        },
+                                        "Catch": [
+                                            {
+                                                "ErrorEquals": [
+                                                    "States.ALL"
+                                                ],
+                                                "Next": "CleanUp Processing - Error"
+                                            }
+                                        ],
+                                        "End": true
+                                    },
+                                    "CleanUp Processing - Error": {
+                                        "Type": "Pass",
+                                        "End": true
+                                    }
+                                }
+                            },
+                            {
+                                "Comment": "DataSource Cleanup",
+                                "StartAt": "CleanUp DataSource - List Objects",
+                                "States": {
+                                    "CleanUp DataSource - List Objects": {
+                                        "Type": "Task",
+                                        "Resource": "arn:aws:states:::aws-sdk:s3:listObjectsV2",
+                                        "Arguments": {
+                                            "Bucket": "{% $bucket %}",
+                                            "Prefix": "{% $join([$prefixDataSource, $documentId], '/') & '.' %}"
+                                        },
+                                        "Assign": {
+                                            "objectsToDeleteDataSource": "{% $exists($states.result.Contents) ? $states.result.Contents.{'Key': Key} : [] %}"
+                                        },
+                                        "Next": "CleanUp DataSource - Delete Objects"
+                                    },
+                                    "CleanUp DataSource - Delete Objects": {
+                                        "Type": "Task",
+                                        "Resource": "arn:aws:states:::aws-sdk:s3:deleteObjects",
+                                        "Arguments": {
+                                            "Bucket": "{% $bucket %}",
+                                            "Delete": {
+                                                "Objects": "{% $type($objectsToDeleteDataSource)='array' ? $objectsToDeleteDataSource : [$objectsToDeleteDataSource] %}"
+                                            }
+                                        },
+                                        "Catch": [
+                                            {
+                                                "ErrorEquals": [
+                                                    "States.ALL"
+                                                ],
+                                                "Next": "CleanUp DataSource - Error"
+                                            }
+                                        ],
+                                        "End": true
+                                    },
+                                    "CleanUp DataSource - Error": {
+                                        "Type": "Pass",
+                                        "End": true
+                                    }
+                                }
+                            }
+                        ],
+                        "Assign": {
+                            "keyStaging": "{% $join([$prefixProcessing, $documentId, $midfixStaging, $documentId], '/') & $documentExtension %}"
+                        },
+                        "Next": "Copy To Staging"
+                    },
+                    "Copy To Staging": {
+                        "Type": "Task",
+                        "Resource": "arn:aws:states:::aws-sdk:s3:copyObject",
+                        "Arguments": {
+                            "Bucket": "{% $bucket %}",
+                            "CopySource": "{% $join([$bucket, $key], '/') %}",
+                            "Key": "{% $keyStaging %}"
+                        },
+                        "Catch": [
+                            {
+                                "ErrorEquals": [
+                                    "NoSuchKey",
+                                    "S3.NoSuchKey",
+                                    "S3.NoSuchKeyException"
+                                ],
+                                "Next": "Delete Record",
+                                "Comment": "NoSuchKey"
+                            }
+                        ],
+                        "Next": "Get Metadata"
+                    },
+                    "Get Metadata": {
+                        "Type": "Task",
+                        "Resource": "arn:aws:states:::dynamodb:getItem",
+                        "Arguments": {
+                            "TableName": "${tableDocumentProcessingState}",
+                            "Key": {
+                                "DocumentId": {
+                                    "S": "{% $documentId %}"
+                                }
+                            }
+                        },
+                        "Assign": {
+                            "documentMetadata": "{% $states.result.Item %}"
+                        },
+                        "Next": "Update Status - Extracting"
+                    },
+                    "Update Status - Extracting": {
+                        "Type": "Task",
+                        "Resource": "arn:aws:states:::dynamodb:updateItem",
+                        "Arguments": {
+                            "TableName": "${tableDocumentProcessingState}",
+                            "Key": {
+                                "DocumentId": {
+                                    "S": "{% $documentId %}"
+                                }
+                            },
+                            "UpdateExpression": "SET DocumentStatus = :newDocStatus",
+                            "ExpressionAttributeValues": {
+                                ":newDocStatus": {
+                                    "S": "IN_PROGRESS"
+                                }
+                            }
+                        },
+                        "Next": "Document Type?"
+                    },
+                    "Document Type?": {
+                        "Type": "Choice",
+                        "Choices": [
+                            {
+                                "Condition": "{% $documentType = 'VIDEO' %}",
+                                "Comment": "VIDEO",
+                                "Next": "Transcribe"
+                            },
+                            {
+                                "Condition": "{% $documentType = 'JSON' %}",
+                                "Comment": "JSON",
+                                "Next": "JSON"
+                            },
+                            {
+                                "Condition": "{% $documentType = 'PDF' %}",
+                                "Comment": "PDF",
+                                "Next": "Update Text Extraction Status"
+                            },
+                            {
+                                "Condition": "{% $documentType = 'TEXT' %}",
+                                "Comment": "TEXT",
+                                "Next": "Update Text Extraction Status"
+                            },
+                            {
+                                "Condition": "{% $documentType = 'HTML' %}",
+                                "Comment": "HTML",
+                                "Next": "Update Text Extraction Status"
+                            },
+                            {
+                                "Condition": "{% $documentType = 'CSV' %}",
+                                "Comment": "CSV",
+                                "Next": "Update Text Extraction Status"
+                            },
+                            {
+                                "Condition": "{% $documentType = 'MARKDOWN' %}",
+                                "Comment": "MARKDOWN",
+                                "Next": "Update Text Extraction Status"
+                            },
+                            {
+                                "Condition": "{% $documentType = 'KB_OFFICE' %}",
+                                "Comment": "KB_OFFICE",
+                                "Next": "Update Text Extraction Status"
+                            }
+                        ],
+                        "Default": "Update Status - Extension not supported"
+                    },
+                    "JSON": {
+                        "Type": "Parallel",
+                        "Branches": [
+                            {
+                                "Comment": "JSON Text  Extraction",
+                                "StartAt": "JSON - Init",
+                                "States": {
+                                    "JSON - Init": {
+                                        "Type": "Pass",
+                                        "Assign": {
+                                            "keyPreKb": "{% $join([$prefixProcessing, $documentId, $documentId], '/') & '.txt' %}"
+                                        },
+                                        "Next": "JSON - Update Text Extraction Status - START"
+                                    },
+                                    "JSON - Update Text Extraction Status - START": {
+                                        "Type": "Task",
+                                        "Resource": "arn:aws:states:::dynamodb:updateItem",
+                                        "Arguments": {
+                                            "TableName": "${tableDocumentProcessingState}",
+                                            "Key": {
+                                                "DocumentId": {
+                                                    "S": "{% $documentId %}"
+                                                }
+                                            },
+                                            "UpdateExpression": "SET TextExtractionStatus = :newDocStatus",
+                                            "ExpressionAttributeValues": {
+                                                ":newDocStatus": {
+                                                    "S": "START"
+                                                }
+                                            }
+                                        },
+                                        "Next": "JSON - Read"
+                                    },
+                                    "JSON - Read": {
+                                        "Type": "Task",
+                                        "Resource": "arn:aws:states:::lambda:invoke",
+                                        "Arguments": {
+                                            "FunctionName": "${lambdaReadJson}",
+                                            "Payload": {
+                                                "bucket": "{% $bucket %}",
+                                                "keyIn": "{% $keyStaging %}",
+                                                "keyOut": "{% $keyPreKb %}"
+                                            }
+                                        },
+                                        "Retry": [
+                                            {
+                                                "ErrorEquals": [
+                                                    "Lambda.ServiceException",
+                                                    "Lambda.AWSLambdaException",
+                                                    "Lambda.SdkClientException",
+                                                    "Lambda.TooManyRequestsException"
+                                                ],
+                                                "IntervalSeconds": 1,
+                                                "MaxAttempts": 3,
+                                                "BackoffRate": 2
+                                            }
+                                        ],
+                                        "Assign": {
+                                            "metadata": "{% $states.result.Payload.body.metadata %}"
+                                        },
+                                        "Next": "JSON - Update Text Extraction Status - COMPLETED"
+                                    },
+                                    "JSON - Update Text Extraction Status - COMPLETED": {
+                                        "Type": "Task",
+                                        "Resource": "arn:aws:states:::dynamodb:updateItem",
+                                        "Arguments": {
+                                            "TableName": "${tableDocumentProcessingState}",
+                                            "Key": {
+                                                "DocumentId": {
+                                                    "S": "{% $documentId %}"
+                                                }
+                                            },
+                                            "UpdateExpression": "SET TextExtractionStatus = :newDocStatus, Metadata = :metadata",
+                                            "ExpressionAttributeValues": {
+                                                ":newDocStatus": {
+                                                    "S": "COMPLETED"
+                                                },
+                                                ":metadata": {
+                                                    "M": "{% $reduce($keys($metadata), function($acc, $k) { $merge([$acc, {$k: $type($lookup($metadata, $k))='number' ? {'N': $string($lookup($metadata, $k))} : {'S': $string($lookup($metadata, $k))}}]) }, {}) %}"
+                                                }
+                                            }
+                                        },
+                                        "End": true
+                                    }
+                                }
+                            }
+                        ],
+                        "Next": "Copy to KB",
+                        "Assign": {
+                            "keyPreKb": "{% $join([$prefixProcessing, $documentId, $documentId], '/') & '.txt' %}",
+                            "keyKb": "{% $join([$prefixDataSource, $documentId], '/') & '.txt' %}",
+                            "metadataExtension": ".txt"
+                        }
+                    },
+                    "Transcribe": {
+                        "Type": "Parallel",
+                        "Branches": [
+                            {
+                                "Comment": "Transcribe Text  Extraction",
+                                "StartAt": "Transcribe - Init",
+                                "States": {
+                                    "Transcribe - Init": {
+                                        "Type": "Pass",
+                                        "Assign": {
+                                            "keyTranscribeResult": "{% $join([$prefixProcessing, $documentId, $midfixTranscribe, $documentId], '/') & '.json' %}",
+                                            "keyPreKb": "{% $join([$prefixProcessing, $documentId, $documentId], '/') & '.txt' %}",
+                                            "keyKb": "{% $join([$prefixDataSource, $documentId], '/') & '.txt' %}"
+                                        },
+                                        "Next": "Transcribe - Start Job"
+                                    },
+                                    "Transcribe - Start Job": {
+                                        "Type": "Task",
+                                        "Resource": "arn:aws:states:::aws-sdk:transcribe:startTranscriptionJob",
+                                        "Arguments": {
+                                            "TranscriptionJobName": "{% $join([$transcribeJobPrefix, $documentId, $executionId], '_') %}",
+                                            "Media": {
+                                                "MediaFileUri": "{% 's3://' & $join([$bucket, $keyStaging], '/') %}"
+                                            },
+                                            "OutputBucketName": "{% $bucket %}",
+                                            "OutputKey": "{% $keyTranscribeResult %}",
+                                            "Tags": [
+                                                {
+                                                    "Key": "origin",
+                                                    "Value": "{% $stackName %}"
+                                                },
+                                                {
+                                                    "Key": "documentId",
+                                                    "Value": "{% $documentId %}"
+                                                }
+                                            ],
+                                            "IdentifyLanguage": "{% $languageCode = 'auto' %}",
+                                            "LanguageCode": "{% $languageCode != 'auto' ? $languageCode : null %}"
+                                        },
+                                        "Assign": {
+                                            "transcriptionJobName": "{% $states.result.TranscriptionJob.TranscriptionJobName %}"
+                                        },
+                                        "Retry": [
+                                            {
+                                                "ErrorEquals": [
+                                                    "ThrottlingException"
+                                                ],
+                                                "IntervalSeconds": 2,
+                                                "MaxAttempts": 5,
+                                                "BackoffRate": 2
+                                            }
+                                        ],
+                                        "Next": "Transcribe - Check Job Status"
+                                    },
+                                    "Transcribe - Check Job Status": {
+                                        "Type": "Task",
+                                        "Resource": "arn:aws:states:::aws-sdk:transcribe:getTranscriptionJob",
+                                        "Arguments": {
+                                            "TranscriptionJobName": "{% $transcriptionJobName %}"
+                                        },
+                                        "Assign": {
+                                            "transcriptionJobStatus": "{% $states.result.TranscriptionJob.TranscriptionJobStatus %}"
+                                        },
+                                        "Next": "Transcribe - Update  Job Status"
+                                    },
+                                    "Transcribe - Update  Job Status": {
+                                        "Type": "Task",
+                                        "Resource": "arn:aws:states:::dynamodb:updateItem",
+                                        "Arguments": {
+                                            "TableName": "${tableDocumentProcessingState}",
+                                            "Key": {
+                                                "DocumentId": {
+                                                    "S": "{% $documentId %}"
+                                                }
+                                            },
+                                            "UpdateExpression": "SET TextExtractionStatus = :textExtractionStatusValue",
+                                            "ExpressionAttributeValues": {
+                                                ":textExtractionStatusValue": {
+                                                    "S": "{% $transcriptionJobStatus %}"
+                                                }
+                                            }
+                                        },
+                                        "Next": "Transcribe - Transcription Complete?"
+                                    },
+                                    "Transcribe - Transcription Complete?": {
+                                        "Type": "Choice",
+                                        "Choices": [
+                                            {
+                                                "Condition": "{% $transcriptionJobStatus = 'COMPLETED' %}",
+                                                "Next": "Transcribe - Read Result",
+                                                "Comment": "COMPLETED"
+                                            },
+                                            {
+                                                "Condition": "{% $transcriptionJobStatus = 'FAILED' %}",
+                                                "Next": "Transcribe - Fail",
+                                                "Comment": "FAILED"
+                                            }
+                                        ],
+                                        "Default": "Transcribe - Wait"
+                                    },
+                                    "Transcribe - Fail": {
+                                        "Type": "Fail",
+                                        "Error": "TranscriptionJobFailed"
+                                    },
+                                    "Transcribe - Read Result": {
+                                        "Type": "Task",
+                                        "Resource": "arn:aws:states:::lambda:invoke",
+                                        "Arguments": {
+                                            "FunctionName": "${lambdaReadTranscribe}",
+                                            "Payload": {
+                                                "bucket": "{% $bucket %}",
+                                                "keyIn": "{% $keyTranscribeResult %}",
+                                                "keyOut": "{% $keyPreKb %}"
+                                            }
+                                        },
+                                        "Retry": [
+                                            {
+                                                "ErrorEquals": [
+                                                    "Lambda.ServiceException",
+                                                    "Lambda.AWSLambdaException",
+                                                    "Lambda.SdkClientException",
+                                                    "Lambda.TooManyRequestsException"
+                                                ],
+                                                "IntervalSeconds": 1,
+                                                "MaxAttempts": 3,
+                                                "BackoffRate": 2
+                                            }
+                                        ],
+                                        "End": true
+                                    },
+                                    "Transcribe - Wait": {
+                                        "Type": "Wait",
+                                        "Seconds": 30,
+                                        "Next": "Transcribe - Check Job Status"
+                                    }
+                                }
+                            }
+                        ],
+                        "Next": "Copy to KB",
+                        "Assign": {
+                            "keyPreKb": "{% $join([$prefixProcessing, $documentId, $documentId], '/') & '.txt' %}",
+                            "keyKb": "{% $join([$prefixDataSource, $documentId], '/') & '.txt' %}",
+                            "metadataExtension": ".txt"
+                        }
+                    },
+                    "Update Status - Extension not supported": {
+                        "Type": "Task",
+                        "Resource": "arn:aws:states:::dynamodb:updateItem",
+                        "Arguments": {
+                            "TableName": "${tableDocumentProcessingState}",
+                            "Key": {
+                                "DocumentId": {
+                                    "S": "{% $documentId %}"
+                                }
+                            },
+                            "UpdateExpression": "SET DocumentStatus = :newDocStatus",
+                            "ExpressionAttributeValues": {
+                                ":newDocStatus": {
+                                    "S": "FILE_EXTENSION_NOT_SUPPORTED"
+                                }
+                            }
+                        },
+                        "Next": "Unlock Record"
+                    },
+                    "Copy to KB": {
+                        "Type": "Task",
+                        "Resource": "arn:aws:states:::aws-sdk:s3:copyObject",
+                        "Arguments": {
+                            "CopySource": "{% $join([$bucket, $keyPreKb], '/') %}",
+                            "Bucket": "{% $bucket %}",
+                            "Key": "{% $keyKb %}"
+                        },
+                        "Next": "Create Metadata File",
+                        "Retry": [
+                            {
+                                "ErrorEquals": [
+                                    "States.ALL"
+                                ],
+                                "BackoffRate": 2,
+                                "IntervalSeconds": 1,
+                                "JitterStrategy": "FULL",
+                                "MaxAttempts": 100
+                            }
+                        ]
+                    },
+                    "Update Text Extraction Status": {
+                        "Type": "Task",
+                        "Resource": "arn:aws:states:::dynamodb:updateItem",
+                        "Arguments": {
+                            "TableName": "${tableDocumentProcessingState}",
+                            "Key": {
+                                "DocumentId": {
+                                    "S": "{% $documentId %}"
+                                }
+                            },
+                            "UpdateExpression": "SET TextExtractionStatus = :newDocStatus",
+                            "ExpressionAttributeValues": {
+                                ":newDocStatus": {
+                                    "S": "NOT_REQUIRED"
+                                }
+                            }
+                        },
+                        "Assign": {
+                            "keyPreKb": "{% $keyStaging %}",
+                            "keyKb": "{% $join([$prefixDataSource, $documentId], '/') & $documentExtension %}",
+                            "metadataExtension": "{% $documentExtension %}"
+                        },
+                        "Next": "Copy to KB"
+                    },
+                    "Create Metadata File": {
+                        "Type": "Task",
+                        "Resource": "arn:aws:states:::lambda:invoke",
+                        "Arguments": {
+                            "FunctionName": "${lambdaCreateMetadataFile}",
+                            "Payload": {
+                                "bucket": "{% $bucket %}",
+                                "key": "{% $key %}",
+                                "documentId": "{% $documentId %}",
+                                "extension": "{% $metadataExtension %}",
+                                "prefixDataSource": "{% $prefixDataSource %}"
+                            }
+                        },
+                        "Retry": [
+                            {
+                                "ErrorEquals": [
+                                    "Lambda.ServiceException",
+                                    "Lambda.AWSLambdaException",
+                                    "Lambda.SdkClientException",
+                                    "Lambda.TooManyRequestsException"
+                                ],
+                                "IntervalSeconds": 1,
+                                "MaxAttempts": 3,
+                                "BackoffRate": 2
+                            }
+                        ],
+                        "Next": "Update Status: Succeeded"
+                    },
+                    "Update Status: Succeeded": {
+                        "Type": "Task",
+                        "Resource": "arn:aws:states:::dynamodb:updateItem",
+                        "Arguments": {
+                            "TableName": "${tableDocumentProcessingState}",
+                            "Key": {
+                                "DocumentId": {
+                                    "S": "{% $documentId %}"
+                                }
+                            },
+                            "UpdateExpression": "SET DocumentStatus = :newDocStatus",
+                            "ExpressionAttributeValues": {
+                                ":newDocStatus": {
+                                    "S": "SUCCEEDED"
+                                }
+                            }
+                        },
+                        "Next": "Unlock Record"
+                    },
+                    "Unlock Record": {
+                        "Type": "Task",
+                        "Resource": "arn:aws:states:::dynamodb:updateItem",
+                        "Arguments": {
+                            "TableName": "${tableDocumentProcessingState}",
+                            "Key": {
+                                "DocumentId": {
+                                    "S": "{% $documentId %}"
+                                }
+                            },
+                            "UpdateExpression": "REMOVE LockedBy"
+                        },
+                        "Next": "Success"
+                    },
+                    "Delete Record": {
+                        "Type": "Task",
+                        "Resource": "arn:aws:states:::dynamodb:deleteItem",
+                        "Arguments": {
+                            "TableName": "${tableDocumentProcessingState}",
+                            "Key": {
+                                "DocumentId": {
+                                    "S": "{% $documentId %}"
+                                }
+                            }
+                        },
+                        "Next": "Success"
+                    },
+                    "Success": {
+                        "Type": "Succeed"
+                    }
+                }
+            },
+            "End": true
+        }
+    }
+}
