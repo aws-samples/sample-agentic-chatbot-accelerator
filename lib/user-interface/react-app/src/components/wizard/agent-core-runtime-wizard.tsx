@@ -11,6 +11,7 @@ import {
     Box,
     Button,
     Checkbox,
+    ColumnLayout,
     Container,
     FormField,
     Header,
@@ -18,6 +19,7 @@ import {
     Input,
     Modal,
     Popover,
+    RadioGroup,
     Select,
     SpaceBetween,
     Table,
@@ -34,7 +36,12 @@ import {
     listKnowledgeBases as listKnowledgeBasesQuery,
     listRuntimeAgents as listRuntimeAgentsQuery,
 } from "../../graphql/queries";
-import { AgentCoreRuntimeConfiguration, SearchType } from "./types";
+import {
+    AgentCoreRuntimeConfiguration,
+    ArchitectureType,
+    SearchType,
+    SwarmConfiguration,
+} from "./types";
 
 // Set of dangerous keys that could lead to prototype pollution
 const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
@@ -118,6 +125,22 @@ export default function AgentCoreRuntimeCreatorWizard({
     const [availableEndpoints, setAvailableEndpoints] = useState<string[]>([]);
     const [enableSearchType, setEnableSearchType] = useState<{ [key: string]: boolean }>({});
     const [enableReranking, setEnableReranking] = useState<{ [key: string]: boolean }>({});
+    const [architectureType, setArchitectureType] = useState<ArchitectureType>(
+        initialData?.architectureType || "SINGLE",
+    );
+    const [swarmConfig, setSwarmConfig] = useState<SwarmConfiguration>({
+        agents: [],
+        agentReferences: [],
+        entryAgent: "",
+        orchestrator: {
+            maxHandoffs: 15,
+            maxIterations: 50,
+            executionTimeoutSeconds: 300,
+            nodeTimeoutSeconds: 60,
+        },
+        conversationManager: "sliding_window",
+    });
+
 
     // Initialize enableReranking and enableSearchType from initialData on mount
     useEffect(() => {
@@ -434,21 +457,71 @@ export default function AgentCoreRuntimeCreatorWizard({
         setSelectedToolForConfig(null);
     };
 
+    const addAgentReference = (agentName: string) => {
+        if (swarmConfig.agentReferences.some((r) => r.agentName === agentName)) return;
+        setSwarmConfig((prev) => ({
+            ...prev,
+            agentReferences: [...prev.agentReferences, { agentName, endpointName: "DEFAULT" }],
+        }));
+    };
+
+    const removeAgentReference = (index: number) => {
+        setSwarmConfig((prev) => {
+            const removedName = prev.agentReferences[index].agentName;
+            return {
+                ...prev,
+                agentReferences: prev.agentReferences.filter((_, i) => i !== index),
+                entryAgent: prev.entryAgent === removedName ? "" : prev.entryAgent,
+            };
+        });
+    };
+
+    const updateAgentReferenceEndpoint = (index: number, endpointName: string) => {
+        setSwarmConfig((prev) => {
+            const newRefs = [...prev.agentReferences];
+            newRefs[index] = { ...newRefs[index], endpointName };
+            return { ...prev, agentReferences: newRefs };
+        });
+    };
+
+    const getSwarmAgentNames = (): string[] => {
+        return swarmConfig.agentReferences.map((r) => r.agentName);
+    };
+
     const isStepValid = (stepIndex: number) => {
-        if (stepIndex === 0) {
-            const agentNamePattern = /^[a-zA-Z][a-zA-Z0-9_]{0,47}$/;
-            return (
-                config.instructions.trim() !== "" &&
-                config.agentName.trim() !== "" &&
-                agentNamePattern.test(config.agentName)
-            );
-        }
-        if (stepIndex === 3) {
-            return !config.tools.some((tool) => {
+        // Step 0 is always Architecture Type - always valid
+        if (stepIndex === 0) return true;
+
+        if (architectureType === "SINGLE") {
+            // Step 1 = Basic Config
+            if (stepIndex === 1) {
+                const agentNamePattern = /^[a-zA-Z][a-zA-Z0-9_]{0,47}$/;
                 return (
-                    tool.startsWith("invoke_subagent_") && !config.toolParameters[tool]?.agentName
+                    config.instructions.trim() !== "" &&
+                    config.agentName.trim() !== "" &&
+                    agentNamePattern.test(config.agentName)
                 );
-            });
+            }
+            // Step 4 = Tools Config (index shifts by 1 due to architecture step)
+            if (stepIndex === 4) {
+                return !config.tools.some((tool) => {
+                    return (
+                        tool.startsWith("invoke_subagent_") &&
+                        !config.toolParameters[tool]?.agentName
+                    );
+                });
+            }
+        } else {
+            // SWARM: Step 1 = Swarm Configuration (agent name + agents + entry agent)
+            if (stepIndex === 1) {
+                const agentNamePattern = /^[a-zA-Z][a-zA-Z0-9_]{0,47}$/;
+                const hasAgentName =
+                    config.agentName.trim() !== "" &&
+                    agentNamePattern.test(config.agentName);
+                const hasAgents = swarmConfig.agentReferences.length > 0;
+                const hasEntryAgent = swarmConfig.entryAgent.trim() !== "";
+                return hasAgentName && hasAgents && hasEntryAgent;
+            }
         }
         return true;
     };
@@ -547,7 +620,45 @@ export default function AgentCoreRuntimeCreatorWizard({
 
     const steps = [
         {
-            title: "Basic Configuration",
+            title: "Architecture Type",
+            content: (
+                <div style={{ minHeight: stepMinHeight }}>
+                    <Container header={<Header variant="h2">Select Architecture Type</Header>}>
+                        <SpaceBetween direction="vertical" size="l">
+                            <FormField
+                                label="Architecture"
+                                description="Choose the agent architecture for this runtime"
+                            >
+                                <RadioGroup
+                                    value={architectureType}
+                                    onChange={({ detail }) =>
+                                        setArchitectureType(detail.value as ArchitectureType)
+                                    }
+                                    items={[
+                                        {
+                                            value: "SINGLE",
+                                            label: "Single Agent / Agents as Tools",
+                                            description:
+                                                "A single agent with tools, knowledge bases, MCP servers, and optional sub-agents invoked as tools",
+                                        },
+                                        {
+                                            value: "SWARM",
+                                            label: "Swarm",
+                                            description:
+                                                "Multiple specialized agents that collaborate via handoffs",
+                                        },
+                                    ]}
+                                />
+                            </FormField>
+                        </SpaceBetween>
+                    </Container>
+                </div>
+            ),
+        },
+        ...(architectureType === "SINGLE"
+            ? [
+                  {
+                      title: "Basic Configuration",
             content: (
                 <div style={{ minHeight: stepMinHeight }}>
                     <Container header={<Header variant="h2">Agent Instructions</Header>}>
@@ -1002,8 +1113,10 @@ export default function AgentCoreRuntimeCreatorWizard({
                 </div>
             ),
         },
-        // Only include Knowledge Bases step if knowledge base is supported
-        ...(knowledgeBaseIsSupported
+              ]
+            : []),
+        // Only include Knowledge Bases step if knowledge base is supported and architecture is SINGLE
+        ...(knowledgeBaseIsSupported && architectureType === "SINGLE"
             ? [
                   {
                       title: "Knowledge Bases",
@@ -1122,27 +1235,338 @@ export default function AgentCoreRuntimeCreatorWizard({
                   },
               ]
             : []),
-        {
-            title: "Review",
-            content: (
-                <div style={{ minHeight: stepMinHeight }}>
-                    <Container header={<Header variant="h2">Review Configuration</Header>}>
-                        <SpaceBetween direction="vertical" size="m">
-                            {!isCreating && (
-                                <Alert type="info" header="Configuration Summary">
-                                    Review your agent configuration before creating.
-                                </Alert>
-                            )}
-                            <Box padding="m" variant="code">
-                                <pre style={{ margin: 0, overflow: "auto" }}>
-                                    {JSON.stringify(config, null, 2)}
-                                </pre>
-                            </Box>
-                        </SpaceBetween>
-                    </Container>
-                </div>
-            ),
-        },
+        ...(architectureType === "SINGLE"
+            ? [
+                  {
+                      title: "Review",
+                      content: (
+                          <div style={{ minHeight: stepMinHeight }}>
+                              <Container
+                                  header={<Header variant="h2">Review Configuration</Header>}
+                              >
+                                  <SpaceBetween direction="vertical" size="m">
+                                      {!isCreating && (
+                                          <Alert type="info" header="Configuration Summary">
+                                              Review your agent configuration before creating.
+                                          </Alert>
+                                      )}
+                                      <Box padding="m" variant="code">
+                                          <pre style={{ margin: 0, overflow: "auto" }}>
+                                              {JSON.stringify(config, null, 2)}
+                                          </pre>
+                                      </Box>
+                                  </SpaceBetween>
+                              </Container>
+                          </div>
+                      ),
+                  },
+              ]
+            : [
+                  {
+                      title: "Swarm Configuration",
+                      content: (
+                          <div style={{ minHeight: stepMinHeight }}>
+                              <SpaceBetween direction="vertical" size="l">
+                                  <Container header={<Header variant="h2">Agent Name</Header>}>
+                                      <FormField
+                                          label="Agent Name"
+                                          description="Enter a unique name for your swarm agent"
+                                          errorText={
+                                              config.agentName.trim() === ""
+                                                  ? "Agent name is required"
+                                                  : !/^[a-zA-Z][a-zA-Z0-9_]{0,47}$/.test(
+                                                          config.agentName,
+                                                      )
+                                                    ? "Agent name must start with a letter and contain only letters, numbers, and underscores (max 48 characters)"
+                                                    : ""
+                                          }
+                                      >
+                                          <Input
+                                              value={config.agentName}
+                                              onChange={({ detail }) =>
+                                                  setConfig((prev) => ({
+                                                      ...prev,
+                                                      agentName: detail.value,
+                                                  }))
+                                              }
+                                              placeholder="Enter agent name..."
+                                              invalid={config.agentName.trim() === ""}
+                                          />
+                                      </FormField>
+                                  </Container>
+
+                                  <Container header={<Header variant="h2">Agent Source</Header>}>
+                                      <SpaceBetween direction="vertical" size="l">
+                                              <SpaceBetween direction="vertical" size="m">
+                                                  <FormField label="Select Agent">
+                                                      <Select
+                                                          placeholder="Select an existing agent to reference"
+                                                          options={availableAgents
+                                                              .filter(
+                                                                  (a) =>
+                                                                      !swarmConfig.agentReferences.some(
+                                                                          (r) =>
+                                                                              r.agentName ===
+                                                                              a.agentName,
+                                                                      ),
+                                                              )
+                                                              .map((a) => ({
+                                                                  label: a.agentName,
+                                                                  value: a.agentName,
+                                                              }))}
+                                                          onChange={({ detail }) => {
+                                                              if (detail.selectedOption?.value) {
+                                                                  addAgentReference(
+                                                                      detail.selectedOption.value,
+                                                                  );
+                                                              }
+                                                          }}
+                                                          selectedOption={null}
+                                                      />
+                                                  </FormField>
+                                                  {swarmConfig.agentReferences.length === 0 ? (
+                                                      <Alert type="info">
+                                                          No agent references added yet.
+                                                      </Alert>
+                                                  ) : (
+                                                      <Table
+                                                          items={swarmConfig.agentReferences}
+                                                          columnDefinitions={[
+                                                              {
+                                                                  id: "agentName",
+                                                                  header: "Agent Name",
+                                                                  cell: (item) => item.agentName,
+                                                                  isRowHeader: true,
+                                                              },
+                                                              {
+                                                                  id: "endpointName",
+                                                                  header: "Endpoint",
+                                                                  cell: (item) => {
+                                                                      const idx = swarmConfig.agentReferences.indexOf(item);
+                                                                      return (
+                                                                          <Input
+                                                                              value={
+                                                                                  item.endpointName
+                                                                              }
+                                                                              onChange={({
+                                                                                  detail,
+                                                                              }) =>
+                                                                                  updateAgentReferenceEndpoint(
+                                                                                      idx,
+                                                                                      detail.value,
+                                                                                  )
+                                                                              }
+                                                                              placeholder="DEFAULT"
+                                                                          />
+                                                                      );
+                                                                  },
+                                                              },
+                                                              {
+                                                                  id: "actions",
+                                                                  header: "Actions",
+                                                                  cell: (item) => {
+                                                                      const idx = swarmConfig.agentReferences.indexOf(item);
+                                                                      return (
+                                                                          <Button
+                                                                              variant="icon"
+                                                                              iconName="close"
+                                                                              onClick={() =>
+                                                                                  removeAgentReference(idx)
+                                                                              }
+                                                                          />
+                                                                      );
+                                                                  },
+                                                              },
+                                                          ]}
+                                                      />
+                                                  )}
+                                              </SpaceBetween>
+                                      </SpaceBetween>
+                                  </Container>
+
+                                  <Container
+                                      header={<Header variant="h2">Entry Agent</Header>}
+                                  >
+                                      <FormField
+                                          label="Entry Agent"
+                                          description="The agent that receives the initial user message"
+                                      >
+                                          <Select
+                                              placeholder="Select entry agent"
+                                              options={getSwarmAgentNames().map((name) => ({
+                                                  label: name,
+                                                  value: name,
+                                              }))}
+                                              selectedOption={
+                                                  swarmConfig.entryAgent
+                                                      ? {
+                                                            label: swarmConfig.entryAgent,
+                                                            value: swarmConfig.entryAgent,
+                                                        }
+                                                      : null
+                                              }
+                                              onChange={({ detail }) =>
+                                                  setSwarmConfig((prev) => ({
+                                                      ...prev,
+                                                      entryAgent:
+                                                          detail.selectedOption?.value || "",
+                                                  }))
+                                              }
+                                              disabled={getSwarmAgentNames().length === 0}
+                                          />
+                                      </FormField>
+                                  </Container>
+
+                                  <Container
+                                      header={
+                                          <Header variant="h2">Orchestrator Settings</Header>
+                                      }
+                                  >
+                                      <ColumnLayout columns={2} variant="text-grid">
+                                          <FormField
+                                              label="Max Handoffs"
+                                              description="Maximum agent-to-agent handoffs"
+                                          >
+                                              <Input
+                                                  type="number"
+                                                  value={swarmConfig.orchestrator.maxHandoffs.toString()}
+                                                  onChange={({ detail }) =>
+                                                      setSwarmConfig((prev) => ({
+                                                          ...prev,
+                                                          orchestrator: {
+                                                              ...prev.orchestrator,
+                                                              maxHandoffs:
+                                                                  parseInt(detail.value) || 15,
+                                                          },
+                                                      }))
+                                                  }
+                                              />
+                                          </FormField>
+                                          <FormField
+                                              label="Max Iterations"
+                                              description="Maximum total iterations"
+                                          >
+                                              <Input
+                                                  type="number"
+                                                  value={swarmConfig.orchestrator.maxIterations.toString()}
+                                                  onChange={({ detail }) =>
+                                                      setSwarmConfig((prev) => ({
+                                                          ...prev,
+                                                          orchestrator: {
+                                                              ...prev.orchestrator,
+                                                              maxIterations:
+                                                                  parseInt(detail.value) || 50,
+                                                          },
+                                                      }))
+                                                  }
+                                              />
+                                          </FormField>
+                                          <FormField
+                                              label="Execution Timeout (s)"
+                                              description="Total execution timeout in seconds"
+                                          >
+                                              <Input
+                                                  type="number"
+                                                  value={swarmConfig.orchestrator.executionTimeoutSeconds.toString()}
+                                                  onChange={({ detail }) =>
+                                                      setSwarmConfig((prev) => ({
+                                                          ...prev,
+                                                          orchestrator: {
+                                                              ...prev.orchestrator,
+                                                              executionTimeoutSeconds:
+                                                                  parseFloat(detail.value) || 300,
+                                                          },
+                                                      }))
+                                                  }
+                                              />
+                                          </FormField>
+                                          <FormField
+                                              label="Node Timeout (s)"
+                                              description="Per-agent timeout in seconds"
+                                          >
+                                              <Input
+                                                  type="number"
+                                                  value={swarmConfig.orchestrator.nodeTimeoutSeconds.toString()}
+                                                  onChange={({ detail }) =>
+                                                      setSwarmConfig((prev) => ({
+                                                          ...prev,
+                                                          orchestrator: {
+                                                              ...prev.orchestrator,
+                                                              nodeTimeoutSeconds:
+                                                                  parseFloat(detail.value) || 60,
+                                                          },
+                                                      }))
+                                                  }
+                                              />
+                                          </FormField>
+                                      </ColumnLayout>
+                                  </Container>
+
+                                  <Container
+                                      header={
+                                          <Header variant="h2">Conversation Manager</Header>
+                                      }
+                                  >
+                                      <FormField label="Conversation Manager">
+                                          <Select
+                                              selectedOption={
+                                                  conversationManagerOptions.find(
+                                                      (opt) =>
+                                                          opt.value ===
+                                                          swarmConfig.conversationManager,
+                                                  ) || null
+                                              }
+                                              onChange={({ detail }) =>
+                                                  setSwarmConfig((prev) => ({
+                                                      ...prev,
+                                                      conversationManager:
+                                                          (detail.selectedOption?.value ||
+                                                              "sliding_window") as
+                                                              | "null"
+                                                              | "sliding_window"
+                                                              | "summarizing",
+                                                  }))
+                                              }
+                                              options={conversationManagerOptions}
+                                          />
+                                      </FormField>
+                                  </Container>
+                              </SpaceBetween>
+                          </div>
+                      ),
+                  },
+                  {
+                      title: "Review",
+                      content: (
+                          <div style={{ minHeight: stepMinHeight }}>
+                              <Container
+                                  header={<Header variant="h2">Review Configuration</Header>}
+                              >
+                                  <SpaceBetween direction="vertical" size="m">
+                                      {!isCreating && (
+                                          <Alert type="info" header="Configuration Summary">
+                                              Review your swarm agent configuration before creating.
+                                          </Alert>
+                                      )}
+                                      <Box padding="m" variant="code">
+                                          <pre style={{ margin: 0, overflow: "auto" }}>
+                                              {JSON.stringify(
+                                                  {
+                                                      agentName: config.agentName,
+                                                      architectureType,
+                                                      swarmConfig,
+                                                  },
+                                                  null,
+                                                  2,
+                                              )}
+                                          </pre>
+                                      </Box>
+                                  </SpaceBetween>
+                              </Container>
+                          </div>
+                      ),
+                  },
+              ]),
     ];
 
     const wizardContent = (
@@ -1160,7 +1584,13 @@ export default function AgentCoreRuntimeCreatorWizard({
             onNavigate={({ detail }) => setActiveStepIndex(detail.requestedStepIndex)}
             activeStepIndex={activeStepIndex}
             onCancel={onCancel}
-            onSubmit={() => onSubmit(config)}
+            onSubmit={() =>
+                onSubmit({
+                    ...config,
+                    architectureType,
+                    ...(architectureType === "SWARM" ? { swarmConfig } : {}),
+                })
+            }
             steps={steps.map((step) => ({
                 title: step.title,
                 content: step.content,
@@ -1471,6 +1901,7 @@ export default function AgentCoreRuntimeCreatorWizard({
                     </SpaceBetween>
                 )}
             </Modal>
+
         </>
     );
 }

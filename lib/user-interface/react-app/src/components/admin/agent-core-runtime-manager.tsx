@@ -675,6 +675,12 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
                             width: "auto",
                         },
                         {
+                            id: "architectureType",
+                            header: "Architecture",
+                            cell: (item) => item.architectureType || "Single",
+                            sortingField: "architectureType",
+                        },
+                        {
                             id: "numberOfVersion",
                             header: "Number of Versions",
                             cell: (item) => item.numberOfVersion,

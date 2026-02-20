@@ -19,6 +19,7 @@ import useOnFollow from "../../common/hooks/use-on-follow";
 import BaseAppLayout from "../../components/base-app-layout";
 import AgentCoreRuntimeCreatorWizard from "../../components/wizard/agent-core-runtime-wizard";
 import { AgentCoreRuntimeConfiguration } from "../../components/wizard/types";
+import { ArchitectureType } from "../../API";
 import { createAgentCoreRuntime as createAgentCoreRuntimeMut } from "../../graphql/mutations";
 import { getDefaultRuntimeConfiguration as getDefaultRuntimeConfigurationQuery } from "../../graphql/queries";
 
@@ -69,12 +70,21 @@ export default function AgentCoreWizardPage() {
         setIsCreating(true);
         setError(null); // Clear previous errors
         try {
-            const { agentName, ...configValues } = config;
+            const { agentName, architectureType, swarmConfig, ...singleConfigValues } = config;
+
+            let configValue: string;
+            if (architectureType === "SWARM" && swarmConfig) {
+                configValue = JSON.stringify(swarmConfig);
+            } else {
+                configValue = JSON.stringify(singleConfigValues);
+            }
+
             await apiClient.graphql({
                 query: createAgentCoreRuntimeMut,
                 variables: {
                     agentName: config.agentName,
-                    configValue: JSON.stringify(configValues),
+                    configValue,
+                    architectureType: (architectureType || "SINGLE") as ArchitectureType,
                 },
             });
 

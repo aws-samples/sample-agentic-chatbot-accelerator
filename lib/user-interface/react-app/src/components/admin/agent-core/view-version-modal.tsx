@@ -19,9 +19,17 @@ import { useContext, useEffect, useState } from "react";
 import { McpServer } from "../../../API";
 import { AppContext } from "../../../common/app-context";
 import { listAvailableMcpServers as listAvailableMcpServersQuery } from "../../../graphql/queries";
-import { AgentCoreRuntimeConfiguration } from "../../wizard/types";
+import { AgentCoreRuntimeConfiguration, SwarmConfiguration } from "../../wizard/types";
 
 const apiClient = generateClient();
+
+const isSwarmConfig = (config: any): config is SwarmConfiguration => {
+    return (
+        config &&
+        (Array.isArray(config.agents) || Array.isArray(config.agentReferences)) &&
+        typeof config.entryAgent === "string"
+    );
+};
 
 interface VersionInfo {
     version: string;
@@ -247,6 +255,114 @@ export default function ViewVersionModal({
                 {loadingConfig ? (
                     <Box textAlign="center">Loading configuration...</Box>
                 ) : agentConfig ? (
+                    isSwarmConfig(agentConfig) ? (
+                        <SpaceBetween direction="vertical" size="m">
+                            <FormField label="Entry Agent">
+                                <Box padding="m">{agentConfig.entryAgent}</Box>
+                            </FormField>
+
+                            {agentConfig.agents && agentConfig.agents.length > 0 && (
+                                <FormField label="Inline Agents">
+                                    <Table
+                                        items={agentConfig.agents}
+                                        columnDefinitions={[
+                                            {
+                                                id: "name",
+                                                header: "Name",
+                                                cell: (item: any) => item.name,
+                                                isRowHeader: true,
+                                            },
+                                            {
+                                                id: "model",
+                                                header: "Model",
+                                                cell: (item: any) =>
+                                                    getModelName(
+                                                        item.modelInferenceParameters?.modelId ||
+                                                            "",
+                                                    ),
+                                            },
+                                            {
+                                                id: "tools",
+                                                header: "Tools",
+                                                cell: (item: any) =>
+                                                    item.tools?.length > 0
+                                                        ? item.tools.join(", ")
+                                                        : "None",
+                                            },
+                                        ]}
+                                    />
+                                </FormField>
+                            )}
+
+                            {agentConfig.agentReferences &&
+                                agentConfig.agentReferences.length > 0 && (
+                                    <FormField label="Agent References">
+                                        <Table
+                                            items={agentConfig.agentReferences}
+                                            columnDefinitions={[
+                                                {
+                                                    id: "agentName",
+                                                    header: "Agent Name",
+                                                    cell: (item: any) => item.agentName,
+                                                    isRowHeader: true,
+                                                },
+                                                {
+                                                    id: "endpointName",
+                                                    header: "Endpoint",
+                                                    cell: (item: any) => item.endpointName,
+                                                },
+                                            ]}
+                                        />
+                                    </FormField>
+                                )}
+
+                            {agentConfig.orchestrator && (
+                                <FormField label="Orchestrator Settings">
+                                    <Box padding="m">
+                                        <ColumnLayout columns={4} variant="text-grid">
+                                            <div>
+                                                <Box variant="awsui-key-label">Max Handoffs</Box>
+                                                <Box>
+                                                    {agentConfig.orchestrator.maxHandoffs ?? "N/A"}
+                                                </Box>
+                                            </div>
+                                            <div>
+                                                <Box variant="awsui-key-label">Max Iterations</Box>
+                                                <Box>
+                                                    {agentConfig.orchestrator.maxIterations ??
+                                                        "N/A"}
+                                                </Box>
+                                            </div>
+                                            <div>
+                                                <Box variant="awsui-key-label">
+                                                    Execution Timeout
+                                                </Box>
+                                                <Box>
+                                                    {agentConfig.orchestrator
+                                                        .executionTimeoutSeconds ?? "N/A"}
+                                                    s
+                                                </Box>
+                                            </div>
+                                            <div>
+                                                <Box variant="awsui-key-label">Node Timeout</Box>
+                                                <Box>
+                                                    {agentConfig.orchestrator.nodeTimeoutSeconds ??
+                                                        "N/A"}
+                                                    s
+                                                </Box>
+                                            </div>
+                                        </ColumnLayout>
+                                    </Box>
+                                </FormField>
+                            )}
+
+                            {agentConfig.conversationManager && (
+                                <FormField label="Conversation Manager">
+                                    <Box padding="m">{agentConfig.conversationManager}</Box>
+                                </FormField>
+                            )}
+                        </SpaceBetween>
+                    ) : (
                     <SpaceBetween direction="vertical" size="m">
                         <FormField label="Model Configuration">
                             <Box padding="m">
@@ -341,6 +457,7 @@ export default function ViewVersionModal({
                             </FormField>
                         )}
                     </SpaceBetween>
+                    )
                 ) : null}
             </SpaceBetween>
         </Modal>
