@@ -9,6 +9,7 @@ from typing import Optional
 import boto3
 from aws_lambda_powertools import Logger, Tracer
 from aws_lambda_powertools.event_handler.graphql_appsync.router import Router
+from botocore.config import Config
 from genai_core.api_helper.auth import fetch_user_id
 
 # ------------------------- Lambda Powertools ------------------------ #
@@ -23,7 +24,8 @@ EXPIRES_IN_SECONDS = os.environ.get("EXPIRES_IN_SECONDS", 600)
 # -------------------------------------------------------------------- #
 
 # --------------------------- AWS CLIENTS ---------------------------- #
-S3_CLIENT = boto3.client("s3")
+# Use SigV4 for KMS-encrypted S3 objects (required for presigned URLs)
+S3_CLIENT = boto3.client("s3", config=Config(signature_version="s3v4"))
 # -------------------------------------------------------------------- #
 
 

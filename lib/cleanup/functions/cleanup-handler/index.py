@@ -26,22 +26,34 @@ tracer = Tracer(service="aca-cleanUpResources")
 
 
 # ----------------------- Environment Variables ---------------------- #
-CDK_KNOWLEDGE_BASE_IDS = (
-    set(os.environ.get("CDK_KNOWLEDGE_BASE_IDS", "").split(","))
-    if os.environ.get("CDK_KNOWLEDGE_BASE_IDS")
+# IaC-managed Knowledge Base IDs to preserve (CDK or Terraform created)
+IAC_KNOWLEDGE_BASE_IDS = (
+    set(os.environ.get("IAC_KNOWLEDGE_BASE_IDS", "").split(","))
+    if os.environ.get("IAC_KNOWLEDGE_BASE_IDS")
     else set()
 )
+# Backwards compatibility with CDK deployments
+if not IAC_KNOWLEDGE_BASE_IDS and os.environ.get("CDK_KNOWLEDGE_BASE_IDS"):
+    IAC_KNOWLEDGE_BASE_IDS = set(os.environ["CDK_KNOWLEDGE_BASE_IDS"].split(","))
 
-CDK_RULE_NAMES = (
-    set(os.environ.get("CDK_RULE_NAMES", "").split(","))
-    if os.environ.get("CDK_RULE_NAMES")
+# IaC-managed EventBridge rule names to preserve
+IAC_RULE_NAMES = (
+    set(os.environ.get("IAC_RULE_NAMES", "").split(","))
+    if os.environ.get("IAC_RULE_NAMES")
     else set()
 )
+# Backwards compatibility with CDK deployments
+if not IAC_RULE_NAMES and os.environ.get("CDK_RULE_NAMES"):
+    IAC_RULE_NAMES = set(os.environ["CDK_RULE_NAMES"].split(","))
 
 KB_INVENTORY_TABLE_NAME = os.environ.get("KB_INVENTORY_TABLE")
 
 STACK_TAG = os.environ.get("STACK_TAG", "")
 ENVIRONMENT_TAG = os.environ.get("ENVIRONMENT_TAG", "")
+
+# Owner tag value to preserve (resources created by IaC tool)
+# For CDK deployments: "CDK", for Terraform: "Terraform"
+IAC_OWNER_TAG = os.environ.get("IAC_OWNER_TAG", "CDK")
 
 # Feature flag to check if Knowledge Base is enabled
 KB_ENABLED = bool(KB_INVENTORY_TABLE_NAME)
@@ -91,9 +103,9 @@ def _process_kb_item(
         },
     )
 
-    # Check if this is a CDK-created knowledge base (by KB ID)
+    # Check if this is an IaC-managed knowledge base (by KB ID)
     if kb_id in cdk_kb_ids:
-        logger.info(f"Preserving CDK-created knowledge base: {kb_id}")
+        logger.info(f"Preserving IaC-managed knowledge base: {kb_id}")
         return False  # Resource preserved
 
     # This is a user-created knowledge base - clean it up
@@ -128,7 +140,7 @@ def _process_kb_item(
             processed_kbs.add(kb_id)
 
         except ClientError as e:
-            logger.error(
+            logger.warning(
                 "Failed to delete knowledge base. KB might have already been deleted.",
                 extra={
                     "deletionError": {
@@ -145,9 +157,9 @@ def _process_kb_item(
     # Handle EventBridge rule deletion (avoid duplicates)
     # Only delete rules that are NOT CDK-created (exact name matching)
     if rule_name and rule_name not in processed_rules:
-        # Check if this is a CDK-created rule (by exact rule name)
+        # Check if this is an IaC-managed rule (by exact rule name)
         if rule_name in cdk_rule_names:
-            logger.info(f"Preserving CDK-created EventBridge rule: {rule_name}")
+            logger.info(f"Preserving IaC-managed EventBridge rule: {rule_name}")
         else:
             # This is a user-created rule - delete it
             try:
@@ -254,10 +266,10 @@ def _remove_runtimes() -> None:
             if (
                 tags.get("Environment", "_aca") == ENVIRONMENT_TAG
                 and tags.get("Stack", "_tag") == STACK_TAG
-                and tags.get("Owner") != "CDK"
+                and tags.get("Owner") != IAC_OWNER_TAG
             ):
                 logger.info(
-                    f"Runtime {runtime.identifier} was created from the stack application and need to go"
+                    f"Runtime {runtime.identifier} was created from the application and needs cleanup"
                 )
                 # TODO - think about if/how to handle the following
                 # ! the following will fail if runtimes has custom endpoints attached
@@ -335,10 +347,10 @@ def _remove_memories() -> None:
             if (
                 tags.get("Environment", "_aca") == ENVIRONMENT_TAG
                 and tags.get("Stack", "_tag") == STACK_TAG
-                and tags.get("Owner") != "CDK"
+                and tags.get("Owner") != IAC_OWNER_TAG
             ):
                 logger.info(
-                    f"Memory {memory.identifier} was created from the stack application and needs to be deleted"
+                    f"Memory {memory.identifier} was created from the application and needs cleanup"
                 )
                 BAC_CLIENT.delete_memory(memoryId=memory.identifier)
                 logger.info(f"Deletion of memory {memory.identifier} correctly started")
@@ -361,11 +373,12 @@ def on_delete():
     else:
         try:
             logger.info(
-                "CDK resources to preserve",
+                "IaC-managed resources to preserve",
                 extra={
                     "preservationConfig": {
-                        "knowledgeBaseIds": list(CDK_KNOWLEDGE_BASE_IDS),
-                        "ruleNames": list(CDK_RULE_NAMES),
+                        "knowledgeBaseIds": list(IAC_KNOWLEDGE_BASE_IDS),
+                        "ruleNames": list(IAC_RULE_NAMES),
+                        "ownerTag": IAC_OWNER_TAG,
                     }
                 },
             )
@@ -381,8 +394,8 @@ def on_delete():
             for item in response["Items"]:
                 resource_cleaned = _process_kb_item(
                     item,
-                    CDK_KNOWLEDGE_BASE_IDS,
-                    CDK_RULE_NAMES,
+                    IAC_KNOWLEDGE_BASE_IDS,
+                    IAC_RULE_NAMES,
                     processed_kbs,
                     processed_rules,
                     BEDROCK_AGENT_CLIENT,
@@ -398,8 +411,8 @@ def on_delete():
                 for item in response["Items"]:
                     resource_cleaned = _process_kb_item(
                         item,
-                        CDK_KNOWLEDGE_BASE_IDS,
-                        CDK_RULE_NAMES,
+                        IAC_KNOWLEDGE_BASE_IDS,
+                        IAC_RULE_NAMES,
                         processed_kbs,
                         processed_rules,
                         BEDROCK_AGENT_CLIENT,
@@ -460,7 +473,7 @@ def handler(
     Only runs when RequestType is 'Delete'.
 
     This Lambda cleans up user-created knowledge bases and EventBridge rules
-    while preserving CDK-created resources.
+    while preserving IaC-managed resources (CDK or Terraform created).
     """
 
     logger.info(f"Received event: {event}")

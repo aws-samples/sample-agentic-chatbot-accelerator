@@ -49,10 +49,15 @@ export class Cleanup extends Construct {
         );
 
         const environmentVariables: Record<string, string> = {
+            // IaC-managed resources to preserve during cleanup
+            // Using CDK_* names for backwards compatibility, Python has fallback logic
             CDK_KNOWLEDGE_BASE_IDS: cdkKnowledgeBaseIds,
             CDK_RULE_NAMES: cdkRuleNamesStr,
+            // Tags to identify resources to clean up
             STACK_TAG: transformedTags.Stack || "_aca",
             ENVIRONMENT_TAG: transformedTags.Environment || "_tag",
+            // Owner tag value - resources with this Owner tag will be preserved
+            IAC_OWNER_TAG: "CDK",
         };
 
         if (props.kbInventoryTable) {

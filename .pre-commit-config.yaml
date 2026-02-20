@@ -34,6 +34,30 @@ repos:
       - id: ruff
         args: [--config=pyproject.toml]
 
+  - repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: v1.96.2
+    hooks:
+      - id: terraform_fmt
+        name: Terraform format
+        files: ^iac-terraform/
+      - id: terraform_validate
+        name: Terraform validate
+        files: ^iac-terraform/
+
+  - repo: https://github.com/bridgecrewio/checkov.git
+    rev: 3.2.484
+    hooks:
+      - id: checkov
+        name: Checkov Terraform scan
+        args: [
+          '--framework', 'terraform',
+          '--directory', 'iac-terraform/',
+          '--compact',
+          '--quiet'
+        ]
+        files: ^iac-terraform/
+        stages: [manual]  # Run with: pre-commit run checkov --hook-stage manual
+
   - repo: https://github.com/awslabs/automated-security-helper.git
     rev: v3.1.9
     hooks:

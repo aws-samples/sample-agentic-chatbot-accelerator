@@ -1,0 +1,242 @@
+# Example Terraform variables configuration
+# Copy this file to terraform.tfvars and customize the values
+
+# =============================================================================
+# Required Configuration
+# =============================================================================
+
+# Prefix for resource naming (equivalent to SystemConfig.prefix in CDK)
+prefix = "aca"
+
+# Environment name (e.g., dev, staging, prod)
+# Combined with prefix to form resource names like "aca-dev-xxx"
+# Leave empty to use just the prefix
+environment = "dev"
+
+# AWS region for deployment
+aws_region = "us-east-1"
+
+# =============================================================================
+# Optional: AWS Authentication
+# =============================================================================
+
+# AWS profile for authentication (optional)
+# Uncomment and set to use a specific AWS profile from ~/.aws/credentials or ~/.aws/config
+# If not set, uses default credentials or AWS_PROFILE environment variable
+# aws_profile = "your-profile-name"
+
+# =============================================================================
+# Optional: Lambda Configuration
+# =============================================================================
+
+# Lambda architecture (optional)
+# "arm64" (default) - Better price/performance on AWS Graviton
+# "x86_64" - Use if you have dependencies that require x86
+# lambda_architecture = "arm64"
+
+# =============================================================================
+# Tool Registry
+# Define tools available to agents for task execution
+# =============================================================================
+
+tool_registry = [
+  {
+    name              = "retrieve_from_kb"
+    description       = "Retrieve information from knowledge base using semantic search"
+    invokes_sub_agent = false
+  },
+  {
+    name              = "web_search"
+    description       = "Search the web for current information"
+    invokes_sub_agent = false
+  },
+  {
+    name              = "code_interpreter"
+    description       = "Execute Python code for data analysis and calculations"
+    invokes_sub_agent = false
+  },
+  {
+    name              = "delegate_to_specialist"
+    description       = "Delegate complex tasks to a specialist sub-agent"
+    invokes_sub_agent = true
+  }
+]
+
+# =============================================================================
+# MCP Server Registry (Optional)
+# Configure external capability providers via Model Context Protocol
+# Each server must have either runtime_id (AgentCore Runtime) or gateway_id (AgentCore Gateway)
+# =============================================================================
+
+# Example with AgentCore Runtime:
+# mcp_server_registry = [
+#   {
+#     name        = "data-analyst"
+#     description = "Data analysis and visualization capabilities"
+#     runtime_id  = "abc123def456"  # From aws_bedrockagentcore_agent_runtime
+#     qualifier   = "DEFAULT"       # Optional, defaults to "DEFAULT"
+#   },
+#   {
+#     name        = "file-processor"
+#     description = "File processing and transformation server"
+#     gateway_id  = "gw-xyz789"     # From aws_bedrockagentcore_gateway
+#   }
+# ]
+
+mcp_server_registry = []
+
+# =============================================================================
+# Data Processing Configuration (Optional)
+# Processes documents for Knowledge Base ingestion (transcription, text extraction)
+# Required if you want to use Knowledge Base
+# =============================================================================
+
+# Uncomment to enable data processing:
+# data_processing = {
+#   # S3 key prefixes for pipeline organization
+#   input_prefix       = "input"        # Where to upload raw documents
+#   data_source_prefix = "data-source"  # Where processed files go (KB ready)
+#   processing_prefix  = "processing"   # Intermediate processing files
+#
+#   # Transcription settings (for video/audio files)
+#   language_code = "auto"  # Language for transcription, or "auto" for detection
+#
+#   # Advanced: Internal path components (rarely need to change)
+#   # staging_midfix    = "staging"
+#   # transcribe_midfix = "transcribe"
+# }
+
+# =============================================================================
+# Knowledge Base Configuration (Optional)
+# Creates Bedrock Knowledge Base with OpenSearch Serverless vector store
+# Requires data_processing to be enabled
+# =============================================================================
+
+# Knowledge Base ID for retrieve_from_kb tool
+# Set this AFTER first deploy using the output: terraform output knowledge_base_id
+# knowledge_base_id = "XXXXXXXXXX"
+
+# Uncomment to enable Knowledge Base:
+# knowledge_base = {
+#   # Embedding model for vector generation
+#   embedding_model_id = "amazon.titan-embed-text-v2:0"
+#   vector_dimension   = 1024
+#
+#   # Description shown in Bedrock console
+#   description = "Knowledge Base for searching helpful information."
+#
+#   # Data source configuration
+#   data_source_prefix = "data-source"  # Must match data_processing.data_source_prefix
+#
+#   # Chunking strategy: "FIXED_SIZE", "HIERARCHICAL", "SEMANTIC", or "NONE"
+#   chunking_strategy = "FIXED_SIZE"
+#
+#   # Fixed-size chunking (when chunking_strategy = "FIXED_SIZE")
+#   fixed_chunking_config = {
+#     max_tokens         = 300   # Max tokens per chunk
+#     overlap_percentage = 20    # % overlap between chunks
+#   }
+#
+#   # Hierarchical chunking (when chunking_strategy = "HIERARCHICAL")
+#   # hierarchical_chunking_config = {
+#   #   overlap_tokens        = 60
+#   #   max_parent_token_size = 1500
+#   #   max_child_token_size  = 300
+#   # }
+#
+#   # Semantic chunking (when chunking_strategy = "SEMANTIC")
+#   # semantic_chunking_config = {
+#   #   buffer_size                     = 0
+#   #   breakpoint_percentile_threshold = 95
+#   #   max_tokens                      = 300
+#   # }
+# }
+
+# =============================================================================
+# Observability Configuration (Optional)
+# Creates X-Ray Transaction Search and CloudWatch Dashboard for AgentCore
+# =============================================================================
+
+# Uncomment to enable observability:
+# observability = {
+#   enable_transaction_search = true   # Enable X-Ray Transaction Search
+#   indexing_percentage       = 10     # % of traces indexed (1-100)
+# }
+
+# =============================================================================
+# ECR Image Configuration
+# =============================================================================
+
+# Docker image tag for agent runtime container
+ecr_image_tag = "latest"
+
+# If using an existing ECR image, specify the full URI:
+# ecr_image_uri = "123456789012.dkr.ecr.us-east-1.amazonaws.com/my-agent:v1.0"
+
+# =============================================================================
+# Agent Runtime Configuration (Optional)
+# If provided, creates a default Bedrock AgentCore Runtime
+# =============================================================================
+
+# Uncomment to deploy a default agent runtime:
+# agent_runtime_config = {
+#   # Model configuration
+#   model_inference_parameters = {
+#     model_id = "anthropic.claude-3-5-sonnet-20241022-v2:0"
+#     parameters = {
+#       temperature    = 0.7
+#       max_tokens     = 4096
+#       stop_sequences = null  # Optional: ["Human:", "END"]
+#     }
+#   }
+#
+#   # Agent behavior instructions (system prompt)
+#   instructions = <<-EOT
+#     You are a helpful AI assistant with access to various tools.
+#
+#     Guidelines:
+#     - Be concise and accurate in your responses
+#     - Use tools when appropriate to gather information
+#     - Cite sources when using retrieved information
+#     - Ask clarifying questions if the user's request is ambiguous
+#   EOT
+#
+#   # List of tool names from tool_registry to enable
+#   tools = ["retrieve_from_kb", "web_search"]
+#
+#   # Tool-specific parameters (key = tool name, value = parameters dict)
+#   tool_parameters = {
+#     retrieve_from_kb = {
+#       kb_id        = "KB12345678"  # Will be set automatically if KB module is used
+#       top_k        = 5
+#       search_type  = "HYBRID"
+#     }
+#     web_search = {
+#       max_results = 10
+#     }
+#   }
+#
+#   # MCP servers to connect (names from mcp_server_registry)
+#   mcp_servers = []
+#
+#   # Conversation management strategy:
+#   # - "sliding_window": Keep recent messages, discard old ones
+#   # - "summarization": Summarize older messages to preserve context
+#   # - "none": No conversation management, each turn is independent
+#   conversation_manager = "sliding_window"
+#
+#   # Optional description for the agent runtime
+#   description = "Default ACA agent runtime"
+#
+#   # Optional: Memory configuration for persistent context across sessions
+#   memory_config = {
+#     retention_days = 30  # Days to retain conversation memory (7-365)
+#     description    = "Default agent memory store"
+#   }
+#
+#   # Optional: Lifecycle configuration
+#   lifecycle_config = {
+#     idle_runtime_session_timeout_minutes = 15   # Idle timeout before session ends
+#     max_lifetime_hours                   = 24   # Maximum runtime lifetime
+#   }
+# }

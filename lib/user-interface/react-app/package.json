@@ -73,7 +73,9 @@
         },
         "rollup@<3.29.5": "3.29.5",
         "prismjs": "^1.30.0",
-        "lodash": "^4.17.21"
+        "lodash": "^4.17.21",
+        "ajv": "^8.18.0",
+        "minimatch": "^10.2.1"
     },
     "resolutions": {
         "cross-spawn": "^7.0.5"

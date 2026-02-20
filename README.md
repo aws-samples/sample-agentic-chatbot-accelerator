@@ -59,6 +59,7 @@ The Agentic Chatbot Accelerator is a web application deployment solution that ut
 - [Agent Factory](./docs/src/agent-factory.md)
 - [Agent Event Architecture](./docs/src/token-streaming-architecture.md)
 - [Observability Insights](./docs/src/observability-insights.md)
+- [Terraform Deployment (Experimental)](./iac-terraform/README.md)
 
 ## Optional Features
 
@@ -91,4 +92,4 @@ Ultimately it is your responsibility as the developer of a full stack applicatio
 
 ## License
 
-This library is licensed under the MIT-0 License. See the LICENSE file.
+This project is licensed under the MIT-0 License. See the LICENSE file.

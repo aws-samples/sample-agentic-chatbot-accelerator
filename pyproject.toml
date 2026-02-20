@@ -4,6 +4,9 @@ version = "2.0.0"
 description = "Python is only used for coding in IDEs. Neither the stack nor the web application requires Python."
 readme = "README.md"
 requires-python = ">=3.13"
+dependencies = [
+    "checkov>=3.2.459",
+]
 
 [dependency-groups]
 dev = [

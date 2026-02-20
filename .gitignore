@@ -49,3 +49,23 @@ CustomMcpServer/
 
 # ASH scan results
 .ash/
+
+# Terraform
+**/.terraform/*
+iac-terraform/modules/**/.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+*.tfvars
+!*.tfvars.example
+iac-terraform/build/
+checkov-report.json
+
+iac-terraform/modules/knowledge_base/build
