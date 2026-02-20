@@ -101,7 +101,13 @@ resource "aws_cloudfront_distribution" "website" {
     Name = "${local.name_prefix}-website-distribution"
   })
 
-  depends_on = [aws_s3_bucket.website, aws_s3_bucket.distribution_logs]
+  depends_on = [
+    aws_s3_bucket.website,
+    aws_s3_bucket.distribution_logs,
+    aws_s3_bucket_ownership_controls.distribution_logs,
+    aws_s3_bucket_acl.distribution_logs,
+    aws_s3_bucket_public_access_block.distribution_logs
+  ]
 }
 
 
