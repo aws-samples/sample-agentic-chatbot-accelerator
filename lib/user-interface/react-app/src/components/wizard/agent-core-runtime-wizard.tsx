@@ -1343,20 +1343,45 @@ export default function AgentCoreRuntimeCreatorWizard({
                                                                   header: "Endpoint",
                                                                   cell: (item) => {
                                                                       const idx = swarmConfig.agentReferences.indexOf(item);
+                                                                      const agent = availableAgents.find(
+                                                                          (a) => a.agentName === item.agentName,
+                                                                      );
+                                                                      const endpointOptions: { label: string; value: string }[] = [];
+                                                                      if (agent?.qualifierToVersion) {
+                                                                          try {
+                                                                              const qtv = JSON.parse(agent.qualifierToVersion);
+                                                                              if (qtv && typeof qtv === "object") {
+                                                                                  endpointOptions.push(
+                                                                                      ...Object.keys(qtv).map((key) => ({
+                                                                                          label: key,
+                                                                                          value: key,
+                                                                                      })),
+                                                                                  );
+                                                                              }
+                                                                          } catch (error) {
+                                                                              console.error("Failed to parse qualifierToVersion:", error);
+                                                                          }
+                                                                      }
+                                                                      if (!endpointOptions.some((o) => o.value === "DEFAULT")) {
+                                                                          endpointOptions.unshift({ label: "DEFAULT", value: "DEFAULT" });
+                                                                      }
                                                                       return (
-                                                                          <Input
-                                                                              value={
-                                                                                  item.endpointName
+                                                                          <Select
+                                                                              expandToViewport
+                                                                              selectedOption={
+                                                                                  endpointOptions.find(
+                                                                                      (o) => o.value === item.endpointName,
+                                                                                  ) || { label: item.endpointName, value: item.endpointName }
                                                                               }
                                                                               onChange={({
                                                                                   detail,
                                                                               }) =>
                                                                                   updateAgentReferenceEndpoint(
                                                                                       idx,
-                                                                                      detail.value,
+                                                                                      detail.selectedOption?.value || "DEFAULT",
                                                                                   )
                                                                               }
-                                                                              placeholder="DEFAULT"
+                                                                              options={endpointOptions}
                                                                           />
                                                                       );
                                                                   },
