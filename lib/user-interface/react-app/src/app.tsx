@@ -13,6 +13,8 @@ import "./styles/app.scss";
 import AgentCoreManagerPage from "./pages/admin/agent-core-manager";
 import AgentCoreWizardPage from "./pages/admin/agent-core-wizard-page";
 import DocumentManagerPage from "./pages/admin/documents";
+import EvaluationsManagerPage from "./pages/admin/evaluations-manager";
+import EvaluationsWizardPage from "./pages/admin/evaluations-wizard-page";
 import KnowledgeBaseManagerPage from "./pages/admin/kb-manager";
 import SessionPage from "./pages/chatbot/sessions";
 
@@ -34,6 +36,8 @@ function App() {
                         <Route path="/knowledgebase" element={<KnowledgeBaseManagerPage />} />
                         <Route path="/agent-core" element={<AgentCoreManagerPage />} />
                         <Route path="/agent-core/create" element={<AgentCoreWizardPage />} />
+                        <Route path="/evaluations" element={<EvaluationsManagerPage />} />
+                        <Route path="/evaluations/create" element={<EvaluationsWizardPage />} />
                         <Route path="*" element={<NotFound />} />
                     </Routes>
                 </div>

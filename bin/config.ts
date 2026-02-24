@@ -58,6 +58,27 @@ export function getConfig(): SystemConfig {
             enableTransactionSearch: false,
             indexingPercentage: 10, // Percentage of traces to index (1-100)
         },
+
+        evaluatorConfig: {
+            // Models available for LLM-based evaluations
+            supportedModels: {
+            "Claude Haiku 4.5": "[REGION-PREFIX].anthropic.claude-haiku-4-5-20251001-v1:0",
+            "Claude Sonnet 4.5": "[REGION-PREFIX].anthropic.claude-sonnet-4-5-20250929-v1:0",
+            "Nova 2 Lite": "[REGION-PREFIX].amazon.nova-2-lite-v1:0",
+            },
+            // Score threshold (0.0-1.0) above which a test case is considered passed
+            passThreshold: 0.8,
+            defaultRubrics: {
+                OutputEvaluator: `Evaluate the response based on:
+                    1. Accuracy - Is the information correct compared to expected output?
+                    2. Completeness - Does it fully answer the question?
+                    3. Clarity - Is it easy to understand?
+
+                    Score 1.0 if all criteria are met excellently.
+                    Score 0.5 if some criteria are partially met.
+                    Score 0.0 if the response is inadequate.`,
+            },
+        },
     };
 }
 

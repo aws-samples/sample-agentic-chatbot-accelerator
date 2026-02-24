@@ -53,9 +53,20 @@ class AgentCallbacks:
     def reset_metadata(self) -> None:
         self._metadata = dict()
         self._nb_tool_invocations = 0
+        self._tool_executions: dict[str, dict] = {}
+
+    @property
+    def tool_executions(self) -> dict[str, dict]:
+        """Get captured tool execution data keyed by tool_call_id.
+
+        Used by app.py to enrich trajectory with tool arguments and results.
+        """
+        return self._tool_executions
 
     def log_tool_entries(self, event: BeforeToolCallEvent) -> None:
         """Logs information about tool invocation before it occurs.
+
+        Stores tool arguments for trajectory enrichment used by evaluation features.
 
         Args:
             event (BeforeToolCallEvent): Event containing metadata about the tool
@@ -72,6 +83,24 @@ class AgentCallbacks:
             f"Agent is going to call tool #{self._nb_tool_invocations} in this turn",
             extra={"toolSpecifications": specs, "toolParameters": event.tool_use},
         )
+
+        # Store tool input for trajectory enrichment keyed by tool_call_id
+        # This is used by app.py to post-process the trajectory with complete tool data
+        tool_call_id = event.tool_use.get("toolUseId", "")
+        tool_name = event.tool_use.get("name", "unknown")
+        tool_input = event.tool_use.get("input", {})
+
+        if tool_call_id:
+            if not hasattr(self, "_tool_executions"):
+                self._tool_executions = {}
+            self._tool_executions[tool_call_id] = {
+                "name": tool_name,
+                "arguments": tool_input,
+            }
+            self._logger.debug(
+                f"Stored tool input for trajectory enrichment: {tool_call_id}",
+                extra={"toolName": tool_name, "toolInput": tool_input},
+            )
 
         parameters = []
         input_values = event.tool_use.get("input", {})
@@ -137,16 +166,57 @@ class AgentCallbacks:
                 )
 
     def log_tool_results(self, event: AfterToolCallEvent) -> None:
+        """Logs tool results and stores them for trajectory enrichment.
+
+        Stores tool results keyed by tool_call_id for post-processing the trajectory.
+        This is required by ToolSelectionAccuracyEvaluator and ToolParameterAccuracyEvaluator.
+
+        Args:
+            event (AfterToolCallEvent): Event containing tool results.
+        """
         if event.selected_tool:
+            tool_name = event.selected_tool.tool_name
+
             self._logger.info(
                 "The tool returned a response",
                 extra={
                     "payload": {
-                        "toolName": event.selected_tool.tool_name,
+                        "toolName": tool_name,
                         "results": event.result,
                     }
                 },
             )
+
+            # Store tool result for trajectory enrichment
+            # Get tool_call_id from the tool_use info
+            tool_call_id = (
+                event.tool_use.get("toolUseId", "")
+                if hasattr(event, "tool_use") and event.tool_use
+                else ""
+            )
+
+            # Extract result content
+            result_content = ""
+            if isinstance(event.result, dict):
+                content_list = event.result.get("content", [])
+                if content_list and isinstance(content_list[0], dict):
+                    result_content = content_list[0].get("text", str(event.result))
+                else:
+                    result_content = str(event.result)
+            else:
+                result_content = str(event.result)
+
+            # Update the stored tool execution with result
+            if (
+                tool_call_id
+                and hasattr(self, "_tool_executions")
+                and tool_call_id in self._tool_executions
+            ):
+                self._tool_executions[tool_call_id]["result"] = result_content
+                self._logger.debug(
+                    f"Stored tool result for trajectory enrichment: {tool_call_id}",
+                    extra={"toolName": tool_name, "resultLength": len(result_content)},
+                )
 
     def retrieve_from_kb_callback(self, event: AfterToolCallEvent) -> None:
         """Callback handler for knowledge base retrieval operations.

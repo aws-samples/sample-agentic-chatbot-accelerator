@@ -279,3 +279,101 @@ export const publishRuntimeUpdate = /* GraphQL */ `mutation PublishRuntimeUpdate
   APITypes.PublishRuntimeUpdateMutationVariables,
   APITypes.PublishRuntimeUpdateMutation
 >;
+export const createEvaluator = /* GraphQL */ `mutation CreateEvaluator($input: CreateEvaluatorInput!) {
+  createEvaluator(input: $input) {
+    evaluatorId
+    name
+    description
+    evaluatorType
+    customRubric
+    agentRuntimeName
+    qualifier
+    modelId
+    passThreshold
+    testCasesS3Path
+    testCasesCount
+    resultsS3Path
+    status
+    passedCases
+    failedCases
+    totalTimeMs
+    results {
+      caseName
+      input
+      expectedOutput
+      actualOutput
+      score
+      passed
+      reason
+      latencyMs
+      __typename
+    }
+    errorMessage
+    createdAt
+    startedAt
+    completedAt
+    __typename
+  }
+}
+` as GeneratedMutation<
+  APITypes.CreateEvaluatorMutationVariables,
+  APITypes.CreateEvaluatorMutation
+>;
+export const deleteEvaluator = /* GraphQL */ `mutation DeleteEvaluator($evaluatorId: ID!) {
+  deleteEvaluator(evaluatorId: $evaluatorId)
+}
+` as GeneratedMutation<
+  APITypes.DeleteEvaluatorMutationVariables,
+  APITypes.DeleteEvaluatorMutation
+>;
+export const runEvaluation = /* GraphQL */ `mutation RunEvaluation($evaluatorId: ID!) {
+  runEvaluation(evaluatorId: $evaluatorId) {
+    evaluatorId
+    name
+    description
+    evaluatorType
+    customRubric
+    agentRuntimeName
+    qualifier
+    modelId
+    passThreshold
+    testCasesS3Path
+    testCasesCount
+    resultsS3Path
+    status
+    passedCases
+    failedCases
+    totalTimeMs
+    results {
+      caseName
+      input
+      expectedOutput
+      actualOutput
+      score
+      passed
+      reason
+      latencyMs
+      __typename
+    }
+    errorMessage
+    createdAt
+    startedAt
+    completedAt
+    __typename
+  }
+}
+` as GeneratedMutation<
+  APITypes.RunEvaluationMutationVariables,
+  APITypes.RunEvaluationMutation
+>;
+export const publishEvaluationUpdate = /* GraphQL */ `mutation PublishEvaluationUpdate($evaluatorId: String!, $status: String!) {
+  publishEvaluationUpdate(evaluatorId: $evaluatorId, status: $status) {
+    evaluatorId
+    status
+    __typename
+  }
+}
+` as GeneratedMutation<
+  APITypes.PublishEvaluationUpdateMutationVariables,
+  APITypes.PublishEvaluationUpdateMutation
+>;

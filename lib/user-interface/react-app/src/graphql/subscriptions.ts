@@ -30,3 +30,14 @@ export const receiveUpdateNotification = /* GraphQL */ `subscription ReceiveUpda
   APITypes.ReceiveUpdateNotificationSubscriptionVariables,
   APITypes.ReceiveUpdateNotificationSubscription
 >;
+export const receiveEvaluationUpdate = /* GraphQL */ `subscription ReceiveEvaluationUpdate($evaluatorId: String!) {
+  receiveEvaluationUpdate(evaluatorId: $evaluatorId) {
+    evaluatorId
+    status
+    __typename
+  }
+}
+` as GeneratedSubscription<
+  APITypes.ReceiveEvaluationUpdateSubscriptionVariables,
+  APITypes.ReceiveEvaluationUpdateSubscription
+>;

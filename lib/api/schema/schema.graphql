@@ -108,6 +108,62 @@ type AgentFactoryNotification @aws_iam @aws_cognito_user_pools {
     agentName: String
 }
 
+# Evaluator Types
+type Evaluator @aws_cognito_user_pools {
+    evaluatorId: ID!
+    name: String!
+    description: String
+    evaluatorType: String!
+    customRubric: String
+    agentRuntimeName: String
+    qualifier: String!
+    modelId: String
+    passThreshold: Float
+    testCasesS3Path: String
+    testCasesCount: Int
+    resultsS3Path: String
+    # Status: Created, Running, Completed, Failed
+    status: String!
+    # Run results
+    passedCases: Int
+    failedCases: Int
+    totalTimeMs: Int
+    results: [EvaluationResult]
+    errorMessage: String
+    # Timestamps
+    createdAt: AWSDateTime!
+    startedAt: AWSDateTime
+    completedAt: AWSDateTime
+}
+
+type EvaluationResult @aws_cognito_user_pools {
+    caseName: String!
+    input: String
+    expectedOutput: String
+    actualOutput: String
+    score: Float!
+    passed: Boolean!
+    reason: String
+    latencyMs: Int
+}
+
+input CreateEvaluatorInput {
+    name: String!
+    description: String
+    evaluatorType: String!
+    customRubric: String
+    agentRuntimeName: String
+    qualifier: String!
+    modelId: String!
+    passThreshold: Float!
+    testCases: String!
+}
+
+type EvaluationNotification @aws_iam @aws_cognito_user_pools {
+    evaluatorId: String
+    status: String
+}
+
 type Mutation {
     # Messages
     sendQuery(data: String): String @aws_cognito_user_pools
@@ -138,6 +194,11 @@ type Mutation {
     updateFavoriteRuntime(agentRuntimeId: String!, endpointName: String!): String @aws_cognito_user_pools
     resetFavoriteRuntime: String @aws_cognito_user_pools
     publishRuntimeUpdate(agentName: String!): AgentFactoryNotification @aws_iam
+    # Evaluators
+    createEvaluator(input: CreateEvaluatorInput!): Evaluator @aws_cognito_user_pools
+    deleteEvaluator(evaluatorId: ID!): Boolean @aws_cognito_user_pools
+    runEvaluation(evaluatorId: ID!): Evaluator @aws_cognito_user_pools
+    publishEvaluationUpdate(evaluatorId: String!, status: String!): EvaluationNotification @aws_iam
 }
 
 type Subscription {
@@ -146,6 +207,9 @@ type Subscription {
         @aws_cognito_user_pools
     receiveUpdateNotification(agentName: String!): AgentFactoryNotification
         @aws_subscribe(mutations: ["publishRuntimeUpdate"])
+        @aws_cognito_user_pools
+    receiveEvaluationUpdate(evaluatorId: String!): EvaluationNotification
+        @aws_subscribe(mutations: ["publishEvaluationUpdate"])
         @aws_cognito_user_pools
 }
 
@@ -175,6 +239,9 @@ type Query {
     listAgentVersions(agentRuntimeId: String!): [String] @aws_cognito_user_pools
     listAgentEndpoints(agentRuntimeId: String!): [String] @aws_cognito_user_pools
     getFavoriteRuntime: FavoriteRuntime @aws_cognito_user_pools
+    # Evaluators
+    listEvaluators: [Evaluator!] @aws_cognito_user_pools
+    getEvaluator(evaluatorId: ID!): Evaluator @aws_cognito_user_pools
 }
 
 schema {

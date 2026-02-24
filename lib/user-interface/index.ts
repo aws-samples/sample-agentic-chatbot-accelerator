@@ -114,6 +114,11 @@ export class UserInterface extends Construct {
                 aws_bedrock_supported_reranking_models: props.config.rerankingModels,
             }),
 
+            // Evaluator configuration
+            ...(props.config.evaluatorConfig && {
+                evaluatorConfig: props.config.evaluatorConfig,
+            }),
+
             // Feature flags
             knowledgeBaseIsSupported: !!props.dataBucket,
 

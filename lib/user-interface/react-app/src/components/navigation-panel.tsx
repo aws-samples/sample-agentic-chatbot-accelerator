@@ -32,6 +32,12 @@ export default function NavigationPanel() {
                 href: "/agent-core",
                 info: <Icon name="user-profile" />,
             },
+            {
+                type: "link",
+                text: "Evaluation Manager",
+                href: "/evaluations",
+                info: <Icon name="check" />,
+            },
         ];
 
         // Only add Document Manager and Knowledge Base Manager if knowledge base is supported

@@ -48,6 +48,61 @@ export type AgentFactoryNotification = {
   agentName?: string | null,
 };
 
+export type CreateEvaluatorInput = {
+  name: string,
+  description?: string | null,
+  evaluatorType: string,
+  customRubric?: string | null,
+  agentRuntimeName?: string | null,
+  qualifier: string,
+  modelId: string,
+  passThreshold: number,
+  testCases: string,
+};
+
+export type Evaluator = {
+  __typename: "Evaluator",
+  evaluatorId: string,
+  name: string,
+  description?: string | null,
+  evaluatorType: string,
+  customRubric?: string | null,
+  agentRuntimeName?: string | null,
+  qualifier: string,
+  modelId?: string | null,
+  passThreshold?: number | null,
+  testCasesS3Path?: string | null,
+  testCasesCount?: number | null,
+  resultsS3Path?: string | null,
+  status: string,
+  passedCases?: number | null,
+  failedCases?: number | null,
+  totalTimeMs?: number | null,
+  results?:  Array<EvaluationResult | null > | null,
+  errorMessage?: string | null,
+  createdAt: string,
+  startedAt?: string | null,
+  completedAt?: string | null,
+};
+
+export type EvaluationResult = {
+  __typename: "EvaluationResult",
+  caseName: string,
+  input?: string | null,
+  expectedOutput?: string | null,
+  actualOutput?: string | null,
+  score: number,
+  passed: boolean,
+  reason?: string | null,
+  latencyMs?: number | null,
+};
+
+export type EvaluationNotification = {
+  __typename: "EvaluationNotification",
+  evaluatorId?: string | null,
+  status?: string | null,
+};
+
 export type Session = {
   __typename: "Session",
   id: string,
@@ -384,6 +439,109 @@ export type PublishRuntimeUpdateMutation = {
   } | null,
 };
 
+export type CreateEvaluatorMutationVariables = {
+  input: CreateEvaluatorInput,
+};
+
+export type CreateEvaluatorMutation = {
+  createEvaluator?:  {
+    __typename: "Evaluator",
+    evaluatorId: string,
+    name: string,
+    description?: string | null,
+    evaluatorType: string,
+    customRubric?: string | null,
+    agentRuntimeName?: string | null,
+    qualifier: string,
+    modelId?: string | null,
+    passThreshold?: number | null,
+    testCasesS3Path?: string | null,
+    testCasesCount?: number | null,
+    resultsS3Path?: string | null,
+    status: string,
+    passedCases?: number | null,
+    failedCases?: number | null,
+    totalTimeMs?: number | null,
+    results?:  Array< {
+      __typename: "EvaluationResult",
+      caseName: string,
+      input?: string | null,
+      expectedOutput?: string | null,
+      actualOutput?: string | null,
+      score: number,
+      passed: boolean,
+      reason?: string | null,
+      latencyMs?: number | null,
+    } | null > | null,
+    errorMessage?: string | null,
+    createdAt: string,
+    startedAt?: string | null,
+    completedAt?: string | null,
+  } | null,
+};
+
+export type DeleteEvaluatorMutationVariables = {
+  evaluatorId: string,
+};
+
+export type DeleteEvaluatorMutation = {
+  deleteEvaluator?: boolean | null,
+};
+
+export type RunEvaluationMutationVariables = {
+  evaluatorId: string,
+};
+
+export type RunEvaluationMutation = {
+  runEvaluation?:  {
+    __typename: "Evaluator",
+    evaluatorId: string,
+    name: string,
+    description?: string | null,
+    evaluatorType: string,
+    customRubric?: string | null,
+    agentRuntimeName?: string | null,
+    qualifier: string,
+    modelId?: string | null,
+    passThreshold?: number | null,
+    testCasesS3Path?: string | null,
+    testCasesCount?: number | null,
+    resultsS3Path?: string | null,
+    status: string,
+    passedCases?: number | null,
+    failedCases?: number | null,
+    totalTimeMs?: number | null,
+    results?:  Array< {
+      __typename: "EvaluationResult",
+      caseName: string,
+      input?: string | null,
+      expectedOutput?: string | null,
+      actualOutput?: string | null,
+      score: number,
+      passed: boolean,
+      reason?: string | null,
+      latencyMs?: number | null,
+    } | null > | null,
+    errorMessage?: string | null,
+    createdAt: string,
+    startedAt?: string | null,
+    completedAt?: string | null,
+  } | null,
+};
+
+export type PublishEvaluationUpdateMutationVariables = {
+  evaluatorId: string,
+  status: string,
+};
+
+export type PublishEvaluationUpdateMutation = {
+  publishEvaluationUpdate?:  {
+    __typename: "EvaluationNotification",
+    evaluatorId?: string | null,
+    status?: string | null,
+  } | null,
+};
+
 export type ListSessionsQueryVariables = {
 };
 
@@ -632,6 +790,87 @@ export type GetFavoriteRuntimeQuery = {
   } | null,
 };
 
+export type ListEvaluatorsQueryVariables = {
+};
+
+export type ListEvaluatorsQuery = {
+  listEvaluators?:  Array< {
+    __typename: "Evaluator",
+    evaluatorId: string,
+    name: string,
+    description?: string | null,
+    evaluatorType: string,
+    customRubric?: string | null,
+    agentRuntimeName?: string | null,
+    qualifier: string,
+    modelId?: string | null,
+    passThreshold?: number | null,
+    testCasesS3Path?: string | null,
+    testCasesCount?: number | null,
+    resultsS3Path?: string | null,
+    status: string,
+    passedCases?: number | null,
+    failedCases?: number | null,
+    totalTimeMs?: number | null,
+    results?:  Array< {
+      __typename: "EvaluationResult",
+      caseName: string,
+      input?: string | null,
+      expectedOutput?: string | null,
+      actualOutput?: string | null,
+      score: number,
+      passed: boolean,
+      reason?: string | null,
+      latencyMs?: number | null,
+    } | null > | null,
+    errorMessage?: string | null,
+    createdAt: string,
+    startedAt?: string | null,
+    completedAt?: string | null,
+  } > | null,
+};
+
+export type GetEvaluatorQueryVariables = {
+  evaluatorId: string,
+};
+
+export type GetEvaluatorQuery = {
+  getEvaluator?:  {
+    __typename: "Evaluator",
+    evaluatorId: string,
+    name: string,
+    description?: string | null,
+    evaluatorType: string,
+    customRubric?: string | null,
+    agentRuntimeName?: string | null,
+    qualifier: string,
+    modelId?: string | null,
+    passThreshold?: number | null,
+    testCasesS3Path?: string | null,
+    testCasesCount?: number | null,
+    resultsS3Path?: string | null,
+    status: string,
+    passedCases?: number | null,
+    failedCases?: number | null,
+    totalTimeMs?: number | null,
+    results?:  Array< {
+      __typename: "EvaluationResult",
+      caseName: string,
+      input?: string | null,
+      expectedOutput?: string | null,
+      actualOutput?: string | null,
+      score: number,
+      passed: boolean,
+      reason?: string | null,
+      latencyMs?: number | null,
+    } | null > | null,
+    errorMessage?: string | null,
+    createdAt: string,
+    startedAt?: string | null,
+    completedAt?: string | null,
+  } | null,
+};
+
 export type ReceiveMessagesSubscriptionVariables = {
   sessionId?: string | null,
 };
@@ -653,5 +892,17 @@ export type ReceiveUpdateNotificationSubscription = {
   receiveUpdateNotification?:  {
     __typename: "AgentFactoryNotification",
     agentName?: string | null,
+  } | null,
+};
+
+export type ReceiveEvaluationUpdateSubscriptionVariables = {
+  evaluatorId: string,
+};
+
+export type ReceiveEvaluationUpdateSubscription = {
+  receiveEvaluationUpdate?:  {
+    __typename: "EvaluationNotification",
+    evaluatorId?: string | null,
+    status?: string | null,
   } | null,
 };

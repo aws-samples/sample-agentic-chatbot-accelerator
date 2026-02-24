@@ -18,6 +18,7 @@ import { generatePrefix } from "../../shared/utils";
 export class ChatbotDynamoDBTables extends Construct {
     public readonly sessionsTable: dynamodb.Table;
     public readonly favoriteRuntimeTable: dynamodb.Table;
+    public readonly evaluatorsTable: dynamodb.Table;
     public readonly byUserIdIndex: string = "byUserId";
 
     constructor(scope: Construct, id: string) {
@@ -66,7 +67,22 @@ export class ChatbotDynamoDBTables extends Construct {
             },
         });
 
+        const evaluatorsTable = new dynamodb.Table(this, "EvaluatorsTable", {
+            tableName: `${prefix}-evaluatorsTable`,
+            partitionKey: {
+                name: "EvaluatorName",
+                type: dynamodb.AttributeType.STRING,
+            },
+            billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+            encryption: dynamodb.TableEncryption.AWS_MANAGED,
+            removalPolicy: cdk.RemovalPolicy.DESTROY,
+            pointInTimeRecoverySpecification: {
+                pointInTimeRecoveryEnabled: true,
+            },
+        });
+
         this.sessionsTable = sessionsTable;
         this.favoriteRuntimeTable = favoriteTable;
+        this.evaluatorsTable = evaluatorsTable;
     }
 }

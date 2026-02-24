@@ -57,6 +57,7 @@ def create_agent(
     user_id: str,
     mcp_client_manager: MCPClientManager | None,
     session_manager: Any | None = None,
+    trace_attributes: dict[str, str] | None = None,
 ) -> tuple[Agent, AgentCallbacks]:
     """
     Create and configure a Strands Agent with tools, callbacks, and conversation management.
@@ -66,6 +67,8 @@ def create_agent(
         logger: Logger instance for logging agent initialization and callbacks.
         mcp_client_manager: Optional MCP client manager for loading MCP tools.
         session_manager: Optional session manager for conversation state persistence.
+        trace_attributes: Optional trace attributes for observability (e.g., session.id).
+            Required for trajectory capture when using evaluation features.
 
     Returns:
         A tuple containing the configured Agent and its AgentCallbacks handler.
@@ -81,6 +84,7 @@ def create_agent(
             configuration.conversationManager, logger
         ),
         session_manager=session_manager,
+        trace_attributes=trace_attributes,
     )
     callbacks = AgentCallbacks(logger, session_id, user_id)
 

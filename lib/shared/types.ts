@@ -280,6 +280,19 @@ export interface AgentRuntimeConfig {
 }
 
 /**
+ * Interface defining configuration for the evaluation framework.
+ * @property supportedModels - Record mapping user-friendly model names to Bedrock model identifiers for evaluations.
+ *                             The first model in this record is used as the default.
+ * @property passThreshold - Score threshold (0.0-1.0) above which a test case is considered passed.
+ * @property defaultRubrics - Optional record mapping evaluator types to their default rubric text
+ */
+export interface EvaluatorConfig {
+    supportedModels: Record<string, string>;
+    passThreshold: number;
+    defaultRubrics?: Record<string, string>;
+}
+
+/**
  * Configuration interface for the CDK deployment.
  * This is the main configuration object that controls the entire system deployment.
  *
@@ -320,4 +333,6 @@ export interface SystemConfig {
     agentCoreObservability?: ObservabilityProps;
 
     agentRuntimeConfig?: AgentRuntimeConfig;
+
+    evaluatorConfig?: EvaluatorConfig;
 }

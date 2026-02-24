@@ -249,3 +249,83 @@ export const getFavoriteRuntime = /* GraphQL */ `query GetFavoriteRuntime {
   APITypes.GetFavoriteRuntimeQueryVariables,
   APITypes.GetFavoriteRuntimeQuery
 >;
+export const listEvaluators = /* GraphQL */ `query ListEvaluators {
+  listEvaluators {
+    evaluatorId
+    name
+    description
+    evaluatorType
+    customRubric
+    agentRuntimeName
+    qualifier
+    modelId
+    passThreshold
+    testCasesS3Path
+    testCasesCount
+    resultsS3Path
+    status
+    passedCases
+    failedCases
+    totalTimeMs
+    results {
+      caseName
+      input
+      expectedOutput
+      actualOutput
+      score
+      passed
+      reason
+      latencyMs
+      __typename
+    }
+    errorMessage
+    createdAt
+    startedAt
+    completedAt
+    __typename
+  }
+}
+` as GeneratedQuery<
+  APITypes.ListEvaluatorsQueryVariables,
+  APITypes.ListEvaluatorsQuery
+>;
+export const getEvaluator = /* GraphQL */ `query GetEvaluator($evaluatorId: ID!) {
+  getEvaluator(evaluatorId: $evaluatorId) {
+    evaluatorId
+    name
+    description
+    evaluatorType
+    customRubric
+    agentRuntimeName
+    qualifier
+    modelId
+    passThreshold
+    testCasesS3Path
+    testCasesCount
+    resultsS3Path
+    status
+    passedCases
+    failedCases
+    totalTimeMs
+    results {
+      caseName
+      input
+      expectedOutput
+      actualOutput
+      score
+      passed
+      reason
+      latencyMs
+      __typename
+    }
+    errorMessage
+    createdAt
+    startedAt
+    completedAt
+    __typename
+  }
+}
+` as GeneratedQuery<
+  APITypes.GetEvaluatorQueryVariables,
+  APITypes.GetEvaluatorQuery
+>;

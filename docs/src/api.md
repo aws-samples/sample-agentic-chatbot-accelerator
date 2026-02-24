@@ -49,3 +49,9 @@ The following table documents the [GraphQL API schema](../../lib/api/schema/sche
 | resetFavoriteRuntime | Mutation | Remove the favorite endpoint for a given user | Yes | User authenticated via Cognito |  |
 | publishRuntimeUpdate | Mutation | Notify on AgentCore Runtime Update | No | Lambda Function | Used for both delete runtime and delete endpoints |
 | receiveUpdateNotification | Subscription |Receive AgentCore Runtime update | Yes | User authenticated via Cognito |  |
+| listEvaluators | Query | List all evaluation configurations | Yes | User authenticated via Cognito | Returns evaluator metadata including status, progress, and pass rates |
+| getEvaluator | Query | Get a specific evaluator by ID | Yes | User authenticated via Cognito | Includes detailed results if evaluation is completed |
+| createEvaluator | Mutation | Create a new evaluation configuration | Yes | User authenticated via Cognito | Defines test cases, evaluator type, and target agent |
+| updateEvaluator | Mutation | Update an existing evaluator configuration | Yes | User authenticated via Cognito | Cannot update while evaluation is running |
+| deleteEvaluator | Mutation | Delete an evaluator and its results | Yes | User authenticated via Cognito | Removes all associated S3 results |
+| runEvaluation | Mutation | Start an evaluation run | Yes | User authenticated via Cognito | Queues test cases to SQS for processing |

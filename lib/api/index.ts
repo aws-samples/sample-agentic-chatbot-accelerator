@@ -23,6 +23,7 @@ import { Shared } from "../shared";
 import { SystemConfig } from "../shared/types";
 import { generatePrefix } from "../shared/utils";
 import { AgentCoreApis } from "./agent-core-runtime";
+import { EvaluationApi } from "./evaluation-api";
 import { HttpApiBackend } from "./http-api-backend";
 import { KnowledgeBaseOps } from "./knowledge-base";
 import { ChatbotDynamoDBTables } from "./tables";
@@ -132,13 +133,22 @@ export class ChatbotApi extends Construct {
             api: api,
         });
 
+        // Evaluation API
+        const evaluationApi = new EvaluationApi(this, "EvaluationApi", {
+            shared: props.shared,
+            config: props.config,
+            api: api,
+            evaluatorsTable: chatTables.evaluatorsTable,
+            byUserIdIndex: chatTables.byUserIdIndex,
+        });
+
         new HttpApiBackend(this, "SyncApiBackend", {
             ...props,
             api: api,
             sessionsTable: chatTables.sessionsTable,
             favoriteRuntimeTable: chatTables.favoriteRuntimeTable,
             byUserIdIndex: chatTables.byUserIdIndex,
-            operationToExclude: [...agentCoreApis.operations, ...kbApis.operations],
+            operationToExclude: [...agentCoreApis.operations, ...kbApis.operations, ...evaluationApi.operations],
         });
 
         // CDK outputs
