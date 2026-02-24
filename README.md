@@ -57,6 +57,7 @@ The Agentic Chatbot Accelerator is a web application deployment solution that ut
 - [Knowledge Base Management](./docs/src/kb-management.md)
 - [Development Guide](./docs/src/development-guide.md)
 - [Agent Factory](./docs/src/agent-factory.md)
+- [Swarm Agents](./docs/src/swarm-agents.md)
 - [Agent Event Architecture](./docs/src/token-streaming-architecture.md)
 - [Observability Insights](./docs/src/observability-insights.md)
 - [Terraform Deployment (Experimental)](./iac-terraform/README.md)
