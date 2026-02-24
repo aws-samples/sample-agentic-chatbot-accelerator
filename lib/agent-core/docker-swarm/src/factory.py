@@ -46,6 +46,8 @@ MODELS_WITHOUT_TOP_P = {"anthropic.claude-haiku-4-5-20251001-v1:0"}
 def create_swarm(
     configuration: SwarmConfiguration,
     logger: Logger,
+    session_id: str,
+    user_id: str,
     mcp_client_manager: MCPClientManager | None,
     session_manager: Any | None = None,
 ) -> tuple[Swarm, AgentCallbacks, dict[str, Agent]]:
@@ -106,7 +108,7 @@ def create_swarm(
         },
     )
 
-    callbacks = AgentCallbacks(logger)
+    callbacks = AgentCallbacks(logger, session_id, user_id)
 
     for agent_def in configuration.agents:
         agent = agents[agent_def.name]

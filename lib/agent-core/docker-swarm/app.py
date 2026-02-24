@@ -193,7 +193,12 @@ async def invoke(payload, context: RequestContext):
                 )
 
             SWARM, CALLBACKS, AGENTS = create_swarm(
-                configuration, logger, MCP_CLIENT_MANAGER, session_manager=None
+                configuration,
+                logger,
+                session_id=session_id,  # type: ignore
+                user_id=user_id,
+                mcp_client_manager=MCP_CLIENT_MANAGER,
+                session_manager=None,
             )
             CURRENT_SESSION_ID = session_id
 
