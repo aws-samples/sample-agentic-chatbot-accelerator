@@ -234,41 +234,58 @@ async def invoke(payload, context: RequestContext):
         },
     )
 
-    swarm_caller = SwarmCaller(logger=logger, swarm=SWARM)
     try:
-        async for event in _handle_stream(
-            swarm_caller,
-            user_message,
-            user_id,
-            context.session_id if context.session_id else "",
-            message_id,
-            logger,
-        ):
-            if (
-                event.get("data", {}).get("action")
-                == ChatbotAction.FINAL_RESPONSE.value
-            ):
-                logger.info(
-                    "The swarm returned an answer",
-                    extra={
-                        "result": {
-                            "finalAnswerPreview": event.get("data", {}).get(
-                                "content", []
-                            )[:100],
-                            "thinkingProcess": event.get("data", {}).get("rationale"),
-                        }
-                    },
-                )
-                if CALLBACKS and CALLBACKS.metadata:
-                    logger.info(
-                        "Answer metadata", extra={"toolMetadata": CALLBACKS.metadata}
-                    )
+        result = SWARM(user_message)
 
-            yield event
+        logger.info(
+            "Swarm completed",
+            extra={
+                "resultMetadata": {
+                    "status": result.status.value,
+                    "nodeHistory": [
+                        node.node_id for node in result.node_history
+                    ],
+                    "totalIterations": result.execution_count,
+                    "executionTime": result.execution_time,
+                    "tokenUsage": result.accumulated_usage,
+                }
+            },
+        )
+
+        reasoning_content = [
+            "# Intermediate Swarm node results",
+        ]
+        for i, node in enumerate(result.node_history[:-1]):
+            node_res = str(result.results[node.node_id].result)
+            reasoning_content.append(f"## Agent {i + 1}")
+            reasoning_content.append(node_res)
+
+        final_answer_data = {
+            "content": str(
+                result.results[result.node_history[-1].node_id].result
+            ),
+            "sessionId": session_id,
+            "messageId": message_id,
+            "type": "text",
+        }
+        if len(reasoning_content) > 1:
+            final_answer_data["reasoningContent"] = "\n\n".join(reasoning_content)
+
+        final_answer_payload = {
+            "action": ChatbotAction.FINAL_RESPONSE.value,
+            "userId": user_id,
+            "timestamp": int(round(datetime.now(timezone.utc).timestamp())),
+            "type": "text",
+            "framework": "AGENT_CORE",
+            "data": final_answer_data,
+        }
+
+        yield final_answer_payload
 
     except Exception as err:
         logger.error("Failed swarm call", extra={"rawErrorMessage": str(err)})
         logger.exception(err)
+        yield {"error": str(err), "action": "error"}
 
 
 if __name__ == "__main__":
