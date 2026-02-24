@@ -33,14 +33,19 @@ if TYPE_CHECKING:
     from strands.agent.conversation_manager import ConversationManager
 
 MODELS_THAT_SUPPORT_CACHING = (
-    "us.amazon.nova-micro-v1:0",
-    "us.amazon.nova-lite-v1:0",
-    "us.amazon.nova-pro-v1:0",
-    "us.anthropic.claude-sonnet-4-20250514-v1:0",
-    "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
-    "us.anthropic.claude-3-5-haiku-20241022-v1:0",
+    # Nova
+    "amazon.nova-micro-v1:0",
+    "amazon.nova-lite-v1:0",
+    "amazon.nova-pro-v1:0",
+    # Nova 2
+    "amazon.nova-2-lite-v1:0",
+    # Anthropic
+    "anthropic.claude-sonnet-4-20250514-v1:0",
+    "anthropic.claude-3-7-sonnet-20250219-v1:0",
+    "anthropic.claude-3-5-haiku-20241022-v1:0",
+    "anthropic.claude-haiku-4-5-20251001-v1:0",
+    "anthropic.claude-sonnet-4-5-20250929-v1:0",
 )
-MODELS_WITHOUT_TOP_P = {"anthropic.claude-haiku-4-5-20251001-v1:0"}
 
 
 def create_swarm(
@@ -187,11 +192,8 @@ def _create_model(configuration: ModelConfiguration) -> BedrockModel:
         "model_id": configuration.modelId,
         "max_tokens": configuration.parameters.maxTokens,
         "temperature": configuration.parameters.temperature,
-        "top_p": configuration.parameters.topP,
         "stop_sequences": configuration.parameters.stopSequences,
     }
-    if any(configuration.modelId.endswith(model) for model in MODELS_WITHOUT_TOP_P):
-        del model_args["top_p"]
 
     return BedrockModel(**model_args)
 

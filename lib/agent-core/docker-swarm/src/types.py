@@ -68,13 +68,11 @@ class InferenceConfig(BaseModel):
         maxTokens (int): Maximum number of tokens to generate in the response
         temperature (float): Controls randomness in response generation. Higher values (e.g. 1.0) make output more random,
             lower values (e.g. 0.1) make it more focused and deterministic
-        topP (float): Nucleus sampling parameter that controls diversity of generated tokens. Default 0.999
         stopSequences (Optional[List[str]]): List of sequences that will stop text generation when encountered. Default None
     """
 
     maxTokens: int
     temperature: float
-    topP: float = 0.999
     stopSequences: Optional[list[str]] = None
 
 
