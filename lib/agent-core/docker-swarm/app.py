@@ -3,13 +3,10 @@
 #
 # SPDX-License-Identifier: MIT-0
 # ---------------------------------------------------------------------------- #
-import json
 import logging
 import os
 import sys
-import uuid
 from datetime import datetime, timezone
-from typing import AsyncGenerator
 
 from bedrock_agentcore.runtime import BedrockAgentCoreApp, RequestContext
 from opentelemetry import baggage
@@ -17,8 +14,7 @@ from opentelemetry.context import attach
 from src.data_source import parse_configuration
 from src.factory import create_swarm
 from src.mcp_client import MCPClientManager
-from src.runner import SwarmCaller
-from src.types import ChatbotAction, EStreamEvent
+from src.types import ChatbotAction
 from src.utils import JSONFormatter
 from strands import Agent
 from strands.multiagent import Swarm
@@ -40,94 +36,6 @@ MCP_CLIENT_MANAGER: MCPClientManager | None = None
 
 MEMORY_ID = os.environ.get("memoryId")
 AWS_REGION = os.environ.get("AWS_REGION")
-
-
-async def _handle_stream(
-    caller: SwarmCaller,
-    query: str,
-    user_id: str,
-    session_id: str,
-    message_id: str,
-    logger: logging.Logger,
-) -> AsyncGenerator[dict, None]:
-    """Handles streaming responses from Strands Swarm.
-
-    This function is kept separate from SwarmCaller.invoke_stream() because SwarmCaller
-    handles swarm-specific streaming (agent handoffs, multiagent events) while this function
-    handles token formatting and response assembly for the client.
-
-    Args:
-        caller (SwarmCaller): Swarm caller instance for making requests
-        query (str): User query text to send to the swarm
-        user_id (str): Unique identifier for the requesting user
-        session_id (str): Unique identifier for the current chat session
-        message_id (str): Unique identifier for the current message
-        logger (logging.Logger): Logger instance for debugging and monitoring
-
-    Yields:
-        dict: Stream data containing either token updates or final response payload
-    """
-    token_pos = 0
-    run_id = str(uuid.uuid4())
-    final_answer = ""
-
-    async for strand_token in caller.invoke_stream(
-        user_prompt=query, user_id=user_id, session_id=session_id
-    ):
-        if strand_token.flag == EStreamEvent.STREAM_COMPLETE:
-            final_answer = strand_token.value
-            break
-
-        logger.debug(f"strand token: {strand_token}")
-
-        data_to_send = {
-            "action": ChatbotAction.ON_NEW_LLM_TOKEN.value,
-            "userId": user_id,
-            "timestamp": int(round(datetime.now(timezone.utc).timestamp())),
-            "type": "text",
-            "framework": "AGENT_CORE",
-            "data": {
-                "sessionId": session_id,
-                "token": {
-                    "runId": f"f-{run_id}",
-                    "sequenceNumber": token_pos,
-                    "value": strand_token.value,
-                },
-            },
-        }
-
-        logger.debug(
-            "Sent new token to the client",
-            extra={
-                "payload": {
-                    "type": strand_token.flag.value,
-                    "value": strand_token.value,
-                    "position": token_pos,
-                }
-            },
-        )
-        yield data_to_send
-        token_pos += 1
-
-    final_answer_data = {
-        "content": final_answer,
-        "sessionId": session_id,
-        "messageId": message_id,
-        "type": "text",
-    }
-    if CALLBACKS and CALLBACKS.metadata.get("references"):
-        final_answer_data["references"] = json.dumps(CALLBACKS.metadata["references"])
-
-    final_answer_payload = {
-        "action": ChatbotAction.FINAL_RESPONSE.value,
-        "userId": user_id,
-        "timestamp": int(round(datetime.now(timezone.utc).timestamp())),
-        "type": "text",
-        "framework": "AGENT_CORE",
-        "data": final_answer_data,
-    }
-
-    yield final_answer_payload
 
 
 @app.entrypoint
@@ -242,9 +150,7 @@ async def invoke(payload, context: RequestContext):
             extra={
                 "resultMetadata": {
                     "status": result.status.value,
-                    "nodeHistory": [
-                        node.node_id for node in result.node_history
-                    ],
+                    "nodeHistory": [node.node_id for node in result.node_history],
                     "totalIterations": result.execution_count,
                     "executionTime": result.execution_time,
                     "tokenUsage": result.accumulated_usage,
@@ -255,15 +161,15 @@ async def invoke(payload, context: RequestContext):
         reasoning_content = [
             "# Intermediate Swarm node results",
         ]
-        for i, node in enumerate(result.node_history[:-1]):
+        for agent_call_order, node in enumerate(result.node_history[:-1]):
             node_res = str(result.results[node.node_id].result)
-            reasoning_content.append(f"## Agent {i + 1}")
+            reasoning_content.append(
+                f"## Agent {agent_call_order + 1} [{node.node_id}]"
+            )
             reasoning_content.append(node_res)
 
         final_answer_data = {
-            "content": str(
-                result.results[result.node_history[-1].node_id].result
-            ),
+            "content": str(result.results[result.node_history[-1].node_id].result),
             "sessionId": session_id,
             "messageId": message_id,
             "type": "text",
