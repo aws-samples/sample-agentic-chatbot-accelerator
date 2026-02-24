@@ -6,8 +6,12 @@
 # TODO: Remove code duplication - consider moving shared code to a common module
 from __future__ import annotations
 
+import json
+import os
 from typing import TYPE_CHECKING
 
+import boto3
+from botocore.exceptions import ClientError
 from strands.hooks import AfterToolCallEvent, BeforeToolCallEvent
 
 from .constants import RETRIEVE_FROM_KB_PREFIX
@@ -15,6 +19,11 @@ from .types import Citation, RetrievedReference
 
 if TYPE_CHECKING:
     from logging import Logger
+
+# --------------------------- AWS CLIENTS ---------------------------- #
+SNS_CLIENT = boto3.client("sns", region_name=os.environ.get("AWS_REGION"))
+AGENT_TOOLS_TOPIC_ARN = os.environ.get("agentToolsTopicArn", "")
+# -------------------------------------------------------------------- #
 
 
 class AgentCallbacks:
@@ -29,9 +38,12 @@ class AgentCallbacks:
         _logger (Logger): Logger instance for recording agent operations and tool usage.
     """
 
-    def __init__(self, logger: Logger) -> None:
+    def __init__(self, logger: Logger, session_id: str, user_id: str) -> None:
         self._metadata = dict()
         self._logger = logger
+        self._nb_tool_invocations = 0
+        self._session_id = session_id
+        self._user_id = user_id
 
     @property
     def metadata(self) -> dict:
@@ -39,6 +51,7 @@ class AgentCallbacks:
 
     def reset_metadata(self) -> None:
         self._metadata = dict()
+        self._nb_tool_invocations = 0
 
     def log_tool_entries(self, event: BeforeToolCallEvent) -> None:
         """Logs information about tool invocation before it occurs.
@@ -50,10 +63,81 @@ class AgentCallbacks:
         Returns:
             None
         """
+        specs = event.selected_tool.tool_spec if event.selected_tool else None
+
+        self._nb_tool_invocations += 1
+
         self._logger.info(
-            "Agent is going to call a tool",
-            extra={"toolInfo": event.tool_use},
+            f"Agent is going to call tool #{self._nb_tool_invocations} in this turn",
+            extra={"toolSpecifications": specs, "toolParameters": event.tool_use},
         )
+
+        parameters = []
+        input_values = event.tool_use.get("input", {})
+
+        if specs:
+            input_schema = specs.get("inputSchema", {}).get("json", {})
+            properties = input_schema.get("properties", {})
+
+            for param_name, param_value in input_values.items():
+                param_schema = properties.get(param_name, {})
+                parameters.append(
+                    {
+                        "name": param_name,
+                        "type": param_schema.get("type", "unknown"),
+                        "description": param_schema.get("description", ""),
+                        "value": param_value,
+                    }
+                )
+        else:
+            # Fallback if no specs available
+            for param_name, param_value in input_values.items():
+                parameters.append(
+                    {
+                        "name": param_name,
+                        "type": "unknown",
+                        "description": "",
+                        "value": param_value,
+                    }
+                )
+
+        message = {
+            "context": {
+                "userId": self._user_id,
+                "sessionId": self._session_id,
+                "invocationNumber": self._nb_tool_invocations,
+            },
+            "data": {
+                "toolName": event.tool_use.get("name", "unknown"),
+                "toolDescription": specs.get("description", "") if specs else "",
+                "parameters": parameters,
+            },
+        }
+
+        # Publish tool invocation to SNS topic
+        if AGENT_TOOLS_TOPIC_ARN:
+            try:
+                SNS_CLIENT.publish(
+                    TopicArn=AGENT_TOOLS_TOPIC_ARN,
+                    Message=json.dumps(message),
+                    Subject="AgentToolInvocation",
+                )
+                self._logger.info(
+                    "Published tool invocation to SNS",
+                    extra={
+                        "topicArn": AGENT_TOOLS_TOPIC_ARN,
+                        "toolName": message.get("data", {}).get("toolName"),
+                        "toolDescription": message.get("data", {}).get(
+                            "toolDescription"
+                        ),
+                        "toolParameters": message.get("data", {}).get("parameters"),
+                    },
+                )
+            except (ClientError, ValueError) as err:
+                self._logger.warning(
+                    "Failed to publish tool invocation to SNS",
+                    extra={"error": str(err)},
+                )
 
     def log_tool_results(self, event: AfterToolCallEvent) -> None:
         if event.selected_tool:
