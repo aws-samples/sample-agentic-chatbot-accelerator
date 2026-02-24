@@ -24,11 +24,12 @@ Creates a new AgentCore Runtime by starting a Step Function execution.
 
 **Parameters:**
 - `agentName` (string): The unique name identifier for the agent runtime
-- `configValue` (string): A JSON string containing the agent configuration conforming to the AgentConfiguration schema
+- `configValue` (string): A JSON string containing the agent configuration conforming to the AgentConfiguration schema (for single agents) or SwarmConfiguration schema (for swarm agents)
+- `architectureType` (ArchitectureType, optional): `SINGLE` or `SWARM`. Defaults to `SINGLE` when omitted
 
 **Validation:**
 - First validates the input is valid JSON
-- Then validates against the AgentConfiguration Pydantic model
+- Then validates against the `AgentConfiguration` Pydantic model (when `architectureType` is `SINGLE` or omitted) or the `SwarmConfiguration` model (when `architectureType` is `SWARM`)
 
 **Returns:**
 - The `agentName` if Step Function execution started successfully
@@ -120,6 +121,7 @@ Retrieves all agent runtime summaries from DynamoDB.
 - `numberOfVersion`: Number of versions for the agent
 - `qualifierToVersion`: JSON string mapping qualifiers to versions
 - `status`: Current status of the agent (e.g., "Ready")
+- `architectureType`: Architecture type of the agent (`SINGLE` or `SWARM`)
 
 **Data Source:** `AGENT_CORE_SUMMARY_TABLE`
 

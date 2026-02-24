@@ -8,3 +8,4 @@
 - Romain Besombes (rbesomb@amazon.fr)
 - Deniz Yilmaz (dyilma@amazon.co.uk)
 - Mohamed Ghoneim (ghoneimm@amazon.co.uk)
+- Thomas Dabner (tdabner@amazon.co.uk)
