@@ -234,3 +234,28 @@ output "transaction_search_enabled" {
   description = "Whether X-Ray Transaction Search is enabled"
   value       = var.observability != null ? module.observability[0].transaction_search_enabled : null
 }
+
+# -----------------------------------------------------------------------------
+# Evaluation Module Outputs
+# S3 bucket, SQS queue, and Lambda functions for agent evaluation
+# -----------------------------------------------------------------------------
+
+output "evaluations_bucket_name" {
+  description = "Name of the S3 bucket for evaluation data"
+  value       = module.evaluation.evaluations_bucket_name
+}
+
+output "evaluation_queue_url" {
+  description = "URL of the SQS evaluation queue"
+  value       = module.evaluation.evaluation_queue_url
+}
+
+output "evaluation_resolver_function_name" {
+  description = "Name of the evaluation resolver Lambda function"
+  value       = module.evaluation.evaluation_resolver_function_name
+}
+
+output "evaluation_executor_function_name" {
+  description = "Name of the evaluation executor Lambda function"
+  value       = module.evaluation.evaluation_executor_function_name
+}

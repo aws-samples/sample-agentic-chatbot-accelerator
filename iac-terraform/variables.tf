@@ -215,3 +215,18 @@ variable "observability" {
   })
   default = null
 }
+
+# -----------------------------------------------------------------------------
+# Evaluator Configuration (Optional)
+# Configures the agent evaluation framework using Strands Eval SDK
+# -----------------------------------------------------------------------------
+
+variable "evaluator_config" {
+  description = "Optional evaluator configuration for agent evaluation. Defines supported models, pass thresholds, and default rubrics."
+  type = object({
+    supported_models = optional(map(string), {})
+    pass_threshold   = optional(number, 0.8)
+    default_rubrics  = optional(map(string), {})
+  })
+  default = null
+}

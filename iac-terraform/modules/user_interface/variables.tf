@@ -71,6 +71,20 @@ variable "data_bucket_name" {
 }
 
 # -----------------------------------------------------------------------------
+# Evaluator Configuration (Optional)
+# -----------------------------------------------------------------------------
+
+variable "evaluator_config" {
+  description = "Evaluator configuration for the frontend (models, threshold, rubrics)"
+  type = object({
+    supported_models = map(string)
+    pass_threshold   = number
+    default_rubrics  = map(string)
+  })
+  default = null
+}
+
+# -----------------------------------------------------------------------------
 # Geo Restrictions (Optional)
 # -----------------------------------------------------------------------------
 

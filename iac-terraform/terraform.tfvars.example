@@ -240,3 +240,37 @@ ecr_image_tag = "latest"
 #     max_lifetime_hours                   = 24   # Maximum runtime lifetime
 #   }
 # }
+
+# =============================================================================
+# Evaluator Configuration (Optional)
+# Configures agent evaluation using Strands Eval SDK
+# =============================================================================
+
+# Uncomment to configure evaluation settings:
+# evaluator_config = {
+#   # Models available for LLM-based evaluations
+#   # Key = display name, Value = Bedrock model ID
+#   # Use [REGION-PREFIX] for cross-region inference profiles
+#   supported_models = {
+#     "Claude Haiku 4.5"  = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+#     "Claude Sonnet 4.5" = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+#     "Nova 2 Lite"       = "us.amazon.nova-2-lite-v1:0"
+#   }
+#
+#   # Score threshold (0.0-1.0) above which a test case is considered passed
+#   pass_threshold = 0.8
+#
+#   # Default rubrics for each evaluator type
+#   default_rubrics = {
+#     OutputEvaluator = <<-EOT
+#       Evaluate the response based on:
+#       1. Accuracy - Is the information correct compared to expected output?
+#       2. Completeness - Does it fully answer the question?
+#       3. Clarity - Is it easy to understand?
+#
+#       Score 1.0 if all criteria are met excellently.
+#       Score 0.5 if some criteria are partially met.
+#       Score 0.0 if the response is inadequate.
+#     EOT
+#   }
+# }

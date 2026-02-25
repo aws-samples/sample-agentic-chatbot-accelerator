@@ -90,3 +90,33 @@ resource "aws_dynamodb_table" "favorite_runtime" {
     Name = "${local.name_prefix}-favoriteRuntimeTable"
   })
 }
+
+# -----------------------------------------------------------------------------
+# Evaluators Table
+# Stores evaluation configurations and results
+# -----------------------------------------------------------------------------
+
+resource "aws_dynamodb_table" "evaluators" {
+  name         = "${local.name_prefix}-evaluatorsTable"
+  billing_mode = "PAY_PER_REQUEST"
+
+  hash_key = "EvaluatorName"
+
+  attribute {
+    name = "EvaluatorName"
+    type = "S"
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = var.kms_key_arn
+  }
+
+  tags = merge(var.tags, {
+    Name = "${local.name_prefix}-evaluatorsTable"
+  })
+}

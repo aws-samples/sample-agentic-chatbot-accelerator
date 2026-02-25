@@ -237,15 +237,17 @@ module "http_api_resolver" {
   kms_key_arn = aws_kms_key.main.arn
 
   # Operations handled by other modules (to be excluded from this resolver)
-  # Same logic as CDK: operationToExclude: [...agentCoreApis.operations, ...kbApis.operations]
+  # Same logic as CDK: operationToExclude: [...agentCoreApis.operations, ...kbApis.operations, ...evaluationApi.operations]
   operations_to_exclude = concat(
     # AgentCore APIs operations (always present)
     module.agent_core_apis.operations,
     # Knowledge Base APIs operations (when KB is enabled)
-    var.knowledge_base != null && var.data_processing != null ? module.knowledge_base_apis[0].operations : []
+    var.knowledge_base != null && var.data_processing != null ? module.knowledge_base_apis[0].operations : [],
+    # Evaluation API operations (always present)
+    module.evaluation.operations,
   )
 
-  depends_on = [module.appsync, module.api_tables, module.agent_core, module.agent_core_apis]
+  depends_on = [module.appsync, module.api_tables, module.agent_core, module.agent_core_apis, module.evaluation]
 }
 
 # -----------------------------------------------------------------------------
@@ -381,6 +383,9 @@ module "user_interface" {
 
   # Data bucket for document uploads (from data_processing module)
   data_bucket_name = var.data_processing != null ? module.data_processing[0].data_bucket_name : ""
+
+  # Evaluator configuration (optional - models, threshold, rubrics for evaluation wizard)
+  evaluator_config = var.evaluator_config
 
   # Geo restrictions (optional)
   enable_geo_restrictions = var.enable_geo_restrictions
@@ -586,6 +591,39 @@ module "knowledge_base_apis" {
   kms_key_arn = aws_kms_key.main.arn
 
   depends_on = [module.appsync, module.data_processing, module.knowledge_base]
+}
+
+# -----------------------------------------------------------------------------
+# Evaluation Module
+# Creates S3 buckets, SQS queues, Lambda functions, and AppSync resolvers
+# for agent evaluation using the Strands Eval SDK
+# Equivalent to: new EvaluationApi(this, "EvaluationApi", {...}) in lib/api/index.ts
+# -----------------------------------------------------------------------------
+module "evaluation" {
+  source = "./modules/evaluation"
+
+  prefix = local.prefix
+
+  # Lambda configuration
+  powertools_layer_arn = module.shared.powertools_layer_arn
+  boto3_layer_arn      = module.shared.boto3_layer_arn
+  genai_core_layer_arn = module.shared.genai_core_layer_arn
+  python_runtime       = module.shared.python_runtime
+  lambda_architecture  = module.shared.lambda_architecture
+
+  # DynamoDB Tables
+  evaluators_table_name = module.api_tables.evaluators_table_name
+  evaluators_table_arn  = module.api_tables.evaluators_table_arn
+  by_user_id_index      = module.api_tables.sessions_table_by_user_index
+
+  # AppSync
+  appsync_api_id = module.appsync.api_id
+  graphql_url    = module.appsync.graphql_url
+
+  # Encryption
+  kms_key_arn = aws_kms_key.main.arn
+
+  depends_on = [module.appsync, module.api_tables, aws_kms_key.main]
 }
 
 # -----------------------------------------------------------------------------

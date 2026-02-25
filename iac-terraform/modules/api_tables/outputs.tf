@@ -37,3 +37,17 @@ output "favorite_runtime_table_arn" {
   description = "ARN of the favorite runtime DynamoDB table"
   value       = aws_dynamodb_table.favorite_runtime.arn
 }
+
+# -----------------------------------------------------------------------------
+# Evaluators Table Outputs
+# -----------------------------------------------------------------------------
+
+output "evaluators_table_name" {
+  description = "Name of the evaluators DynamoDB table"
+  value       = aws_dynamodb_table.evaluators.name
+}
+
+output "evaluators_table_arn" {
+  description = "ARN of the evaluators DynamoDB table"
+  value       = aws_dynamodb_table.evaluators.arn
+}

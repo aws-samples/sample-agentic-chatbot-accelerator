@@ -43,6 +43,14 @@ resource "local_file" "aws_exports" {
     var.data_bucket_name != "" ? {
       aws_user_files_s3_bucket        = var.data_bucket_name
       aws_user_files_s3_bucket_region = data.aws_region.current.id
+    } : {},
+    # Add evaluator config if provided (models, threshold, rubrics for evaluation wizard)
+    var.evaluator_config != null ? {
+      evaluatorConfig = {
+        supportedModels = var.evaluator_config.supported_models
+        passThreshold   = var.evaluator_config.pass_threshold
+        defaultRubrics  = var.evaluator_config.default_rubrics
+      }
     } : {}
   ))
 }
@@ -56,8 +64,13 @@ resource "null_resource" "build_react_app" {
   triggers = {
     # Rebuild when aws-exports.json changes
     aws_exports_hash = local_file.aws_exports.content_sha256
-    # Rebuild when source code changes (check package.json as proxy)
+    # Rebuild when package.json changes (new dependencies)
     package_json_hash = filesha256("${local.react_app_path}/package.json")
+    # Rebuild when React source code changes (.tsx, .ts, .css, etc.)
+    source_hash = sha256(join("", [
+      for f in sort(fileset("${local.react_app_path}/src", "**")) :
+      filesha256("${local.react_app_path}/src/${f}")
+    ]))
     # Rebuild when CloudFront distribution changes (for cache invalidation)
     distribution_id = aws_cloudfront_distribution.website.id
   }
