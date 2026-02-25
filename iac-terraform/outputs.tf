@@ -125,6 +125,21 @@ output "docker_image_tag" {
   value       = module.agent_core.docker_image_tag
 }
 
+output "swarm_ecr_repository_url" {
+  description = "URL of the ECR repository for swarm agent runtime container images"
+  value       = module.agent_core.swarm_ecr_repository_url
+}
+
+output "swarm_container_uri" {
+  description = "Full container image URI for the swarm agent runtime"
+  value       = module.agent_core.swarm_container_uri
+}
+
+output "swarm_docker_image_tag" {
+  description = "Content-based Docker image tag for the swarm container. Use this tag when building swarm images with build-image.sh."
+  value       = module.agent_core.swarm_docker_image_tag
+}
+
 output "agent_core_execution_role_arn" {
   description = "ARN of the IAM execution role for Bedrock AgentCore"
   value       = module.agent_core.execution_role_arn

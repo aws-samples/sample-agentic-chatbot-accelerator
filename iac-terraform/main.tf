@@ -287,7 +287,8 @@ module "agent_core_apis" {
   lambda_architecture  = module.shared.lambda_architecture
 
   # Container (includes image tag like :latest)
-  container_uri = module.agent_core.container_uri
+  container_uri       = module.agent_core.container_uri
+  swarm_container_uri = module.agent_core.swarm_container_uri
 
   # DynamoDB tables
   agent_core_runtime_table_name  = module.agent_core.agent_runtime_config_table_name

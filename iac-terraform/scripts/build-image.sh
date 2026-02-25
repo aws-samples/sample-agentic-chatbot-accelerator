@@ -116,8 +116,9 @@ fi
 
 # Compute content-based image tag from Docker source files (matches Terraform ecr.tf logic)
 # This ensures the tag used here matches what Terraform expects
+# Usage: compute_content_tag <docker_dir>
 compute_content_tag() {
-    local docker_dir="${PROJECT_ROOT}/lib/agent-core/docker"
+    local docker_dir="$1"
 
     if [[ ! -d "$docker_dir" ]]; then
         echo ""
@@ -148,7 +149,7 @@ if [[ -z "$IMAGE_TAG" ]]; then
         echo_info "Using image tag from Terraform output: ${IMAGE_TAG}"
     else
         # Compute content-based tag locally (fallback if Terraform not initialized)
-        CONTENT_TAG=$(compute_content_tag)
+        CONTENT_TAG=$(compute_content_tag "${DOCKER_DIR}")
         if [[ -n "$CONTENT_TAG" ]]; then
             IMAGE_TAG="$CONTENT_TAG"
             echo_info "Using content-based image tag: ${IMAGE_TAG}"
@@ -156,6 +157,19 @@ if [[ -z "$IMAGE_TAG" ]]; then
             IMAGE_TAG="latest"
             echo_warn "Could not compute content-based tag. Falling back to 'latest'."
         fi
+    fi
+fi
+
+# Determine swarm image tag from Terraform output or content hash
+SWARM_DOCKER_DIR="${PROJECT_ROOT}/lib/agent-core/docker-swarm"
+cd "${TERRAFORM_DIR}"
+SWARM_IMAGE_TAG=$(terraform output -raw swarm_docker_image_tag 2>/dev/null || echo "")
+cd - > /dev/null
+
+if [[ -z "$SWARM_IMAGE_TAG" ]]; then
+    SWARM_IMAGE_TAG=$(compute_content_tag "${SWARM_DOCKER_DIR}")
+    if [[ -z "$SWARM_IMAGE_TAG" ]]; then
+        SWARM_IMAGE_TAG="latest"
     fi
 fi
 
@@ -170,6 +184,7 @@ fi
 echo_info "AWS Profile: ${AWS_PROFILE:-<default>}"
 echo_info "AWS Region: ${AWS_REGION}"
 echo_info "Image Tag: ${IMAGE_TAG}"
+echo_info "Swarm Image Tag: ${SWARM_IMAGE_TAG}"
 echo_info "Platform: ${PLATFORM}"
 
 # Build AWS CLI profile flag
@@ -194,6 +209,7 @@ if [[ -z "$ECR_STATE" ]]; then
 fi
 
 ECR_REPO_URL=$(terraform output -raw ecr_repository_url 2>/dev/null || echo "")
+SWARM_ECR_REPO_URL=$(terraform output -raw swarm_ecr_repository_url 2>/dev/null || echo "")
 
 if [[ -z "$ECR_REPO_URL" ]]; then
     echo_error "Could not get ECR repository URL from Terraform outputs."
@@ -202,6 +218,9 @@ if [[ -z "$ECR_REPO_URL" ]]; then
 fi
 
 echo_info "ECR Repository: ${ECR_REPO_URL}"
+if [[ -n "$SWARM_ECR_REPO_URL" ]]; then
+    echo_info "Swarm ECR Repository: ${SWARM_ECR_REPO_URL}"
+fi
 
 # Extract registry URL (everything before the repository name)
 ECR_REGISTRY="${ECR_REPO_URL%/*}"
@@ -215,7 +234,7 @@ aws ecr get-login-password --region "${AWS_REGION}" ${PROFILE_FLAG} | \
     docker login --username AWS --password-stdin "${ECR_REGISTRY}"
 
 # -----------------------------------------------------------------------------
-# Build Docker Image
+# Build and Push Standard Agent Docker Image
 # -----------------------------------------------------------------------------
 echo_info "Building Docker image from ${DOCKER_DIR}..."
 
@@ -228,17 +247,39 @@ docker build \
 
 echo_info "Built: ${FULL_IMAGE_URI}"
 
-# -----------------------------------------------------------------------------
-# Push to ECR
-# -----------------------------------------------------------------------------
 echo_info "Pushing image to ECR..."
-
 docker push "${FULL_IMAGE_URI}"
+echo_info "✅ Standard agent image pushed successfully!"
+
+# -----------------------------------------------------------------------------
+# Build and Push Swarm Agent Docker Image
+# -----------------------------------------------------------------------------
+if [[ -n "$SWARM_ECR_REPO_URL" ]] && [[ -d "$SWARM_DOCKER_DIR" ]]; then
+    echo_info "Building Swarm Docker image from ${SWARM_DOCKER_DIR}..."
+
+    SWARM_FULL_IMAGE_URI="${SWARM_ECR_REPO_URL}:${SWARM_IMAGE_TAG}"
+
+    docker build \
+        --platform "${PLATFORM}" \
+        -t "${SWARM_FULL_IMAGE_URI}" \
+        "${SWARM_DOCKER_DIR}"
+
+    echo_info "Built: ${SWARM_FULL_IMAGE_URI}"
+
+    echo_info "Pushing swarm image to ECR..."
+    docker push "${SWARM_FULL_IMAGE_URI}"
+    echo_info "✅ Swarm agent image pushed successfully!"
+else
+    echo_skip "Swarm ECR repository not yet created or docker-swarm directory not found. Skipping swarm image build."
+fi
 
 echo ""
-echo_info "✅ Image pushed successfully!"
+echo_info "✅ All images pushed successfully!"
 echo ""
-echo "Image URI: ${FULL_IMAGE_URI}"
+echo "Standard Image URI: ${FULL_IMAGE_URI}"
+if [[ -n "$SWARM_ECR_REPO_URL" ]] && [[ -d "$SWARM_DOCKER_DIR" ]]; then
+    echo "Swarm Image URI:    ${SWARM_FULL_IMAGE_URI}"
+fi
 echo ""
 echo "You can now deploy the AgentCore Runtime:"
 echo "  make tf-deploy"

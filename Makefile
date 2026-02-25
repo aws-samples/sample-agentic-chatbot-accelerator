@@ -60,14 +60,16 @@ tf-plan: tf-build-layers
 tf-deploy: tf-build-layers
 	@echo "Phase 1: Initializing Terraform..."
 	cd iac-terraform && terraform init -upgrade
-	@echo "Phase 2: Creating ECR repository (if needed)..."
+	@echo "Phase 2: Creating ECR repositories (if needed)..."
 	cd iac-terraform && terraform apply \
 		-target=module.agent_core.aws_kms_key.agent_core \
 		-target=module.agent_core.aws_kms_alias.agent_core \
 		-target=module.agent_core.aws_ecr_repository.agent_core \
 		-target=module.agent_core.aws_ecr_lifecycle_policy.agent_core \
+		-target=module.agent_core.aws_ecr_repository.swarm_agent_core \
+		-target=module.agent_core.aws_ecr_lifecycle_policy.swarm_agent_core \
 		-auto-approve
-	@echo "Phase 3: Building and pushing Docker image..."
+	@echo "Phase 3: Building and pushing Docker images..."
 	./iac-terraform/scripts/build-image.sh
 	@echo "Phase 4: Deploying all infrastructure..."
 	cd iac-terraform && terraform apply
@@ -80,6 +82,8 @@ tf-deploy-auto: tf-build-layers
 		-target=module.agent_core.aws_kms_alias.agent_core \
 		-target=module.agent_core.aws_ecr_repository.agent_core \
 		-target=module.agent_core.aws_ecr_lifecycle_policy.agent_core \
+		-target=module.agent_core.aws_ecr_repository.swarm_agent_core \
+		-target=module.agent_core.aws_ecr_lifecycle_policy.swarm_agent_core \
 		-auto-approve
 	./iac-terraform/scripts/build-image.sh
 	cd iac-terraform && terraform apply -auto-approve
