@@ -41,14 +41,17 @@ resource "aws_iam_role" "execution" {
 # -----------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "agentcore_execution" {
-  # ECR Image Access
+  # ECR Image Access (includes both standard and swarm repositories)
   statement {
     sid = "ECRImageAccess"
     actions = [
       "ecr:BatchGetImage",
       "ecr:GetDownloadUrlForLayer"
     ]
-    resources = [aws_ecr_repository.agent_core.arn]
+    resources = [
+      aws_ecr_repository.agent_core.arn,
+      aws_ecr_repository.swarm_agent_core.arn,
+    ]
   }
 
   # ECR Token Access
@@ -204,6 +207,17 @@ data "aws_iam_policy_document" "agentcore_execution" {
   statement {
     actions   = ["dynamodb:GetItem"]
     resources = [aws_dynamodb_table.agent_runtime_config.arn]
+  }
+
+  # DynamoDB Query - For swarm agent references (query runtime config table + indexes and summary table)
+  statement {
+    sid     = "DynamoDBQueryForSwarmAgentReferences"
+    actions = ["dynamodb:Query"]
+    resources = [
+      aws_dynamodb_table.agent_runtime_config.arn,
+      "${aws_dynamodb_table.agent_runtime_config.arn}/index/*",
+      aws_dynamodb_table.agent_summary.arn,
+    ]
   }
 
   # DynamoDB Access - Tool and MCP Server Registries
