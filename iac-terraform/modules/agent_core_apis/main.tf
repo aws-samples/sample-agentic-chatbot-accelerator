@@ -47,7 +47,8 @@ module "lambdas" {
   lambda_architecture  = var.lambda_architecture
 
   # Container
-  container_uri = var.container_uri
+  container_uri       = var.container_uri
+  swarm_container_uri = var.swarm_container_uri
 
   # DynamoDB tables
   agent_core_runtime_table_name  = var.agent_core_runtime_table_name

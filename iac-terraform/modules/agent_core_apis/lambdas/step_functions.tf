@@ -363,6 +363,7 @@ resource "aws_lambda_function" "create_runtime_version" {
       POWERTOOLS_LOG_LEVEL        = "INFO"
       REGION_NAME                 = data.aws_region.current.id
       CONTAINER_URI               = var.container_uri
+      SWARM_CONTAINER_URI         = var.swarm_container_uri
       AGENT_CORE_RUNTIME_ROLE_ARN = var.agent_core_execution_role_arn
       AGENT_CORE_RUNTIME_TABLE    = var.agent_core_runtime_table_name
       TOOL_REGISTRY_TABLE         = var.tool_registry_table_name
@@ -371,6 +372,8 @@ resource "aws_lambda_function" "create_runtime_version" {
       ENVIRONMENT_TAG             = var.environment_tag
       STACK_TAG                   = var.stack_tag
       AGENT_TOOLS_TOPIC_ARN       = var.agent_tools_topic_arn
+      AGENTS_TABLE_NAME           = var.agent_core_runtime_table_name
+      AGENTS_SUMMARY_TABLE_NAME   = var.agent_core_summary_table_name
     }
   }
 

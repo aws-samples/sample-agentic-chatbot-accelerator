@@ -96,7 +96,7 @@ make init-python-env
 make install-python-packages
 
 # Install pre-commit hooks
-pre-commit install
+GIT_CONFIG=/dev/null pre-commit install
 ```
 
 ### 2. Configuration

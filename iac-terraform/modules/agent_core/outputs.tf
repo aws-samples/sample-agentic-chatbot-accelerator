@@ -86,6 +86,30 @@ output "docker_image_tag" {
 }
 
 # -----------------------------------------------------------------------------
+# Swarm ECR Repository Outputs
+# -----------------------------------------------------------------------------
+
+output "swarm_ecr_repository_url" {
+  description = "URL of the ECR repository for swarm agent runtime container images"
+  value       = aws_ecr_repository.swarm_agent_core.repository_url
+}
+
+output "swarm_ecr_repository_arn" {
+  description = "ARN of the swarm ECR repository"
+  value       = aws_ecr_repository.swarm_agent_core.arn
+}
+
+output "swarm_container_uri" {
+  description = "Full container image URI for the swarm agent runtime"
+  value       = local.swarm_container_uri
+}
+
+output "swarm_docker_image_tag" {
+  description = "Content-based Docker image tag for the swarm container (derived from hash of Docker source files)"
+  value       = local.swarm_content_based_tag
+}
+
+# -----------------------------------------------------------------------------
 # IAM Role Outputs
 # -----------------------------------------------------------------------------
 
