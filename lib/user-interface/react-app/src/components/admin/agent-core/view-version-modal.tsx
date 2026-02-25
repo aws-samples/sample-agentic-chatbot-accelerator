@@ -189,21 +189,27 @@ export default function ViewVersionModal({
         return <Box display="inline">{String(value)}</Box>;
     };
 
+    const isSwarm = agentConfig && isSwarmConfig(agentConfig);
+
     const toolTableItems =
-        agentConfig?.tools.map((toolName) => ({
-            name: toolName,
-            parameters: agentConfig.toolParameters[toolName] || {},
-        })) || [];
+        !isSwarm && agentConfig?.tools
+            ? agentConfig.tools.map((toolName) => ({
+                  name: toolName,
+                  parameters: agentConfig.toolParameters[toolName] || {},
+              }))
+            : [];
 
     // Get MCP server details for configured servers
     const mcpServerTableItems =
-        agentConfig?.mcpServers?.map((serverName) => {
-            const serverInfo = availableMcpServers.find((s) => s.name === serverName);
-            return {
-                name: serverName,
-                description: serverInfo?.description || "No description available",
-            };
-        }) || [];
+        !isSwarm && agentConfig?.mcpServers
+            ? agentConfig.mcpServers.map((serverName) => {
+                  const serverInfo = availableMcpServers.find((s) => s.name === serverName);
+                  return {
+                      name: serverName,
+                      description: serverInfo?.description || "No description available",
+                  };
+              })
+            : [];
 
     return (
         <Modal
