@@ -262,15 +262,10 @@ export default function ChatMessage(props: ChatMessageProps) {
                             header="Model Reasoning"
                             size="large"
                         >
-                            <div
-                                style={{
-                                    whiteSpace: "pre-wrap",
-                                    fontFamily: "monospace",
-                                    fontSize: "13px",
-                                }}
-                            >
-                                {props.message.reasoningContent}
-                            </div>
+                            <MarkdownContent
+                                content={props.message.reasoningContent}
+                                setAnnex={props.setAnnex}
+                            />
                         </Modal>
                     )}
                     {props.message.references &&
