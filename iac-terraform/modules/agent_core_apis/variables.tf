@@ -50,6 +50,11 @@ variable "container_uri" {
   type        = string
 }
 
+variable "swarm_container_uri" {
+  description = "ECR image URI for swarm agent core container"
+  type        = string
+}
+
 # -----------------------------------------------------------------------------
 # DynamoDB Tables
 # -----------------------------------------------------------------------------

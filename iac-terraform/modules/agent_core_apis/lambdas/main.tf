@@ -77,6 +77,7 @@ resource "aws_lambda_function" "agent_core_resolver" {
       POWERTOOLS_SERVICE_NAME            = "agent-core-resolver"
       POWERTOOLS_LOG_LEVEL               = "INFO"
       CONTAINER_URI                      = var.container_uri
+      SWARM_CONTAINER_URI                = var.swarm_container_uri
       AGENT_CORE_RUNTIME_ROLE_ARN        = var.agent_core_execution_role_arn
       AGENT_CORE_RUNTIME_TABLE           = var.agent_core_runtime_table_name
       AGENT_CORE_SUMMARY_TABLE           = var.agent_core_summary_table_name
