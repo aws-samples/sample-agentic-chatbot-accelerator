@@ -77,6 +77,15 @@ export function getConfig(): SystemConfig {
                     Score 1.0 if all criteria are met excellently.
                     Score 0.5 if some criteria are partially met.
                     Score 0.0 if the response is inadequate.`,
+                TrajectoryEvaluator: `Evaluate the agent's action sequence based on:
+                    1. Efficiency - Did the agent take the most direct path to achieve the goal?
+                    2. Correctness - Were the right tools selected for each step?
+                    3. Order - Were actions performed in a logical sequence?
+                    4. Completeness - Were all necessary steps included without skipping critical actions?
+
+                    Score 1.0 if the trajectory was optimal and all criteria are met.
+                    Score 0.5 if the trajectory achieved the goal but with unnecessary steps or minor inefficiencies.
+                    Score 0.0 if the trajectory was significantly flawed or failed to achieve the goal.`,
             },
         },
     };
