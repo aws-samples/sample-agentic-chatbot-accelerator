@@ -8,7 +8,6 @@ COPY app.py .
 COPY src/ src/.
 
 ENV DOCKER_CONTAINER=1
-ENV OTEL_LOGS_EXPORTER=none
 
 RUN useradd -m -u 1000 bedrock_agentcore
 USER bedrock_agentcore

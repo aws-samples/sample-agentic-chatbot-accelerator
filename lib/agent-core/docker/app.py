@@ -6,7 +6,6 @@
 import json
 import logging
 import os
-import sys
 import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
@@ -19,7 +18,6 @@ from src.data_source import parse_configuration
 from src.factory import create_agent
 from src.mcp_client import MCPClientManager
 from src.types import ChatbotAction
-from src.utils import JSONFormatter
 from strands_evals.mappers import StrandsInMemorySessionMapper
 
 # Trajectory capture imports for evaluation features
@@ -30,11 +28,8 @@ if TYPE_CHECKING:
     from strands.agent import AgentResult
 
 
-handler = logging.StreamHandler(sys.stdout)
-handler.setFormatter(JSONFormatter())
 logger = logging.getLogger("bedrock_agentcore.app")
 logger.setLevel(logging.INFO)
-logger.addHandler(handler)
 
 app = BedrockAgentCoreApp()
 
