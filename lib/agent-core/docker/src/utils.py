@@ -3,10 +3,7 @@
 #
 # SPDX-License-Identifier: MIT-0
 # ------------------------------------------------------------------------ #
-import json
-import logging
 import re
-from datetime import datetime
 from typing import Optional
 
 from pydantic import BaseModel, ValidationError
@@ -20,45 +17,6 @@ def deserialize(value: str, object_type: type[BaseModel]) -> BaseModel:
         raise err
 
     return parsed_object
-
-
-class JSONFormatter(logging.Formatter):
-    def format(self, record):
-        log_entry = {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-            "level": record.levelname,
-            "message": record.getMessage(),
-            "logger": record.name,
-        }
-
-        # Add any extra fields
-        for key, value in record.__dict__.items():
-            if key not in [
-                "name",
-                "msg",
-                "args",
-                "levelname",
-                "levelno",
-                "pathname",
-                "filename",
-                "module",
-                "lineno",
-                "funcName",
-                "created",
-                "msecs",
-                "relativeCreated",
-                "thread",
-                "threadName",
-                "processName",
-                "process",
-                "getMessage",
-                "exc_info",
-                "exc_text",
-                "stack_info",
-            ]:
-                log_entry[key] = value
-
-        return json.dumps(log_entry)
 
 
 def extract_tag_content(llm_response: str, tag: str) -> Optional[str]:
