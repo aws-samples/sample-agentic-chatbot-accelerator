@@ -28,10 +28,12 @@ from typing import Any, Dict, List, Optional
 
 from strands_evals.evaluators import (
     FaithfulnessEvaluator,
+    GoalSuccessRateEvaluator,
     HelpfulnessEvaluator,
     OutputEvaluator,
     ToolParameterAccuracyEvaluator,
     ToolSelectionAccuracyEvaluator,
+    TrajectoryEvaluator,
 )
 from strands_evals.types.evaluation import EvaluationData
 from strands_evals.types.trace import AgentInvocationSpan, Session, SpanInfo, Trace
@@ -230,8 +232,10 @@ class EvaluatorFactory:
     - OutputEvaluator: Compares actual vs expected output (requires rubric)
     - HelpfulnessEvaluator: Evaluates response helpfulness
     - FaithfulnessEvaluator: Checks factual accuracy
+    - GoalSuccessRateEvaluator: Evaluates if all user goals were achieved (binary: 1.0=success, 0.0=failure)
     - ToolSelectionAccuracyEvaluator: Validates tool selection
     - ToolParameterAccuracyEvaluator: Validates tool parameters
+    - TrajectoryEvaluator: Assesses sequence of actions/tool calls taken by an agent (requires rubric)
     """
 
     # Mapping of evaluator type names to classes
@@ -239,12 +243,14 @@ class EvaluatorFactory:
         "OutputEvaluator": OutputEvaluator,
         "HelpfulnessEvaluator": HelpfulnessEvaluator,
         "FaithfulnessEvaluator": FaithfulnessEvaluator,
+        "GoalSuccessRateEvaluator": GoalSuccessRateEvaluator,
         "ToolSelectionAccuracyEvaluator": ToolSelectionAccuracyEvaluator,
         "ToolParameterAccuracyEvaluator": ToolParameterAccuracyEvaluator,
+        "TrajectoryEvaluator": TrajectoryEvaluator,
     }
 
     # Evaluators that require a rubric parameter
-    EVALUATORS_REQUIRING_RUBRIC = {"OutputEvaluator"}
+    EVALUATORS_REQUIRING_RUBRIC = {"OutputEvaluator", "TrajectoryEvaluator"}
 
     @classmethod
     def get_available_types(cls) -> List[str]:

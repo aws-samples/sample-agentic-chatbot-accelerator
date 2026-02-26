@@ -63,8 +63,10 @@ const EVALUATOR_TYPE_OPTIONS = [
     { label: "Output Evaluator", value: EvaluatorType.OUTPUT, description: "Evaluates response accuracy and completeness against expected output" },
     { label: "Helpfulness Evaluator", value: EvaluatorType.HELPFULNESS, description: "Measures how helpful and useful the agent response is (requires trajectory)" },
     { label: "Faithfulness Evaluator", value: EvaluatorType.FAITHFULNESS, description: "Checks if the response is faithful to the source content (requires trajectory)" },
+    { label: "Goal Success Rate Evaluator", value: EvaluatorType.GOAL_SUCCESS_RATE, description: "Evaluates whether all user goals were achieved in the conversation (binary: 1.0=success, 0.0=failure)" },
     { label: "Tool Selection Evaluator", value: EvaluatorType.TOOL_SELECTION, description: "Evaluates if the agent selected the correct tools (requires trajectory)" },
     { label: "Tool Parameter Evaluator", value: EvaluatorType.TOOL_PARAMETER, description: "Checks if tool parameters were correctly provided (requires trajectory)" },
+    { label: "Trajectory Evaluator", value: EvaluatorType.TRAJECTORY, description: "Assesses the sequence of actions/tool calls taken by the agent to reach its goal" },
 ];
 
 // Evaluators that require a rubric
