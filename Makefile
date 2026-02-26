@@ -28,8 +28,8 @@ clean-build:
 tf-build-layers:
 	./iac-terraform/scripts/build-layers.sh
 
-# Build and push AgentCore Docker image to ECR
-# Note: Skips gracefully if ECR repository doesn't exist yet
+# Build and push AgentCore Docker image to ECR (legacy — now handled by CodeBuild)
+# Kept for manual/fallback use. Normal deploys use CodeBuild via `tf-deploy`.
 .PHONY: tf-build-image
 tf-build-image:
 	./iac-terraform/scripts/build-image.sh
@@ -51,41 +51,19 @@ tf-fmt:
 tf-plan: tf-build-layers
 	cd iac-terraform && terraform init -upgrade && terraform plan
 
-# Deploy everything with proper sequencing:
-# 1. Build Lambda layers
-# 2. Create ECR repository (so Docker image can be pushed)
-# 3. Build and push Docker image
-# 4. Apply all infrastructure (now image exists for AgentCore runtime)
+# Deploy everything — single terraform apply.
+# Docker images are built by CodeBuild (triggered automatically when source changes).
+# No local Docker required for image builds.
 # All settings read from iac-terraform/terraform.tfvars
 tf-deploy: tf-build-layers
-	@echo "Phase 1: Initializing Terraform..."
+	@echo "Initializing Terraform..."
 	cd iac-terraform && terraform init -upgrade
-	@echo "Phase 2: Creating ECR repositories (if needed)..."
-	cd iac-terraform && terraform apply \
-		-target=module.agent_core.aws_kms_key.agent_core \
-		-target=module.agent_core.aws_kms_alias.agent_core \
-		-target=module.agent_core.aws_ecr_repository.agent_core \
-		-target=module.agent_core.aws_ecr_lifecycle_policy.agent_core \
-		-target=module.agent_core.aws_ecr_repository.swarm_agent_core \
-		-target=module.agent_core.aws_ecr_lifecycle_policy.swarm_agent_core \
-		-auto-approve
-	@echo "Phase 3: Building and pushing Docker images..."
-	./iac-terraform/scripts/build-image.sh
-	@echo "Phase 4: Deploying all infrastructure..."
+	@echo "Deploying all infrastructure (CodeBuild builds Docker images if source changed)..."
 	cd iac-terraform && terraform apply
 
 # Deploy with auto-approve (for CI/CD)
 tf-deploy-auto: tf-build-layers
 	cd iac-terraform && terraform init -upgrade
-	cd iac-terraform && terraform apply \
-		-target=module.agent_core.aws_kms_key.agent_core \
-		-target=module.agent_core.aws_kms_alias.agent_core \
-		-target=module.agent_core.aws_ecr_repository.agent_core \
-		-target=module.agent_core.aws_ecr_lifecycle_policy.agent_core \
-		-target=module.agent_core.aws_ecr_repository.swarm_agent_core \
-		-target=module.agent_core.aws_ecr_lifecycle_policy.swarm_agent_core \
-		-auto-approve
-	./iac-terraform/scripts/build-image.sh
 	cd iac-terraform && terraform apply -auto-approve
 
 # Destroy infrastructure
