@@ -47,14 +47,39 @@ export default function AgentCoreWizardPage() {
                     query: getDefaultRuntimeConfigurationQuery,
                     variables: { agentName: fromAgentName },
                 });
-                const config = JSON.parse(
+                const rawConfig = JSON.parse(
                     result.data.getDefaultRuntimeConfiguration,
-                ) as AgentCoreRuntimeConfiguration;
-                config.agentName = fromAgentName;
-                setInitialData(config);
+                );
+
+                // Detect if this is a swarm configuration
+                const isSwarm =
+                    rawConfig &&
+                    (Array.isArray(rawConfig.agents) || Array.isArray(rawConfig.agentReferences)) &&
+                    typeof rawConfig.entryAgent === "string";
+
+                if (isSwarm) {
+                    setInitialData({
+                        agentName: fromAgentName,
+                        architectureType: "SWARM",
+                        swarmConfig: rawConfig,
+                        instructions: "",
+                        tools: [],
+                        toolParameters: {},
+                        mcpServers: [],
+                        conversationManager: rawConfig.conversationManager || "sliding_window",
+                        modelInferenceParameters: {
+                            modelId: "",
+                            parameters: { temperature: 0.2, maxTokens: 3000 },
+                        },
+                    });
+                } else {
+                    const config = rawConfig as AgentCoreRuntimeConfiguration;
+                    config.agentName = fromAgentName;
+                    config.architectureType = "SINGLE";
+                    setInitialData(config);
+                }
             } catch (error) {
                 console.error("Failed to load initial configuration:", error);
-                // Navigate back if we can't load the initial data
                 navigate("/agent-core");
             } finally {
                 setIsLoadingInitialData(false);
