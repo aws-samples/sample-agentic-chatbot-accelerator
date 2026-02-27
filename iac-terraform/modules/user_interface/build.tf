@@ -2,18 +2,19 @@
 
 SPDX-License-Identifier: MIT-0
 ----------------------------------------------------------------------
-User Interface Module - Build and Deploy
+User Interface Module - Build Configuration
 
 Creates:
-- aws-exports.json configuration file
-- React app build via npm
-- S3 deployment
-- CloudFront cache invalidation
+- aws-exports.json configuration file (consumed by CodeBuild)
+
+Note: The actual build, S3 deployment, and CloudFront invalidation
+are handled by CodeBuild (see codebuild.tf)
 */
 
 # -----------------------------------------------------------------------------
 # Generate aws-exports.json
 # This config file is needed by the React app to connect to AWS services
+# It's uploaded to S3 and downloaded by CodeBuild during the build process
 # -----------------------------------------------------------------------------
 
 resource "local_file" "aws_exports" {
@@ -53,81 +54,4 @@ resource "local_file" "aws_exports" {
       }
     } : {}
   ))
-}
-
-# -----------------------------------------------------------------------------
-# Build React App
-# Runs npm ci and npm run build
-# -----------------------------------------------------------------------------
-
-resource "null_resource" "build_react_app" {
-  triggers = {
-    # Rebuild when aws-exports.json changes
-    aws_exports_hash = local_file.aws_exports.content_sha256
-    # Rebuild when package.json changes (new dependencies)
-    package_json_hash = filesha256("${local.react_app_path}/package.json")
-    # Rebuild when React source code changes (.tsx, .ts, .css, etc.)
-    source_hash = sha256(join("", [
-      for f in sort(fileset("${local.react_app_path}/src", "**")) :
-      filesha256("${local.react_app_path}/src/${f}")
-    ]))
-    # Rebuild when CloudFront distribution changes (for cache invalidation)
-    distribution_id = aws_cloudfront_distribution.website.id
-  }
-
-  provisioner "local-exec" {
-    working_dir = local.react_app_path
-    command     = "npm ci --silent && npm run build --silent"
-  }
-
-  depends_on = [local_file.aws_exports]
-}
-
-# -----------------------------------------------------------------------------
-# Deploy to S3
-# Sync built files to website bucket
-# -----------------------------------------------------------------------------
-
-resource "null_resource" "deploy_to_s3" {
-  triggers = {
-    build_hash      = null_resource.build_react_app.id
-    distribution_id = aws_cloudfront_distribution.website.id
-  }
-
-  provisioner "local-exec" {
-    command = <<-EOT
-      aws s3 sync ${local.build_path} s3://${aws_s3_bucket.website.id} \
-        --delete \
-        --region ${data.aws_region.current.id} \
-        ${local.aws_profile_arg}
-    EOT
-  }
-
-  depends_on = [
-    null_resource.build_react_app,
-    aws_s3_bucket_policy.website,
-  ]
-}
-
-# -----------------------------------------------------------------------------
-# Invalidate CloudFront Cache
-# Clear cache after deployment
-# -----------------------------------------------------------------------------
-
-resource "null_resource" "invalidate_cache" {
-  triggers = {
-    deploy_hash = null_resource.deploy_to_s3.id
-  }
-
-  provisioner "local-exec" {
-    command = <<-EOT
-      aws cloudfront create-invalidation \
-        --distribution-id ${aws_cloudfront_distribution.website.id} \
-        --paths "/*" \
-        --region ${data.aws_region.current.id} \
-        ${local.aws_profile_arg}
-    EOT
-  }
-
-  depends_on = [null_resource.deploy_to_s3]
 }

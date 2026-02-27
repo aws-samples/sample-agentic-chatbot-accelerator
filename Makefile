@@ -59,13 +59,14 @@ tf-plan:
 # - Docker images (agent-core, swarm-agent-core)
 # - Python Lambda layers (boto3)
 # - TypeScript Lambdas (notify-runtime-update)
+# - React web app (user interface)
 # No local Docker or Node.js required for builds!
 # All settings read from iac-terraform/terraform.tfvars
 tf-deploy:
 	@echo "Initializing Terraform..."
 	cd iac-terraform && terraform init -upgrade
 	@echo "Deploying all infrastructure..."
-	@echo "CodeBuild will build Docker images, Python layers, and TypeScript Lambdas if source changed."
+	@echo "CodeBuild will build Docker images, Python layers, TypeScript Lambdas, and React app if source changed."
 	cd iac-terraform && terraform apply
 
 # Deploy with auto-approve (for CI/CD)
