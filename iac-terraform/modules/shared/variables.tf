@@ -46,3 +46,8 @@ variable "build_dir" {
   type        = string
   default     = "../../build"
 }
+
+variable "kms_key_arn" {
+  description = "ARN of the KMS key for encrypting S3 objects and other resources."
+  type        = string
+}

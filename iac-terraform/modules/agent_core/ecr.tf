@@ -33,6 +33,29 @@ resource "aws_ecr_repository" "agent_core" {
   }
 }
 
+# Repository policy to allow Bedrock AgentCore service to pull images
+resource "aws_ecr_repository_policy" "agent_core" {
+  repository = aws_ecr_repository.agent_core.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "AllowBedrockAgentCorePull"
+        Effect = "Allow"
+        Principal = {
+          Service = "bedrock-agentcore.amazonaws.com"
+        }
+        Action = [
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+          "ecr:BatchCheckLayerAvailability"
+        ]
+      }
+    ]
+  })
+}
+
 # Lifecycle policy to limit the number of untagged images
 resource "aws_ecr_lifecycle_policy" "agent_core" {
   repository = aws_ecr_repository.agent_core.name
@@ -77,6 +100,29 @@ resource "aws_ecr_repository" "swarm_agent_core" {
   tags = {
     Name = "${local.name_prefix}-swarm-agent-core"
   }
+}
+
+# Repository policy to allow Bedrock AgentCore service to pull images
+resource "aws_ecr_repository_policy" "swarm_agent_core" {
+  repository = aws_ecr_repository.swarm_agent_core.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "AllowBedrockAgentCorePull"
+        Effect = "Allow"
+        Principal = {
+          Service = "bedrock-agentcore.amazonaws.com"
+        }
+        Action = [
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+          "ecr:BatchCheckLayerAvailability"
+        ]
+      }
+    ]
+  })
 }
 
 # Lifecycle policy to limit the number of untagged images

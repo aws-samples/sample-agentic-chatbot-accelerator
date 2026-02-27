@@ -66,3 +66,28 @@ output "genai_core_layer_version" {
   description = "Version number of the GenAI Core layer"
   value       = aws_lambda_layer_version.genai_core.version
 }
+
+# -----------------------------------------------------------------------------
+# Pre-built Lambda Artifacts (S3 locations)
+# TypeScript Lambdas are built by CodeBuild and stored in S3
+# -----------------------------------------------------------------------------
+
+output "notify_runtime_update_s3_bucket" {
+  description = "S3 bucket containing the notify-runtime-update Lambda zip"
+  value       = aws_s3_bucket.layer_builds.id
+}
+
+output "notify_runtime_update_s3_key" {
+  description = "S3 key for the notify-runtime-update Lambda zip"
+  value       = "notify-runtime-update/output/${local.notify_runtime_update_content_tag}/lambda.zip"
+}
+
+output "notify_runtime_update_source_hash" {
+  description = "Content hash of the notify-runtime-update Lambda source (for change detection)"
+  value       = local.notify_runtime_update_content_tag
+}
+
+output "layer_builds_bucket" {
+  description = "S3 bucket for layer and Lambda builds"
+  value       = aws_s3_bucket.layer_builds.id
+}

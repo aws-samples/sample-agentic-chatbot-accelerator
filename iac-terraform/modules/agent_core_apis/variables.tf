@@ -161,3 +161,23 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+# -----------------------------------------------------------------------------
+# Pre-built Lambda Artifacts (S3)
+# TypeScript Lambdas are built by CodeBuild and stored in S3
+# -----------------------------------------------------------------------------
+
+variable "notify_runtime_update_s3_bucket" {
+  description = "S3 bucket containing the notify-runtime-update Lambda zip"
+  type        = string
+}
+
+variable "notify_runtime_update_s3_key" {
+  description = "S3 key for the notify-runtime-update Lambda zip"
+  type        = string
+}
+
+variable "notify_runtime_update_source_hash" {
+  description = "Content hash for change detection"
+  type        = string
+}

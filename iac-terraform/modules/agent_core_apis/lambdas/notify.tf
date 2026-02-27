@@ -27,15 +27,8 @@ resource "aws_cloudwatch_log_group" "notify_runtime_update" {
 # -----------------------------------------------------------------------------
 # Notify Runtime Update Lambda (Node.js/TypeScript)
 # Publishes runtime status updates to AppSync subscription
+# Built by CodeBuild — see shared module codebuild-layers.tf
 # -----------------------------------------------------------------------------
-
-# TypeScript compiled by build-layers.sh using esbuild
-# Run: ./iac-terraform/scripts/build-layers.sh before terraform apply
-data "archive_file" "notify_runtime_update" {
-  type        = "zip"
-  source_dir  = "${path.module}/../../../../iac-terraform/build/notify-runtime-update"
-  output_path = "${path.module}/../../../../iac-terraform/build/notify-runtime-update.zip"
-}
 
 resource "aws_lambda_function" "notify_runtime_update" {
   # checkov:skip=CKV_AWS_116:DLQ handled by Step Functions retry
@@ -46,8 +39,10 @@ resource "aws_lambda_function" "notify_runtime_update" {
   function_name = "${local.name_prefix}-notifyRuntimeUpdate"
   description   = "Publishes runtime status updates to AppSync"
 
-  filename         = data.archive_file.notify_runtime_update.output_path
-  source_code_hash = data.archive_file.notify_runtime_update.output_base64sha256
+  # Source from S3 (built by CodeBuild)
+  s3_bucket        = var.notify_runtime_update_s3_bucket
+  s3_key           = var.notify_runtime_update_s3_key
+  source_code_hash = base64sha256(var.notify_runtime_update_source_hash)
   handler          = "index.handler"
   runtime          = "nodejs22.x"
   architectures    = ["arm64"]
