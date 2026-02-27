@@ -94,6 +94,7 @@ resource "aws_s3_bucket" "evaluations" {
   # checkov:skip=CKV_AWS_145:S3 managed encryption sufficient
   # checkov:skip=CKV2_AWS_62:Event notifications not needed
   # checkov:skip=CKV2_AWS_61:Lifecycle configuration not needed
+  # checkov:skip=CKV_AWS_21:Versioning not needed for ephemeral evaluation data
   bucket = "${local.name_prefix}-evaluations-${data.aws_region.current.id}-${data.aws_caller_identity.current.account_id}"
 
   tags = merge(var.tags, {
