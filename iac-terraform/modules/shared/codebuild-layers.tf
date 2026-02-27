@@ -54,6 +54,9 @@ locals {
 # -----------------------------------------------------------------------------
 
 resource "aws_s3_bucket" "layer_builds" {
+  # checkov:skip=CKV_AWS_144:Cross-region replication not needed for temporary build artifacts
+  # checkov:skip=CKV_AWS_18:Access logging not needed for temporary build artifacts
+  # checkov:skip=CKV2_AWS_62:Event notifications not needed for layer builds bucket
   bucket        = "${local.name_prefix}-layer-builds-${data.aws_caller_identity.current.account_id}"
   force_destroy = true
 
@@ -101,6 +104,10 @@ resource "aws_s3_bucket_lifecycle_configuration" "layer_builds" {
 
     noncurrent_version_expiration {
       noncurrent_days = 7
+    }
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
     }
   }
 }

@@ -20,6 +20,9 @@ Creates:
 # -----------------------------------------------------------------------------
 
 resource "aws_s3_bucket" "build_context" {
+  # checkov:skip=CKV_AWS_144:Cross-region replication not needed for temporary build context
+  # checkov:skip=CKV_AWS_18:Access logging not needed for temporary build artifacts
+  # checkov:skip=CKV2_AWS_62:Event notifications not needed for build context bucket
   bucket        = "${local.name_prefix}-codebuild-context-${data.aws_caller_identity.current.account_id}"
   force_destroy = true
 
@@ -67,6 +70,10 @@ resource "aws_s3_bucket_lifecycle_configuration" "build_context" {
 
     noncurrent_version_expiration {
       noncurrent_days = 1
+    }
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 1
     }
   }
 }
@@ -209,6 +216,7 @@ resource "aws_iam_role_policy" "codebuild" {
 # -----------------------------------------------------------------------------
 
 resource "aws_codebuild_project" "agent_image_builder" {
+  # checkov:skip=CKV_AWS_316:Privileged mode required for Docker-in-Docker builds
   name         = "${local.name_prefix}-agent-image-builder"
   description  = "Builds and pushes the AgentCore Docker image to ECR"
   service_role = aws_iam_role.codebuild.arn
@@ -258,6 +266,7 @@ resource "aws_codebuild_project" "agent_image_builder" {
 # -----------------------------------------------------------------------------
 
 resource "aws_codebuild_project" "swarm_image_builder" {
+  # checkov:skip=CKV_AWS_316:Privileged mode required for Docker-in-Docker builds
   name         = "${local.name_prefix}-swarm-image-builder"
   description  = "Builds and pushes the Swarm AgentCore Docker image to ECR"
   service_role = aws_iam_role.codebuild.arn
