@@ -105,6 +105,7 @@ resource "aws_kms_alias" "main" {
 # -----------------------------------------------------------------------------
 # Shared Module
 # Provides Lambda layers and common configuration
+# Layers are built by CodeBuild (no local Docker required)
 # Equivalent to: const shared = new Shared(this, "Shared", lambdaArchitectureId);
 # -----------------------------------------------------------------------------
 module "shared" {
@@ -112,6 +113,9 @@ module "shared" {
 
   prefix              = local.prefix
   lambda_architecture = var.lambda_architecture
+  kms_key_arn         = aws_kms_key.main.arn
+
+  depends_on = [aws_kms_key.main]
 }
 
 # -----------------------------------------------------------------------------
@@ -318,6 +322,11 @@ module "agent_core_apis" {
 
   # Encryption
   kms_key_arn = aws_kms_key.main.arn
+
+  # Pre-built Lambda artifacts (S3) - built by CodeBuild
+  notify_runtime_update_s3_bucket   = module.shared.notify_runtime_update_s3_bucket
+  notify_runtime_update_s3_key      = module.shared.notify_runtime_update_s3_key
+  notify_runtime_update_source_hash = module.shared.notify_runtime_update_source_hash
 
   depends_on = [module.appsync, module.agent_core, module.websocket_backend]
 }

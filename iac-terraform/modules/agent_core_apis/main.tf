@@ -82,6 +82,11 @@ module "lambdas" {
   create_runtime_state_machine_arn   = local.create_runtime_state_machine_arn
   delete_runtime_state_machine_arn   = local.delete_runtime_state_machine_arn
   delete_endpoints_state_machine_arn = local.delete_endpoints_state_machine_arn
+
+  # Pre-built Lambda artifacts (S3)
+  notify_runtime_update_s3_bucket   = var.notify_runtime_update_s3_bucket
+  notify_runtime_update_s3_key      = var.notify_runtime_update_s3_key
+  notify_runtime_update_source_hash = var.notify_runtime_update_source_hash
 }
 
 # -----------------------------------------------------------------------------

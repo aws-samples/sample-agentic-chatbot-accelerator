@@ -44,13 +44,14 @@ locals {
 }
 
 # -----------------------------------------------------------------------------
-# Boto3 Layer (Custom Layer - Pre-built)
+# Boto3 Layer (Built by CodeBuild)
 # Contains latest boto3/botocore for access to newest AWS service features
-# Build with: ./scripts/build-layers.sh
+# Built automatically by CodeBuild when requirements.txt changes
+# See: codebuild-layers.tf
 # -----------------------------------------------------------------------------
 resource "aws_lambda_layer_version" "boto3" {
-  filename                 = "${local.build_path}/boto3-layer.zip"
-  source_code_hash         = filebase64sha256("${local.build_path}/boto3-layer.zip")
+  s3_bucket                = aws_s3_bucket.layer_builds.id
+  s3_key                   = "boto3-layer/output/${local.boto3_content_tag}/layer.zip"
   layer_name               = "${local.name_prefix}-boto3-layer"
   description              = "Latest boto3/botocore for ${var.prefix}"
   compatible_runtimes      = [var.python_runtime]
@@ -59,20 +60,23 @@ resource "aws_lambda_layer_version" "boto3" {
   lifecycle {
     create_before_destroy = true
   }
+
+  depends_on = [null_resource.build_boto3_layer]
 }
 
 # -----------------------------------------------------------------------------
-# GenAI Core Layer (Custom Layer - Pre-built)
+# GenAI Core Layer (Built by Terraform archive_file)
 # Shared Python SDK with utilities for:
 # - OpenSearch Serverless (aoss)
 # - API helpers (auth, sessions, message handling)
 # - Data operations (DynamoDB, S3)
 # - Processing utilities
-# Build with: ./scripts/build-layers.sh
+# No Docker required — pure Python, built directly by Terraform
+# See: codebuild-layers.tf for archive_file data source
 # -----------------------------------------------------------------------------
 resource "aws_lambda_layer_version" "genai_core" {
-  filename                 = "${local.build_path}/genai-core-layer.zip"
-  source_code_hash         = filebase64sha256("${local.build_path}/genai-core-layer.zip")
+  filename                 = data.archive_file.genai_core_layer.output_path
+  source_code_hash         = data.archive_file.genai_core_layer.output_base64sha256
   layer_name               = "${local.name_prefix}-genai-core-layer"
   description              = "GenAI Core shared library for ${var.prefix}"
   compatible_runtimes      = [var.python_runtime]

@@ -23,12 +23,13 @@ clean-build:
 # Terraform Deployment
 # =============================================================================
 
-# Build Lambda layers (auto-detects architecture from terraform.tfvars)
+# Legacy: Build Lambda layers locally (requires Docker)
+# For debugging or fallback use. Normal deploys use CodeBuild via `tf-deploy`.
 .PHONY: tf-build-layers
 tf-build-layers:
 	./iac-terraform/scripts/build-layers.sh
 
-# Build and push AgentCore Docker image to ECR (legacy — now handled by CodeBuild)
+# Legacy: Build and push AgentCore Docker image to ECR (requires Docker)
 # Kept for manual/fallback use. Normal deploys use CodeBuild via `tf-deploy`.
 .PHONY: tf-build-image
 tf-build-image:
@@ -46,23 +47,29 @@ tf-validate:
 tf-fmt:
 	cd iac-terraform && terraform fmt -recursive
 
-# Preview changes (builds layers first for accurate plan)
+# Preview changes
+# Note: First run may show CodeBuild triggers as changes since builds haven't run yet.
+# All builds (Docker images, Python layers, TypeScript Lambdas) are done by CodeBuild.
 # Reads aws_profile from terraform/terraform.tfvars
-tf-plan: tf-build-layers
+tf-plan:
 	cd iac-terraform && terraform init -upgrade && terraform plan
 
 # Deploy everything — single terraform apply.
-# Docker images are built by CodeBuild (triggered automatically when source changes).
-# No local Docker required for image builds.
+# ALL builds are done by CodeBuild (triggered automatically when source changes):
+# - Docker images (agent-core, swarm-agent-core)
+# - Python Lambda layers (boto3)
+# - TypeScript Lambdas (notify-runtime-update)
+# No local Docker or Node.js required for builds!
 # All settings read from iac-terraform/terraform.tfvars
-tf-deploy: tf-build-layers
+tf-deploy:
 	@echo "Initializing Terraform..."
 	cd iac-terraform && terraform init -upgrade
-	@echo "Deploying all infrastructure (CodeBuild builds Docker images if source changed)..."
+	@echo "Deploying all infrastructure..."
+	@echo "CodeBuild will build Docker images, Python layers, and TypeScript Lambdas if source changed."
 	cd iac-terraform && terraform apply
 
 # Deploy with auto-approve (for CI/CD)
-tf-deploy-auto: tf-build-layers
+tf-deploy-auto:
 	cd iac-terraform && terraform init -upgrade
 	cd iac-terraform && terraform apply -auto-approve
 
