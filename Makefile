@@ -63,6 +63,9 @@ tf-plan:
 # No local Docker or Node.js required for builds!
 # All settings read from iac-terraform/terraform.tfvars
 tf-deploy:
+	@echo "Regenerating GraphQL files..."
+	npm run copy-graphql-util
+	npm run gen
 	@echo "Initializing Terraform..."
 	cd iac-terraform && terraform init -upgrade
 	@echo "Deploying all infrastructure..."
@@ -71,6 +74,8 @@ tf-deploy:
 
 # Deploy with auto-approve (for CI/CD)
 tf-deploy-auto:
+	npm run copy-graphql-util
+	npm run gen
 	cd iac-terraform && terraform init -upgrade
 	cd iac-terraform && terraform apply -auto-approve
 
