@@ -37,7 +37,7 @@
         "@aws-cdk/aws-cognito-identitypool-alpha": "^2.181.1-alpha.0",
         "@cdklabs/generative-ai-cdk-constructs": "^0.1.312",
         "@cloudcomponents/cdk-dynamodb-seeder": "^2.4.0",
-        "aws-cdk-lib": "^2.238.0",
+        "aws-cdk-lib": "^2.240.0",
         "cdk-nag": "2.34.23",
         "constructs": "^10.0.0",
         "js-yaml": "^4.1.0",
