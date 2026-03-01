@@ -24,7 +24,7 @@
         "@fortawesome/react-fontawesome": "^0.2.2",
         "ace-builds": "^1.39.0",
         "ace-code": "^1.39.0",
-        "aws-amplify": "^6.12.0",
+        "aws-amplify": "^6.16.2",
         "events": "^3.3.0",
         "i18next": "^24.2.2",
         "luxon": "^3.5.0",
