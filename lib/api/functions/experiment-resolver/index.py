@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import json
 import os
+import uuid
 from datetime import datetime, timezone
+from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import boto3
@@ -34,13 +36,23 @@ BATCH_JOB_QUEUE = os.environ.get("BATCH_JOB_QUEUE", "")
 BATCH_JOB_DEFINITION = os.environ.get("BATCH_JOB_DEFINITION", "")
 # ---------------------------------------------------------- #
 
-# --------------- DynamoDB Tables ------------------- #
+# --------------- DynamoDB / Batch clients ------------------- #
 EXPERIMENTS_TABLE = boto3.resource("dynamodb").Table(EXPERIMENTS_TABLE_NAME)  # type: ignore
-# ---------------------------------------------------- #
+BATCH_CLIENT = boto3.client("batch")
+S3_CLIENT = boto3.client("s3")
+PRESIGNED_URL_EXPIRES_IN = int(os.environ.get("PRESIGNED_URL_EXPIRES_IN", 600))
+# ------------------------------------------------------------ #
 
 # ---------------- API Routes ---------------- #
 app = AppSyncResolver()
 # -------------------------------------------- #
+
+
+class ExperimentStatus(str, Enum):
+    DRAFT = "DRAFT"
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
 
 
 # Routes
@@ -53,12 +65,10 @@ def list_experiments() -> List[Dict[str, Any]]:
     """
     logger.info("Listing experiments")
 
-    # Get user ID from context
     user_id = app.current_event.get("identity", {}).get("username")
     if not user_id:
         raise ValueError("User ID not found in request context")
 
-    # Query by UserId using GSI
     try:
         response = EXPERIMENTS_TABLE.query(
             IndexName="byUserId", KeyConditionExpression=Key("UserId").eq(user_id)
@@ -68,7 +78,6 @@ def list_experiments() -> List[Dict[str, Any]]:
         logger.exception(f"Error querying experiments: {str(e)}")
         raise ValueError(f"Failed to list experiments: {str(e)}")
 
-    # Format response
     return [_format_experiment_response(exp) for exp in experiments]
 
 
@@ -80,12 +89,10 @@ def get_experiment(experimentId: str) -> Optional[Dict[str, Any]]:
     """
     logger.info(f"Getting experiment: {experimentId}")
 
-    # Get user ID from context for authorization
     user_id = app.current_event.get("identity", {}).get("username")
     if not user_id:
         raise ValueError("User ID not found in request context")
 
-    # Get experiment from DynamoDB
     try:
         response = EXPERIMENTS_TABLE.get_item(
             Key={"ExperimentId": experimentId, "UserId": user_id}
@@ -98,7 +105,6 @@ def get_experiment(experimentId: str) -> Optional[Dict[str, Any]]:
     if not experiment:
         return None
 
-    # Verify user has access to this experiment
     if experiment.get("UserId") != user_id:
         raise ValueError("Unauthorized access to experiment")
 
@@ -110,51 +116,37 @@ def get_experiment(experimentId: str) -> Optional[Dict[str, Any]]:
 def create_experiment(
     name: str,
     description: Optional[str] = None,
-    s3Path: Optional[str] = None,
     generationConfig: Optional[str] = None,
     modelId: str = "",
 ) -> str:
     """
     Create a new experiment and automatically trigger execution.
-    Uses the dedicated experiments runtime for test case generation.
     Returns the experimentId.
     """
     logger.info(f"Creating experiment: {name}")
 
-    # Get user ID from context
     user_id = app.current_event.get("identity", {}).get("username")
     if not user_id:
         raise ValueError("User ID not found in request context")
 
-    # Generate experiment ID
-    import uuid
-
     experiment_id = str(uuid.uuid4())
     timestamp = datetime.now(timezone.utc).isoformat()
 
-    # Parse generation config if provided
-    generation_config = {}
-    if generationConfig:
-        generation_config = json.loads(generationConfig)
+    generation_config = json.loads(generationConfig) if generationConfig else {}
 
-    # Create experiment item with RUNNING status
-    experiment_item = {
+    experiment_item: Dict[str, Any] = {
         "ExperimentId": experiment_id,
         "UserId": user_id,
         "Name": name,
-        "Status": "RUNNING",
+        "Status": ExperimentStatus.RUNNING,
         "CreatedAt": timestamp,
         "UpdatedAt": timestamp,
+        "ModelId": modelId,
     }
 
-    # Add optional fields
     if description:
         experiment_item["Description"] = description
-    if s3Path:
-        experiment_item["S3Path"] = s3Path
-    experiment_item["ModelId"] = modelId
 
-    # Add generation config fields
     if generation_config:
         if "context" in generation_config:
             experiment_item["Context"] = generation_config["context"]
@@ -165,7 +157,6 @@ def create_experiment(
         if "numTopics" in generation_config:
             experiment_item["NumTopics"] = generation_config["numTopics"]
 
-    # Validate that generation config exists
     if not all(
         [
             experiment_item.get("Context"),
@@ -179,15 +170,13 @@ def create_experiment(
             "Experiment missing required generation config (context, taskDescription, numCases, numTopics, modelId)"
         )
 
-    # Save to DynamoDB
     try:
         EXPERIMENTS_TABLE.put_item(Item=experiment_item)
     except ClientError as e:
         logger.exception(f"Error creating experiment: {str(e)}")
         raise ValueError(f"Failed to create experiment: {str(e)}")
 
-    logger.info(f"Created experiment: {experiment_id}")
-    logger.info(f"Auto-running experiment {experiment_id}")
+    logger.info(f"Created experiment: {experiment_id}, auto-running")
     run_experiment(experimentId=experiment_id)
 
     return experiment_id
@@ -207,17 +196,15 @@ def update_experiment(
     """
     logger.info(f"Updating experiment: {experimentId}")
 
-    # Get user ID from context for authorization
     user_id = app.current_event.get("identity", {}).get("username")
     if not user_id:
         raise ValueError("User ID not found in request context")
 
-    # Build update expression
-    update_parts = []
-    expression_attribute_names = {}
-    expression_attribute_values = {":updatedAt": datetime.now(timezone.utc).isoformat()}
-
-    update_parts.append("UpdatedAt = :updatedAt")
+    update_parts = ["UpdatedAt = :updatedAt"]
+    expression_attribute_names: Dict[str, str] = {}
+    expression_attribute_values: Dict[str, Any] = {
+        ":updatedAt": datetime.now(timezone.utc).isoformat()
+    }
 
     if name:
         update_parts.append("#name = :name")
@@ -233,21 +220,16 @@ def update_experiment(
         expression_attribute_names["#status"] = "Status"
         expression_attribute_values[":status"] = status
 
-    if not update_parts:
-        return True  # Nothing to update
-
     update_expression = "SET " + ", ".join(update_parts)
+    expression_attribute_values[":userId"] = user_id
 
-    # Update in DynamoDB
     try:
-        update_kwargs = {
+        update_kwargs: Dict[str, Any] = {
             "Key": {"ExperimentId": experimentId, "UserId": user_id},
             "UpdateExpression": update_expression,
             "ExpressionAttributeValues": expression_attribute_values,
             "ConditionExpression": "UserId = :userId",
         }
-        expression_attribute_values[":userId"] = user_id
-
         if expression_attribute_names:
             update_kwargs["ExpressionAttributeNames"] = expression_attribute_names
 
@@ -269,12 +251,10 @@ def delete_experiment(experimentId: str) -> Dict[str, Any]:
     """
     logger.info(f"Deleting experiment: {experimentId}")
 
-    # Get user ID from context for authorization
     user_id = app.current_event.get("identity", {}).get("username")
     if not user_id:
         raise ValueError("User ID not found in request context")
 
-    # Delete from DynamoDB
     try:
         EXPERIMENTS_TABLE.delete_item(
             Key={"ExperimentId": experimentId, "UserId": user_id},
@@ -298,12 +278,10 @@ def run_experiment(experimentId: str) -> Dict[str, Any]:
     """
     logger.info(f"Running experiment: {experimentId}")
 
-    # Get user ID from context for authorization
     user_id = app.current_event.get("identity", {}).get("username")
     if not user_id:
         raise ValueError("User ID not found in request context")
 
-    # Get experiment from DynamoDB
     try:
         response = EXPERIMENTS_TABLE.get_item(
             Key={"ExperimentId": experimentId, "UserId": user_id}
@@ -316,11 +294,9 @@ def run_experiment(experimentId: str) -> Dict[str, Any]:
     if not experiment:
         raise ValueError(f"Experiment not found: {experimentId}")
 
-    # Verify user has access to this experiment
     if experiment.get("UserId") != user_id:
         raise ValueError("Unauthorized access to experiment")
 
-    # Validate that generation config exists
     if not all(
         [
             experiment.get("Context"),
@@ -334,40 +310,45 @@ def run_experiment(experimentId: str) -> Dict[str, Any]:
             "Experiment missing required generation config (context, taskDescription, numCases, numTopics, modelId)"
         )
 
-    # Submit AWS Batch job
-    import boto3
-
-    batch_client = boto3.client("batch")
-
     job_name = (
         f"experiment-{experimentId[:8]}-{int(datetime.now(timezone.utc).timestamp())}"
     )
 
     try:
-        response = batch_client.submit_job(
+        batch_response = BATCH_CLIENT.submit_job(
             jobName=job_name,
             jobQueue=BATCH_JOB_QUEUE,
             jobDefinition=BATCH_JOB_DEFINITION,
             containerOverrides={
-                "command": [
-                    "python",
-                    "batch_runner.py",
-                ],
+                "command": ["python", "batch_runner.py"],
                 "environment": [
                     {"name": "EXPERIMENT_ID", "value": experimentId},
                     {"name": "USER_ID", "value": user_id},
                 ],
             },
         )
-
-        batch_job_id = response["jobId"]
+        batch_job_id = batch_response["jobId"]
         logger.info(f"Submitted Batch job {batch_job_id} for experiment {experimentId}")
-
     except ClientError as e:
         logger.exception(f"Error submitting Batch job: {str(e)}")
+        # Mark experiment as FAILED so the user knows something went wrong
+        try:
+            EXPERIMENTS_TABLE.update_item(
+                Key={"ExperimentId": experimentId, "UserId": user_id},
+                UpdateExpression="SET #status = :status, UpdatedAt = :updatedAt, ErrorMessage = :errorMessage",
+                ExpressionAttributeNames={"#status": "Status"},
+                ExpressionAttributeValues={
+                    ":status": ExperimentStatus.FAILED,
+                    ":updatedAt": datetime.now(timezone.utc).isoformat(),
+                    ":errorMessage": str(e),
+                    ":userId": user_id,
+                },
+                ConditionExpression="UserId = :userId",
+            )
+        except ClientError:
+            logger.exception("Failed to update experiment status to FAILED")
         raise ValueError(f"Failed to submit Batch job: {str(e)}")
 
-    # Update status to RUNNING with Batch job ID
     timestamp = datetime.now(timezone.utc).isoformat()
     try:
         EXPERIMENTS_TABLE.update_item(
@@ -375,7 +356,7 @@ def run_experiment(experimentId: str) -> Dict[str, Any]:
             UpdateExpression="SET #status = :status, UpdatedAt = :updatedAt, BatchJobId = :batchJobId",
             ExpressionAttributeNames={"#status": "Status"},
             ExpressionAttributeValues={
-                ":status": "RUNNING",
+                ":status": ExperimentStatus.RUNNING,
                 ":updatedAt": timestamp,
                 ":batchJobId": batch_job_id,
                 ":userId": user_id,
@@ -386,16 +367,10 @@ def run_experiment(experimentId: str) -> Dict[str, Any]:
         logger.exception(f"Error updating experiment status: {str(e)}")
         raise ValueError(f"Failed to update experiment status: {str(e)}")
 
-    # Return updated experiment
-    experiment["Status"] = "RUNNING"
+    experiment["Status"] = ExperimentStatus.RUNNING
     experiment["UpdatedAt"] = timestamp
     experiment["BatchJobId"] = batch_job_id
     return _format_experiment_response(experiment)
-
-
-# ---- S3 Presigned URL ---- #
-S3_CLIENT = boto3.client("s3")
-PRESIGNED_URL_EXPIRES_IN = int(os.environ.get("PRESIGNED_URL_EXPIRES_IN", 600))
 
 
 @app.resolver(field_name="getExperimentPresignedUrl")
@@ -403,12 +378,6 @@ PRESIGNED_URL_EXPIRES_IN = int(os.environ.get("PRESIGNED_URL_EXPIRES_IN", 600))
 def get_experiment_presigned_url(s3Uri: str) -> Optional[str]:
     """
     Generate a presigned URL for accessing an S3 object in the evaluations bucket.
-
-    Args:
-        s3Uri: S3 URI in format s3://bucket-name/path/to/object
-
-    Returns:
-        Presigned URL string, or None on error
     """
     user_id = app.current_event.get("identity", {}).get("username")
     if not user_id:
@@ -420,9 +389,7 @@ def get_experiment_presigned_url(s3Uri: str) -> Optional[str]:
     if len(parts) < 2:
         raise ValueError(f"Invalid S3 URI format: {s3Uri}")
 
-    bucket_name = parts[0]
-    object_key = parts[1]
-
+    bucket_name, object_key = parts[0], parts[1]
     logger.info(f"Bucket: {bucket_name}, Key: {object_key}")
 
     url = S3_CLIENT.generate_presigned_url(
@@ -466,7 +433,6 @@ def _format_experiment_response(experiment: Dict[str, Any]) -> Dict[str, Any]:
 @tracer.capture_method
 def handler(event: Dict, context: LambdaContext):
     try:
-        # Otherwise, handle as AppSync resolver
         logger.info(
             "Incoming API request for Experiment related operation",
             extra={

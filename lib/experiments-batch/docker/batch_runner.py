@@ -11,6 +11,7 @@ Standalone script for generating synthetic test cases.
 
 import asyncio
 import json
+import logging
 import os
 import sys
 import uuid
@@ -20,6 +21,12 @@ from typing import Any, Dict, List
 import boto3
 from botocore.exceptions import ClientError
 from strands_evals.generators import ExperimentGenerator
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
 
 
 def update_experiment_status(
@@ -61,9 +68,9 @@ def update_experiment_status(
             ExpressionAttributeValues=expr_attr_values,
             ConditionExpression="UserId = :userId",
         )
-        print(f"Updated experiment {experiment_id} status to {status}")
+        logger.info(f"Updated experiment {experiment_id} status to {status}")
     except ClientError as e:
-        print(f"Error updating experiment status: {e}")
+        logger.error(f"Error updating experiment status: {e}")
         raise
 
 
@@ -78,7 +85,7 @@ def get_experiment(experiment_id: str, user_id: str) -> Dict[str, Any]:
         )
         return response.get("Item")
     except ClientError as e:
-        print(f"Error retrieving experiment: {e}")
+        logger.error(f"Error retrieving experiment: {e}")
         raise
 
 
@@ -111,16 +118,16 @@ def upload_to_s3(experiment_id: str, user_id: str, test_cases: List[Any]) -> str
             ServerSideEncryption="AES256",
         )
         s3_uri = f"s3://{bucket_name}/{key}"
-        print(f"Uploaded {len(cases_data)} test cases to {s3_uri}")
+        logger.info(f"Uploaded {len(cases_data)} test cases to {s3_uri}")
         return s3_uri
     except ClientError as e:
-        print(f"Error uploading to S3: {e}")
+        logger.error(f"Error uploading to S3: {e}")
         raise
 
 
 async def run_experiment_generation(experiment_id: str, user_id: str):
     """Main experiment generation logic."""
-    print(f"Starting experiment generation for {experiment_id}")
+    logger.info(f"Starting experiment generation for {experiment_id}")
 
     try:
         # Update status to RUNNING
@@ -131,7 +138,7 @@ async def run_experiment_generation(experiment_id: str, user_id: str):
         if not experiment:
             raise ValueError(f"Experiment {experiment_id} not found")
 
-        print(f"Retrieved experiment config: {experiment}")
+        logger.info(f"Retrieved experiment config: {experiment}")
 
         # Extract configuration
         context = experiment["Context"]
@@ -140,7 +147,7 @@ async def run_experiment_generation(experiment_id: str, user_id: str):
         num_topics = int(experiment["NumTopics"])
         model_id = experiment.get("ModelId", "global.amazon.nova-2-lite-v1:0")
 
-        print(
+        logger.info(
             f"Generating {num_cases} test cases across {num_topics} topics using model {model_id}"
         )
 
@@ -163,7 +170,7 @@ async def run_experiment_generation(experiment_id: str, user_id: str):
         )
 
         test_cases = experiment_obj.cases
-        print(f"Generated {len(test_cases)} test cases")
+        logger.info(f"Generated {len(test_cases)} test cases")
 
         # Upload to S3
         s3_uri = upload_to_s3(experiment_id, user_id, test_cases)
@@ -177,7 +184,7 @@ async def run_experiment_generation(experiment_id: str, user_id: str):
             num_cases_generated=len(test_cases),
         )
 
-        print(f"Experiment {experiment_id} completed successfully")
+        logger.info(f"Experiment {experiment_id} completed successfully")
         return {
             "status": "COMPLETED",
             "s3_uri": s3_uri,
@@ -186,7 +193,7 @@ async def run_experiment_generation(experiment_id: str, user_id: str):
 
     except Exception as e:
         error_msg = str(e)
-        print(f"Error generating experiment: {error_msg}")
+        logger.error(f"Error generating experiment: {error_msg}")
         update_experiment_status(
             experiment_id, user_id, "FAILED", error_message=error_msg
         )
@@ -195,26 +202,21 @@ async def run_experiment_generation(experiment_id: str, user_id: str):
 
 def main():
     """Entry point for Batch job."""
-    # Get job parameters from environment
     experiment_id = os.environ.get("EXPERIMENT_ID")
     user_id = os.environ.get("USER_ID")
 
     if not experiment_id or not user_id:
-        print("Error: EXPERIMENT_ID and USER_ID must be set")
+        logger.error("EXPERIMENT_ID and USER_ID must be set")
         sys.exit(1)
 
-    print(f"Batch job started for experiment {experiment_id}, user {user_id}")
+    logger.info(f"Batch job started for experiment {experiment_id}, user {user_id}")
 
     try:
-        # Run async generation
         result = asyncio.run(run_experiment_generation(experiment_id, user_id))
-        print(f"Job completed successfully: {result}")
+        logger.info(f"Job completed successfully: {result}")
         sys.exit(0)
     except Exception as e:
-        print(f"Job failed: {e}")
-        import traceback
-
-        traceback.print_exc()
+        logger.exception(f"Job failed: {e}")
         sys.exit(1)
 
 

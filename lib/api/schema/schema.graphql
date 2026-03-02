@@ -231,7 +231,7 @@ type Mutation {
     runEvaluation(evaluatorId: ID!): Evaluator @aws_cognito_user_pools
     publishEvaluationUpdate(evaluatorId: String!, status: String!): EvaluationNotification @aws_iam
     # Experiments
-    createExperiment(name: String!, description: String, s3Path: String, generationConfig: String, modelId: String!): String! @aws_cognito_user_pools
+    createExperiment(name: String!, description: String, generationConfig: String, modelId: String!): String! @aws_cognito_user_pools
     updateExperiment(experimentId: String!, name: String, description: String, status: ExperimentStatus): Boolean @aws_cognito_user_pools
     deleteExperiment(experimentId: String!): DeleteExperimentResult @aws_cognito_user_pools
     runExperiment(experimentId: String!): Experiment @aws_cognito_user_pools

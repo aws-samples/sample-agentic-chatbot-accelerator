@@ -14,7 +14,6 @@ import {
     FormField,
     Header,
     Input,
-    RadioGroup,
     Select,
     SpaceBetween,
     Textarea,
@@ -28,18 +27,10 @@ import { AppContext } from "../../common/app-context";
 import BaseAppLayout from "../../components/base-app-layout";
 import * as mutations from "../../graphql/mutations";
 
-type DataSourceType = "s3" | "generate";
-
 export default function CreateExperimentPage() {
     const appConfig = useContext(AppContext);
     const [name, setName] = useState("");
     const [description, setDescription] = useState("");
-
-    // Data source selection
-    const [dataSourceType, setDataSourceType] = useState<DataSourceType>("generate");
-
-    // S3 path field
-    const [s3Path, setS3Path] = useState("");
 
     // Auto-generation fields
     const [context, setContext] = useState("");
@@ -83,30 +74,19 @@ export default function CreateExperimentPage() {
             return false;
         }
 
-        if (dataSourceType === "s3") {
-            if (!s3Path) {
-                setError("Please provide an S3 path");
-                return false;
-            }
-            if (!s3Path.startsWith("s3://")) {
-                setError("S3 path must start with s3://");
-                return false;
-            }
-        } else if (dataSourceType === "generate") {
-            if (!context || !taskDescription) {
-                setError("Please provide context and task description for generation");
-                return false;
-            }
-            const cases = parseInt(numCases);
-            const topics = parseInt(numTopics);
-            if (isNaN(cases) || cases < 1 || cases > 100) {
-                setError("Number of cases must be between 1 and 100");
-                return false;
-            }
-            if (isNaN(topics) || topics < 1 || topics > 10) {
-                setError("Number of topics must be between 1 and 10");
-                return false;
-            }
+        if (!context || !taskDescription) {
+            setError("Please provide context and task description for generation");
+            return false;
+        }
+        const cases = parseInt(numCases);
+        const topics = parseInt(numTopics);
+        if (isNaN(cases) || cases < 1 || cases > 100) {
+            setError("Number of cases must be between 1 and 100");
+            return false;
+        }
+        if (isNaN(topics) || topics < 1 || topics > 10) {
+            setError("Number of topics must be between 1 and 10");
+            return false;
         }
 
         return true;
@@ -125,18 +105,13 @@ export default function CreateExperimentPage() {
                 name,
                 description,
                 modelId,
-            };
-
-            if (dataSourceType === "s3") {
-                experimentData.s3Path = s3Path;
-            } else if (dataSourceType === "generate") {
-                experimentData.generationConfig = JSON.stringify({
+                generationConfig: JSON.stringify({
                     context,
                     taskDescription,
                     numCases: parseInt(numCases),
                     numTopics: parseInt(numTopics),
-                });
-            }
+                }),
+            };
 
             await apiClient.graphql({
                 query: mutations.createExperiment,
@@ -221,94 +196,55 @@ export default function CreateExperimentPage() {
                             </SpaceBetween>
                         </Container>
 
-                        <Container header={<Header variant="h2">Test Data Source</Header>}>
+                        <Container header={<Header variant="h2">Test Data</Header>}>
                             <SpaceBetween size="l">
                                 <FormField
-                                    label="Data Source Type"
-                                    description="Choose how to provide test cases"
+                                    label="Context"
+                                    description="Describe your agent system, tools, and capabilities"
                                 >
-                                    <RadioGroup
-                                        value={dataSourceType}
-                                        onChange={({ detail }) => setDataSourceType(detail.value as DataSourceType)}
-                                        items={[
-                                            {
-                                                value: "s3",
-                                                label: "S3 Path",
-                                                description: "Load test cases from an S3 bucket",
-                                            },
-                                            {
-                                                value: "generate",
-                                                label: "Auto-Generate",
-                                                description: "Generate test cases using Strands Experiments",
-                                            },
-                                        ]}
+                                    <Textarea
+                                        value={context}
+                                        onChange={({ detail }) => setContext(detail.value)}
+                                        placeholder="Describe your agent system, its tools, and capabilities to guide synthetic data generation"
+                                        rows={6}
                                     />
                                 </FormField>
 
-                                {dataSourceType === "s3" && (
-                                    <FormField
-                                        label="S3 Path"
-                                        description="S3 URI to the experiment JSON file"
-                                    >
-                                        <Input
-                                            value={s3Path}
-                                            onChange={({ detail }) => setS3Path(detail.value)}
-                                            placeholder="s3://your-bucket/path/to/test-cases.json"
-                                        />
-                                    </FormField>
-                                )}
+                                <FormField
+                                    label="Task Description"
+                                    description="What tasks should the test cases cover?"
+                                >
+                                    <Textarea
+                                        value={taskDescription}
+                                        onChange={({ detail }) => setTaskDescription(detail.value)}
+                                        placeholder="Describe the types of tasks the synthetic test cases should cover"
+                                        rows={3}
+                                    />
+                                </FormField>
 
-                                {dataSourceType === "generate" && (
-                                    <>
-                                        <FormField
-                                            label="Context"
-                                            description="Describe your agent system, tools, and capabilities"
-                                        >
-                                            <Textarea
-                                                value={context}
-                                                onChange={({ detail }) => setContext(detail.value)}
-                                                placeholder="Describe your agent system, its tools, and capabilities to guide synthetic data generation"
-                                                rows={6}
-                                            />
-                                        </FormField>
+                                <FormField
+                                    label="Number of Test Cases"
+                                    description="How many test cases to generate (1-100)"
+                                >
+                                    <Input
+                                        value={numCases}
+                                        onChange={({ detail }) => setNumCases(detail.value)}
+                                        type="number"
+                                        inputMode="numeric"
+                                    />
+                                </FormField>
 
-                                        <FormField
-                                            label="Task Description"
-                                            description="What tasks should the test cases cover?"
-                                        >
-                                            <Textarea
-                                                value={taskDescription}
-                                                onChange={({ detail }) => setTaskDescription(detail.value)}
-                                                placeholder="Describe the types of tasks the synthetic test cases should cover"
-                                                rows={3}
-                                            />
-                                        </FormField>
-
-                                        <FormField
-                                            label="Number of Test Cases"
-                                            description="How many test cases to generate (1-100)"
-                                        >
-                                            <Input
-                                                value={numCases}
-                                                onChange={({ detail }) => setNumCases(detail.value)}
-                                                type="number"
-                                                inputMode="numeric"
-                                            />
-                                        </FormField>
-
-                                        <FormField
-                                            label="Number of Topics"
-                                            description="How many different topic categories (1-10)"
-                                        >
-                                            <Input
-                                                value={numTopics}
-                                                onChange={({ detail }) => setNumTopics(detail.value)}
-                                                type="number"
-                                                inputMode="numeric"
-                                            />
-                                        </FormField>
-                                    </>
-                                )}
+                                <FormField
+                                    label="Number of Topics"
+                                    description="How many different topic categories (1-10)"
+                                >
+                                    <Input
+                                        value={numTopics}
+                                        onChange={({ detail }) => setNumTopics(detail.value)}
+                                        type="number"
+                                        inputMode="numeric"
+                                    />
+                                </FormField>
                             </SpaceBetween>
                         </Container>
 
@@ -331,10 +267,7 @@ export default function CreateExperimentPage() {
 
                         <Box>
                             <Alert type="info">
-                                <strong>Note:</strong> {
-                                    dataSourceType === "s3" ? "The S3 file should contain a valid experiment JSON with test cases" :
-                                    "The experiment will automatically run after creation to generate synthetic test cases using AI"
-                                }
+                                The experiment will automatically run after creation to generate synthetic test cases using AI.
                             </Alert>
                         </Box>
                     </SpaceBetween>

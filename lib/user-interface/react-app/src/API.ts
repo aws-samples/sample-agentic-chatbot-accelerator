@@ -579,7 +579,6 @@ export type PublishEvaluationUpdateMutation = {
 export type CreateExperimentMutationVariables = {
   name: string,
   description?: string | null,
-  s3Path?: string | null,
   generationConfig?: string | null,
   modelId: string,
 };

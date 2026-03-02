@@ -87,10 +87,11 @@ export class ExperimentOps extends Construct {
                 actions: ["batch:SubmitJob", "batch:DescribeJobs", "batch:TerminateJob"],
                 resources: [
                     this.batch.jobQueue.jobQueueArn,
-                    // Allow all job definitions in the account (needed for SubmitJob)
-                    `arn:aws:batch:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:job-definition/*`,
-                    // Allow all job instances
-                    `arn:aws:batch:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:job/*`,
+                    // Include both the bare ARN and the revision wildcard. AWS Batch evaluates
+                    // SubmitJob against the resolved revision ARN (e.g. :3), so :* alone is
+                    // insufficient in some SDK/API paths that pass the bare name.
+                    `arn:aws:batch:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:job-definition/${this.batch.jobDefinition.jobDefinitionName}`,
+                    `arn:aws:batch:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:job-definition/${this.batch.jobDefinition.jobDefinitionName}:*`,
                 ],
             }),
         );
