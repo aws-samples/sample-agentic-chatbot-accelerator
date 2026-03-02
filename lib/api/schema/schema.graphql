@@ -104,6 +104,37 @@ type FavoriteRuntime @aws_cognito_user_pools {
     endpointName: String!
 }
 
+type Experiment @aws_cognito_user_pools {
+    experimentId: String!
+    userId: String!
+    name: String!
+    description: String
+    createdAt: AWSDateTime!
+    updatedAt: AWSDateTime!
+    status: ExperimentStatus!
+    generatedCasesS3Url: String
+    taskDescription: String
+    context: String
+    numCases: Int
+    numTopics: Int
+    modelId: String
+    generatedCasesCount: Int
+    errorMessage: String
+    batchJobId: String
+}
+
+enum ExperimentStatus {
+    DRAFT
+    RUNNING
+    COMPLETED
+    FAILED
+}
+
+type DeleteExperimentResult @aws_cognito_user_pools {
+    experimentId: String
+    deleted: Boolean!
+}
+
 type AgentFactoryNotification @aws_iam @aws_cognito_user_pools {
     agentName: String
 }
@@ -199,6 +230,11 @@ type Mutation {
     deleteEvaluator(evaluatorId: ID!): Boolean @aws_cognito_user_pools
     runEvaluation(evaluatorId: ID!): Evaluator @aws_cognito_user_pools
     publishEvaluationUpdate(evaluatorId: String!, status: String!): EvaluationNotification @aws_iam
+    # Experiments
+    createExperiment(name: String!, description: String, s3Path: String, generationConfig: String, modelId: String!): String! @aws_cognito_user_pools
+    updateExperiment(experimentId: String!, name: String, description: String, status: ExperimentStatus): Boolean @aws_cognito_user_pools
+    deleteExperiment(experimentId: String!): DeleteExperimentResult @aws_cognito_user_pools
+    runExperiment(experimentId: String!): Experiment @aws_cognito_user_pools
 }
 
 type Subscription {
@@ -242,6 +278,10 @@ type Query {
     # Evaluators
     listEvaluators: [Evaluator!] @aws_cognito_user_pools
     getEvaluator(evaluatorId: ID!): Evaluator @aws_cognito_user_pools
+    # Experiments
+    listExperiments: [Experiment!]! @aws_cognito_user_pools
+    getExperiment(experimentId: String!): Experiment @aws_cognito_user_pools
+    getExperimentPresignedUrl(s3Uri: String!): String @aws_cognito_user_pools
 }
 
 schema {

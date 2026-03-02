@@ -103,6 +103,40 @@ export type EvaluationNotification = {
   status?: string | null,
 };
 
+export enum ExperimentStatus {
+  DRAFT = "DRAFT",
+  RUNNING = "RUNNING",
+  COMPLETED = "COMPLETED",
+  FAILED = "FAILED",
+}
+
+
+export type DeleteExperimentResult = {
+  __typename: "DeleteExperimentResult",
+  experimentId?: string | null,
+  deleted: boolean,
+};
+
+export type Experiment = {
+  __typename: "Experiment",
+  experimentId: string,
+  userId: string,
+  name: string,
+  description?: string | null,
+  createdAt: string,
+  updatedAt: string,
+  status: ExperimentStatus,
+  generatedCasesS3Url?: string | null,
+  taskDescription?: string | null,
+  context?: string | null,
+  numCases?: number | null,
+  numTopics?: number | null,
+  modelId?: string | null,
+  generatedCasesCount?: number | null,
+  errorMessage?: string | null,
+  batchJobId?: string | null,
+};
+
 export type Session = {
   __typename: "Session",
   id: string,
@@ -542,6 +576,67 @@ export type PublishEvaluationUpdateMutation = {
   } | null,
 };
 
+export type CreateExperimentMutationVariables = {
+  name: string,
+  description?: string | null,
+  s3Path?: string | null,
+  generationConfig?: string | null,
+  modelId: string,
+};
+
+export type CreateExperimentMutation = {
+  createExperiment: string,
+};
+
+export type UpdateExperimentMutationVariables = {
+  experimentId: string,
+  name?: string | null,
+  description?: string | null,
+  status?: ExperimentStatus | null,
+};
+
+export type UpdateExperimentMutation = {
+  updateExperiment?: boolean | null,
+};
+
+export type DeleteExperimentMutationVariables = {
+  experimentId: string,
+};
+
+export type DeleteExperimentMutation = {
+  deleteExperiment?:  {
+    __typename: "DeleteExperimentResult",
+    experimentId?: string | null,
+    deleted: boolean,
+  } | null,
+};
+
+export type RunExperimentMutationVariables = {
+  experimentId: string,
+};
+
+export type RunExperimentMutation = {
+  runExperiment?:  {
+    __typename: "Experiment",
+    experimentId: string,
+    userId: string,
+    name: string,
+    description?: string | null,
+    createdAt: string,
+    updatedAt: string,
+    status: ExperimentStatus,
+    generatedCasesS3Url?: string | null,
+    taskDescription?: string | null,
+    context?: string | null,
+    numCases?: number | null,
+    numTopics?: number | null,
+    modelId?: string | null,
+    generatedCasesCount?: number | null,
+    errorMessage?: string | null,
+    batchJobId?: string | null,
+  } | null,
+};
+
 export type ListSessionsQueryVariables = {
 };
 
@@ -869,6 +964,65 @@ export type GetEvaluatorQuery = {
     startedAt?: string | null,
     completedAt?: string | null,
   } | null,
+};
+
+export type ListExperimentsQueryVariables = {
+};
+
+export type ListExperimentsQuery = {
+  listExperiments:  Array< {
+    __typename: "Experiment",
+    experimentId: string,
+    userId: string,
+    name: string,
+    description?: string | null,
+    createdAt: string,
+    updatedAt: string,
+    status: ExperimentStatus,
+    generatedCasesS3Url?: string | null,
+    taskDescription?: string | null,
+    context?: string | null,
+    numCases?: number | null,
+    numTopics?: number | null,
+    modelId?: string | null,
+    generatedCasesCount?: number | null,
+    errorMessage?: string | null,
+    batchJobId?: string | null,
+  } >,
+};
+
+export type GetExperimentQueryVariables = {
+  experimentId: string,
+};
+
+export type GetExperimentQuery = {
+  getExperiment?:  {
+    __typename: "Experiment",
+    experimentId: string,
+    userId: string,
+    name: string,
+    description?: string | null,
+    createdAt: string,
+    updatedAt: string,
+    status: ExperimentStatus,
+    generatedCasesS3Url?: string | null,
+    taskDescription?: string | null,
+    context?: string | null,
+    numCases?: number | null,
+    numTopics?: number | null,
+    modelId?: string | null,
+    generatedCasesCount?: number | null,
+    errorMessage?: string | null,
+    batchJobId?: string | null,
+  } | null,
+};
+
+export type GetExperimentPresignedUrlQueryVariables = {
+  s3Uri: string,
+};
+
+export type GetExperimentPresignedUrlQuery = {
+  getExperimentPresignedUrl?: string | null,
 };
 
 export type ReceiveMessagesSubscriptionVariables = {

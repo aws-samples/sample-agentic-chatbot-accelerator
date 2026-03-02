@@ -24,6 +24,7 @@ import { SystemConfig } from "../shared/types";
 import { generatePrefix } from "../shared/utils";
 import { AgentCoreApis } from "./agent-core-runtime";
 import { EvaluationApi } from "./evaluation-api";
+import { ExperimentOps } from "./experiments-api";
 import { HttpApiBackend } from "./http-api-backend";
 import { KnowledgeBaseOps } from "./knowledge-base";
 import { ChatbotDynamoDBTables } from "./tables";
@@ -67,6 +68,7 @@ export interface ChatbotApiProps {
 export class ChatbotApi extends Construct {
     public readonly messagesTopic: sns.Topic;
     public readonly sessionsTable: dynamodb.Table;
+    public readonly experimentsTable: dynamodb.Table;
     public readonly agentsTable: dynamodb.Table;
     public readonly byUserIndex: string;
     public readonly graphqlApi: appsync.GraphqlApi;
@@ -142,13 +144,21 @@ export class ChatbotApi extends Construct {
             byUserIdIndex: chatTables.byUserIdIndex,
         });
 
+        const experimentOps = new ExperimentOps(this, "ExperimentOps", {
+            ...props,
+            api: api,
+            experimentsTable: chatTables.experimentsTable,
+            evaluationsBucket: evaluationApi.evaluationsBucket,
+        });
+
         new HttpApiBackend(this, "SyncApiBackend", {
             ...props,
             api: api,
             sessionsTable: chatTables.sessionsTable,
             favoriteRuntimeTable: chatTables.favoriteRuntimeTable,
+            experimentsTable: chatTables.experimentsTable,
             byUserIdIndex: chatTables.byUserIdIndex,
-            operationToExclude: [...agentCoreApis.operations, ...kbApis.operations, ...evaluationApi.operations],
+            operationToExclude: [...agentCoreApis.operations, ...kbApis.operations, ...evaluationApi.operations, ...experimentOps.operations]
         });
 
         // CDK outputs
@@ -158,6 +168,7 @@ export class ChatbotApi extends Construct {
         this.messagesTopic = realtimeBackend.messagesTopic;
         this.graphqlApi = api;
         this.sessionsTable = chatTables.sessionsTable;
+        this.experimentsTable = chatTables.experimentsTable;
         this.byUserIndex = chatTables.byUserIdIndex;
 
         // CDK NAG Suppression

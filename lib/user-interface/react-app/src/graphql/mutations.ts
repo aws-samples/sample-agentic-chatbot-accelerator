@@ -377,3 +377,75 @@ export const publishEvaluationUpdate = /* GraphQL */ `mutation PublishEvaluation
   APITypes.PublishEvaluationUpdateMutationVariables,
   APITypes.PublishEvaluationUpdateMutation
 >;
+export const createExperiment = /* GraphQL */ `mutation CreateExperiment(
+  $name: String!
+  $description: String
+  $s3Path: String
+  $generationConfig: String
+  $modelId: String!
+) {
+  createExperiment(
+    name: $name
+    description: $description
+    s3Path: $s3Path
+    generationConfig: $generationConfig
+    modelId: $modelId
+  )
+}
+` as GeneratedMutation<
+  APITypes.CreateExperimentMutationVariables,
+  APITypes.CreateExperimentMutation
+>;
+export const updateExperiment = /* GraphQL */ `mutation UpdateExperiment(
+  $experimentId: String!
+  $name: String
+  $description: String
+  $status: ExperimentStatus
+) {
+  updateExperiment(
+    experimentId: $experimentId
+    name: $name
+    description: $description
+    status: $status
+  )
+}
+` as GeneratedMutation<
+  APITypes.UpdateExperimentMutationVariables,
+  APITypes.UpdateExperimentMutation
+>;
+export const deleteExperiment = /* GraphQL */ `mutation DeleteExperiment($experimentId: String!) {
+  deleteExperiment(experimentId: $experimentId) {
+    experimentId
+    deleted
+    __typename
+  }
+}
+` as GeneratedMutation<
+  APITypes.DeleteExperimentMutationVariables,
+  APITypes.DeleteExperimentMutation
+>;
+export const runExperiment = /* GraphQL */ `mutation RunExperiment($experimentId: String!) {
+  runExperiment(experimentId: $experimentId) {
+    experimentId
+    userId
+    name
+    description
+    createdAt
+    updatedAt
+    status
+    generatedCasesS3Url
+    taskDescription
+    context
+    numCases
+    numTopics
+    modelId
+    generatedCasesCount
+    errorMessage
+    batchJobId
+    __typename
+  }
+}
+` as GeneratedMutation<
+  APITypes.RunExperimentMutationVariables,
+  APITypes.RunExperimentMutation
+>;

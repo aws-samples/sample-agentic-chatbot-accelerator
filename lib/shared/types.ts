@@ -293,6 +293,14 @@ export interface EvaluatorConfig {
 }
 
 /**
+ * Configuration for the experiments (synthetic data generation) feature.
+ * @property supportedModels - Record mapping user-friendly model names to their Bedrock model identifiers
+ */
+export interface ExperimentsConfig {
+    supportedModels: Record<string, string>;
+}
+
+/**
  * Configuration interface for the CDK deployment.
  * This is the main configuration object that controls the entire system deployment.
  *
@@ -335,4 +343,6 @@ export interface SystemConfig {
     agentRuntimeConfig?: AgentRuntimeConfig;
 
     evaluatorConfig?: EvaluatorConfig;
+
+    experimentsConfig?: ExperimentsConfig;
 }
