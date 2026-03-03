@@ -30,6 +30,7 @@ from strands_evals.evaluators import (
     FaithfulnessEvaluator,
     GoalSuccessRateEvaluator,
     HelpfulnessEvaluator,
+    InteractionsEvaluator,
     OutputEvaluator,
     ToolParameterAccuracyEvaluator,
     ToolSelectionAccuracyEvaluator,
@@ -221,6 +222,122 @@ class TrajectoryBuilder:
             available_tools=[],
         )
 
+    @staticmethod
+    def build_swarm_session(
+        trajectory: Optional[dict],
+        user_prompt: str,
+        agent_response: str,
+    ) -> Session:
+        """Build a Session from swarm trajectory data.
+
+        Creates a Session object with AgentInvocationSpans representing each
+        agent node in the swarm execution. This allows evaluators that require
+        Session objects to work with swarm data.
+
+        If trajectory is None or empty, creates a minimal Session with just
+        the user prompt and agent response (fallback for error cases).
+
+        Args:
+            trajectory: Swarm trajectory dict with 'trajectory' list and 'interactions'
+                       Can be None if trajectory capture failed
+            user_prompt: The user's input question
+            agent_response: The final agent's response
+
+        Returns:
+            Session with spans for each swarm agent node (or minimal Session if no data)
+        """
+        now = datetime.now(timezone.utc)
+        trace_id = str(uuid.uuid4())
+
+        session_id = str(uuid.uuid4())
+
+        # Handle None or empty trajectory
+        if not trajectory:
+            logger.warning(
+                "Swarm trajectory is None or empty, creating Session with main span only"
+            )
+            node_list = []
+            interactions = []
+        else:
+            session_id = trajectory.get("session_id", session_id)
+            # Get the list of agent nodes from swarm trajectory
+            node_list = trajectory.get("trajectory", []) or []
+            interactions = trajectory.get("interactions", []) or []
+
+        logger.info(
+            f"Building swarm session with {len(node_list)} nodes, "
+            f"{len(interactions)} interactions, session_id={session_id}"
+        )
+
+        all_spans = []
+
+        # Create an AgentInvocationSpan for the overall conversation
+        main_span = TrajectoryBuilder._create_agent_span(
+            session_id=session_id,
+            trace_id=trace_id,
+            user_prompt=user_prompt,
+            agent_response=agent_response,
+            timestamp=now,
+        )
+        all_spans.append(main_span)
+
+        # Create spans for each agent node in the swarm trajectory
+        for i, node_name in enumerate(node_list):
+            # Find corresponding interaction if available
+            node_message = ""
+            for interaction in interactions:
+                if (
+                    isinstance(interaction, dict)
+                    and interaction.get("node_name") == node_name
+                ):
+                    raw_messages = interaction.get("messages", "")
+                    # Handle messages that could be a list or string
+                    if isinstance(raw_messages, list):
+                        node_message = "\n".join(str(m) for m in raw_messages)
+                    else:
+                        node_message = str(raw_messages) if raw_messages else ""
+                    break
+
+            # Create a span representing this agent node's execution
+            # Note: agent_response must be a string, not a list
+            node_span = AgentInvocationSpan(
+                span_info=SpanInfo(
+                    session_id=session_id,
+                    trace_id=trace_id,
+                    span_id=str(uuid.uuid4()),
+                    start_time=now,
+                    end_time=now,
+                ),
+                user_prompt=f"[Swarm node {i+1}: {node_name}]",
+                agent_response=node_message or f"Executed by {node_name}",
+                available_tools=[],
+            )
+            all_spans.append(node_span)
+
+        # Create AgentInvocationSpan if no traces present (evaluators need it)
+        if not all_spans:
+            logger.info(
+                "No traces in trajectory, creating AgentInvocationSpan without tool calls"
+            )
+            agent_span = TrajectoryBuilder._create_agent_span(
+                session_id=session_id,
+                trace_id=trace_id,
+                user_prompt=user_prompt,
+                agent_response=agent_response,
+                timestamp=now,
+            )
+            all_spans.append(agent_span)
+
+        # Create single trace with all spans
+        combined_trace = Trace(
+            spans=all_spans,
+            trace_id=trace_id,
+            session_id=session_id,
+        )
+
+        logger.info(f"Built swarm session with {len(all_spans)} total spans")
+        return Session(traces=[combined_trace], session_id=session_id)
+
 
 # ========================= EvaluatorFactory ========================= #
 
@@ -236,6 +353,7 @@ class EvaluatorFactory:
     - ToolSelectionAccuracyEvaluator: Validates tool selection
     - ToolParameterAccuracyEvaluator: Validates tool parameters
     - TrajectoryEvaluator: Assesses sequence of actions/tool calls taken by an agent (requires rubric)
+    - InteractionsEvaluator: Evaluates how well the agent interacts with users (requires rubric)
     """
 
     # Mapping of evaluator type names to classes
@@ -247,10 +365,15 @@ class EvaluatorFactory:
         "ToolSelectionAccuracyEvaluator": ToolSelectionAccuracyEvaluator,
         "ToolParameterAccuracyEvaluator": ToolParameterAccuracyEvaluator,
         "TrajectoryEvaluator": TrajectoryEvaluator,
+        "InteractionsEvaluator": InteractionsEvaluator,
     }
 
     # Evaluators that require a rubric parameter
-    EVALUATORS_REQUIRING_RUBRIC = {"OutputEvaluator", "TrajectoryEvaluator"}
+    EVALUATORS_REQUIRING_RUBRIC = {
+        "OutputEvaluator",
+        "TrajectoryEvaluator",
+        "InteractionsEvaluator",
+    }
 
     @classmethod
     def get_available_types(cls) -> List[str]:
@@ -352,6 +475,8 @@ class EvaluationRunner:
         rubric: str = "",
         trajectory: Optional[dict] = None,
         case_name: str = "eval-case",
+        expected_trajectory: Optional[List[str]] = None,
+        expected_interactions: Optional[List[dict]] = None,
     ) -> EvaluationResult:
         """Run evaluation using specified evaluator type.
 
@@ -361,8 +486,13 @@ class EvaluationRunner:
             expected_output: The expected output
             actual_output: The actual output from the agent
             rubric: Optional rubric for evaluators that support it
-            trajectory: Optional trajectory data from agent execution
+            trajectory: Optional trajectory data from agent execution (supports both
+                        single agent format with 'traces' and swarm format with
+                        'trajectory' and 'interactions')
             case_name: Name for the test case
+            expected_trajectory: Optional expected sequence of agent/tool names
+            expected_interactions: Optional expected interactions for swarm agents
+                Each interaction: {"node_name": str, "dependencies": [str], "messages": str}
 
         Returns:
             EvaluationResult with score, passed status, and reason
@@ -383,25 +513,77 @@ class EvaluationRunner:
             )
 
             # Build trajectory session if provided
-            actual_trajectory = None
+            actual_trajectory_session = None  # Session object for most evaluators
+            actual_interactions = None  # List for InteractionsEvaluator
+
             if trajectory:
                 try:
-                    actual_trajectory = TrajectoryBuilder.build_session(
-                        trajectory=trajectory,
-                        user_prompt=input_text,
-                        agent_response=actual_output,
-                    )
+                    # Detect trajectory format and process accordingly
+                    # Swarm format has 'interactions' key with agent-to-agent handoff data
+                    is_swarm_format = "interactions" in trajectory
+
+                    if is_swarm_format:
+                        # Swarm format: extract interactions and agent sequence
+                        actual_interactions = trajectory.get("interactions")
+                        actual_trajectory_list = trajectory.get("trajectory", [])
+
+                        logger.info(
+                            f"Swarm trajectory: {len(actual_trajectory_list)} nodes, "
+                            f"{len(actual_interactions) if actual_interactions else 0} interactions"
+                        )
+
+                        # Build Session object from swarm data for evaluators that need it
+                        actual_trajectory_session = (
+                            TrajectoryBuilder.build_swarm_session(
+                                trajectory=trajectory,
+                                user_prompt=input_text,
+                                agent_response=actual_output,
+                            )
+                        )
+
+                    else:
+                        # Single agent format: build Session from OpenTelemetry traces
+                        actual_trajectory_session = TrajectoryBuilder.build_session(
+                            trajectory=trajectory,
+                            user_prompt=input_text,
+                            agent_response=actual_output,
+                        )
+                        logger.info(
+                            f"Single agent trajectory: {len(trajectory.get('traces', []))} traces"
+                        )
+
                 except Exception as e:
                     logger.warning(f"Failed to build session from trajectory: {e}")
 
-            # Create evaluation data
-            eval_data = EvaluationData(
-                input=input_text,
-                expected_output=expected_output,
-                actual_output=actual_output,
-                name=case_name,
-                actual_trajectory=actual_trajectory,
-            )
+            # Create evaluation data with appropriate trajectory/interactions
+            eval_data_kwargs: Dict[str, Any] = {
+                "input": input_text,
+                "expected_output": expected_output,
+                "actual_output": actual_output,
+                "name": case_name,
+            }
+
+            # Add trajectory session for evaluators that need it
+            if actual_trajectory_session:
+                eval_data_kwargs["actual_trajectory"] = actual_trajectory_session
+
+            # Add interactions for InteractionsEvaluator
+            if actual_interactions:
+                eval_data_kwargs["actual_interactions"] = actual_interactions
+
+            # Add expected trajectory if provided
+            if expected_trajectory:
+                eval_data_kwargs["expected_trajectory"] = expected_trajectory
+                logger.info(f"Expected trajectory: {expected_trajectory}")
+
+            # Add expected interactions if provided (for InteractionsEvaluator)
+            if expected_interactions:
+                eval_data_kwargs["expected_interactions"] = expected_interactions
+                logger.info(
+                    f"Expected interactions: {len(expected_interactions)} nodes"
+                )
+
+            eval_data = EvaluationData(**eval_data_kwargs)
 
             # Run evaluation
             result = evaluator.evaluate(eval_data)

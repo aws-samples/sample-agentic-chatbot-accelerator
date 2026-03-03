@@ -86,6 +86,14 @@ export function getConfig(): SystemConfig {
                     Score 1.0 if the trajectory was optimal and all criteria are met.
                     Score 0.5 if the trajectory achieved the goal but with unnecessary steps or minor inefficiencies.
                     Score 0.0 if the trajectory was significantly flawed or failed to achieve the goal.`,
+                InteractionsEvaluator: `Evaluate the interaction based on:
+                    1. Correct node execution order
+                    2. Proper dependency handling
+                    3. Clear message communication
+
+                    Score 1.0 if all criteria are met.
+                    Score 0.5 if some issues exist.
+                    Score 0.0 if interaction is incorrect.`,
             },
         },
 

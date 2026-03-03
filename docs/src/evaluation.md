@@ -6,8 +6,9 @@ This guide covers the evaluation feature in the Agentic Chatbot Accelerator, whi
 
 The evaluation system enables you to:
 - Create test cases with expected inputs and outputs
-- Run evaluations against your deployed agents
+- Run evaluations against your deployed agents (single or swarm)
 - Use multiple evaluator types to assess different aspects of agent responses
+- Evaluate agent-to-agent interactions in swarm configurations
 - Track evaluation results and progress in real-time
 
 ## Configuration
@@ -36,6 +37,25 @@ evaluatorConfig:
             Score 1.0 if all criteria are met excellently.
             Score 0.5 if some criteria are partially met.
             Score 0.0 if the response is inadequate.
+        TrajectoryEvaluator: |
+            Evaluate the agent's action sequence based on:
+            1. Efficiency - Did the agent take the most direct path to achieve the goal?
+            2. Correctness - Were the right tools selected for each step?
+            3. Order - Were actions performed in a logical sequence?
+            4. Completeness - Were all necessary steps included?
+
+            Score 1.0 if the trajectory was optimal.
+            Score 0.5 if the trajectory achieved the goal with minor inefficiencies.
+            Score 0.0 if the trajectory was significantly flawed.
+        InteractionsEvaluator: |
+            Evaluate the interaction based on:
+            1. Correct node execution order
+            2. Proper dependency handling
+            3. Clear message communication
+
+            Score 1.0 if all criteria are met.
+            Score 0.5 if some issues exist.
+            Score 0.0 if interaction is incorrect.
 ```
 
 ## Architecture
@@ -52,15 +72,18 @@ AppSync → EvaluationResolver → SQS Queue → EvaluationExecutor → DynamoDB
 
 ## Available Evaluators
 
-The system supports five evaluator types from the Strands Evaluation SDK:
+The system supports eight evaluator types from the Strands Evaluation SDK:
 
-| Evaluator | Purpose | Requires Trajectory | Best For |
-|-----------|---------|---------------------|----------|
-| **OutputEvaluator** | Compares actual vs expected output using custom rubric | No | Exact answer validation |
-| **HelpfulnessEvaluator** | Evaluates response helpfulness and user experience | Yes | User experience quality |
-| **FaithfulnessEvaluator** | Evaluates if responses are grounded in conversation history, detecting hallucinations and unsupported claims | Yes | RAG scenarios |
-| **ToolSelectionAccuracyEvaluator** | Validates tool selection decisions | Yes | Multi-tool agents |
-| **ToolParameterAccuracyEvaluator** | Validates tool parameters accuracy | Yes | Complex tool usage |
+| Evaluator | Purpose | Requires Rubric | Requires Trajectory | Best For |
+|-----------|---------|-----------------|---------------------|----------|
+| **OutputEvaluator** | Compares actual vs expected output using custom rubric | Yes | No | Exact answer validation |
+| **HelpfulnessEvaluator** | Evaluates response helpfulness and user experience | No | Yes | User experience quality |
+| **FaithfulnessEvaluator** | Evaluates if responses are grounded in conversation history | No | Yes | RAG scenarios |
+| **GoalSuccessRateEvaluator** | Evaluates if all user goals were achieved (binary: 1.0=success, 0.0=failure) | No | No | Goal completion tracking |
+| **TrajectoryEvaluator** | Assesses sequence of actions/tool calls taken by an agent | Yes | Yes | Workflow optimization |
+| **ToolSelectionAccuracyEvaluator** | Validates tool selection decisions | No | Yes | Multi-tool agents |
+| **ToolParameterAccuracyEvaluator** | Validates tool parameters accuracy | No | Yes | Complex tool usage |
+| **InteractionsEvaluator** | Evaluates agent-to-agent handoffs and interactions (swarm only) | Yes | Yes | Swarm agents |
 
 ## Recommended Evaluator Combinations
 
@@ -71,7 +94,7 @@ OutputEvaluator, HelpfulnessEvaluator, FaithfulnessEvaluator
 
 ### For Tool-based Agents (with custom tools)
 ```
-OutputEvaluator, HelpfulnessEvaluator, ToolSelectionAccuracyEvaluator, ToolParameterAccuracyEvaluator
+OutputEvaluator, HelpfulnessEvaluator, TrajectoryEvaluator, ToolSelectionAccuracyEvaluator, ToolParameterAccuracyEvaluator
 ```
 
 ### For Simple Q&A Agents
@@ -115,15 +138,79 @@ evaluationExecutor.addEventSource(
 ```
 
 
+## Test Case Format
+
+### Single Agent Test Cases
+
+```json
+[
+  {
+    "name": "weather-query",
+    "input": "What is the weather in London?",
+    "expected_output": "The current weather in London is...",
+    "expected_trajectory": ["get_weather_forecast"],
+    "metadata": { "category": "weather" }
+  }
+]
+```
+
+### Swarm Agent Test Cases (with expected_interactions)
+
+For `InteractionsEvaluator`, use the `expected_interactions` field to define the expected agent-to-agent handoff sequence:
+
+```json
+[
+  {
+    "name": "software-dev-workflow",
+    "input": "Design and implement a simple REST API for a todo app",
+    "expected_trajectory": ["researcher", "architect", "coder", "reviewer"],
+    "expected_interactions": [
+      { "node_name": "researcher", "dependencies": [], "messages": "I've completed the research phase and handed off to the architect" },
+      { "node_name": "architect", "dependencies": ["researcher"], "messages": "I've completed a comprehensive system architecture design for the TODO app REST API" },
+      { "node_name": "coder", "dependencies": ["architect"], "messages": "I've successfully completed the implementation of the TODO app REST API" },
+      { "node_name": "reviewer", "dependencies": ["coder"], "messages": "I'll conduct a comprehensive code review of the TODO app REST API implementation" }
+    ],
+    "metadata": { "category": "workflow" }
+  }
+]
+```
+
+| Field | Description | Used By |
+|-------|-------------|---------|
+| `name` | Test case identifier | All evaluators |
+| `input` | User input/question | All evaluators |
+| `expected_output` | Expected agent response | OutputEvaluator |
+| `expected_trajectory` | Expected sequence of tool/agent names | TrajectoryEvaluator |
+| `expected_interactions` | Expected agent-to-agent handoffs (swarm only) | InteractionsEvaluator |
+| `metadata` | Additional test case metadata | Filtering/categorization |
+
+## Evaluator Compatibility by Agent Type
+
+| Evaluator | Single Agent | Swarm Agent |
+|-----------|-------------|-------------|
+| OutputEvaluator | ✅ | ✅ |
+| HelpfulnessEvaluator | ✅ | ✅ |
+| FaithfulnessEvaluator | ✅ | ✅ |
+| GoalSuccessRateEvaluator | ✅ | ✅ |
+| TrajectoryEvaluator | ✅ (tool calls) | ✅ (agent nodes) |
+| ToolSelectionAccuracyEvaluator | ✅ | ✅ |
+| ToolParameterAccuracyEvaluator | ✅ | ✅ |
+| InteractionsEvaluator | ❌ | ✅ |
+
+> **Note**: `InteractionsEvaluator` is specifically designed for swarm agents as it evaluates agent-to-agent handoffs, which don't exist in single agent configurations.
+
 ## Best Practices
 
 1. **Start simple**: Begin with `OutputEvaluator` and add more evaluators as needed
 2. **Match evaluators to agent type**: Use tool evaluators for tool-based agents, faithfulness for RAG
-3. **Provide clear expected outputs**: Evaluators compare against your expected output
-4. **Test iteratively**: Run small test sets first to validate evaluator selection
-5. **Monitor pass rates**: A consistent pass rate below 70% may indicate evaluator mismatch
+3. **Use InteractionsEvaluator for swarms**: This evaluator is purpose-built for multi-agent workflows
+4. **Provide clear expected outputs**: Evaluators compare against your expected output
+5. **Define expected_trajectory for workflow validation**: Use this with `TrajectoryEvaluator` to verify action sequences
+6. **Test iteratively**: Run small test sets first to validate evaluator selection
+7. **Monitor pass rates**: A consistent pass rate below 70% may indicate evaluator mismatch
 
 ## Related Resources
 
 - [Strands Agents Evals SDK Documentation](https://strandsagents.com/latest/documentation/docs/user-guide/evals-sdk/)
+- [Swarm Agents Guide](./swarm-agents.md)
 - [API Reference](./api.md)

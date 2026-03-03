@@ -16,6 +16,7 @@ from src.mcp_client import MCPClientManager
 from src.types import ChatbotAction
 from strands import Agent
 from strands.multiagent import Swarm
+from strands_evals.extractors import swarm_extractor
 
 logger = logging.getLogger("bedrock_agentcore.app")
 logger.setLevel(logging.INFO)
@@ -42,6 +43,10 @@ async def invoke(payload, context: RequestContext):
     user_id = payload.get("userId")
     message_id = payload.get("messageId")
     session_id = context.session_id
+
+    # Trajectory capture flag for evaluation features
+    # When true, swarm interactions and trajectory are captured and returned
+    include_trajectory = payload.get("includeTrajectory", False)
 
     # Propagate session ID for observability
     ctx = baggage.set_baggage("session.id", session_id)
@@ -171,6 +176,45 @@ async def invoke(payload, context: RequestContext):
         }
         if len(reasoning_content) > 1:
             final_answer_data["reasoningContent"] = "\n\n".join(reasoning_content)
+
+        # Capture trajectory and interactions for evaluation features if requested
+        if include_trajectory:
+            try:
+                # Extract trajectory (sequence of agent nodes)
+                trajectory = [node.node_id for node in result.node_history]
+
+                # Extract interactions using swarm_extractor for InteractionsEvaluator
+                interaction_info = swarm_extractor.extract_swarm_interactions(result)
+
+                final_answer_data["trajectory"] = {
+                    "session_id": session_id,
+                    "trajectory": trajectory,
+                    "interactions": interaction_info,
+                    "status": result.status.value,
+                    "execution_count": result.execution_count,
+                    "execution_time": result.execution_time,
+                }
+
+                logger.info(
+                    "Trajectory and interactions captured for evaluation",
+                    extra={
+                        "trajectory": trajectory,
+                        "interactionCount": len(interaction_info)
+                        if interaction_info
+                        else 0,
+                    },
+                )
+            except Exception as traj_err:
+                logger.warning(
+                    f"Failed to capture trajectory/interactions: {traj_err}",
+                    extra={"error": str(traj_err)},
+                )
+                # Still return empty trajectory on error for evaluator
+                final_answer_data["trajectory"] = {
+                    "session_id": session_id,
+                    "trajectory": [],
+                    "interactions": [],
+                }
 
         final_answer_payload = {
             "action": ChatbotAction.FINAL_RESPONSE.value,
