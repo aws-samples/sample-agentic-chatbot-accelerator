@@ -8,44 +8,21 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from shared.base_constants import RETRIEVE_FROM_KB_PREFIX
+from shared.base_factory import BaseAgentFactory
 from shared.mcp_client import MCPClientManager
 from strands import Agent
-from strands.agent.conversation_manager import (
-    NullConversationManager,
-    SlidingWindowConversationManager,
-    SummarizingConversationManager,
-)
 from strands.hooks import AfterToolCallEvent, BeforeToolCallEvent
-from strands.models import BedrockModel
 from strands.multiagent import Swarm
 
 from .callbacks import AgentCallbacks
 from .types import (
     EConversationManagerType,
-    ModelConfiguration,
     SwarmAgentDefinition,
     SwarmConfiguration,
 )
 
 if TYPE_CHECKING:
     from logging import Logger
-
-    from strands.agent.conversation_manager import ConversationManager
-
-MODELS_THAT_SUPPORT_CACHING = (
-    # Nova
-    "amazon.nova-micro-v1:0",
-    "amazon.nova-lite-v1:0",
-    "amazon.nova-pro-v1:0",
-    # Nova 2
-    "amazon.nova-2-lite-v1:0",
-    # Anthropic
-    "anthropic.claude-sonnet-4-20250514-v1:0",
-    "anthropic.claude-3-7-sonnet-20250219-v1:0",
-    "anthropic.claude-3-5-haiku-20241022-v1:0",
-    "anthropic.claude-haiku-4-5-20251001-v1:0",
-    "anthropic.claude-sonnet-4-5-20250929-v1:0",
-)
 
 
 def create_swarm(
@@ -151,7 +128,13 @@ def _create_agent_from_definition(
     Returns:
         Configured Agent instance.
     """
-    model = _create_model(agent_def.modelInferenceParameters)
+    model = BaseAgentFactory.create_model(
+        model_id=agent_def.modelInferenceParameters.modelId,
+        max_tokens=agent_def.modelInferenceParameters.parameters.maxTokens,
+        temperature=agent_def.modelInferenceParameters.parameters.temperature,
+        stop_sequences=agent_def.modelInferenceParameters.parameters.stopSequences,
+        enable_caching=True,
+    )
     tools = _initialize_tools(agent_def, mcp_client_manager, logger)
 
     agent = Agent(
@@ -161,8 +144,8 @@ def _create_agent_from_definition(
         system_prompt=agent_def.instructions,
         tools=tools,
         callback_handler=None,
-        conversation_manager=_create_conversation_manager(
-            conversation_manager_type, logger
+        conversation_manager=BaseAgentFactory.create_conversation_manager(
+            conversation_manager_type.value, logger
         ),
         session_manager=session_manager,
     )
@@ -176,54 +159,6 @@ def _create_agent_from_definition(
     )
 
     return agent
-
-
-def _create_model(configuration: ModelConfiguration) -> BedrockModel:
-    """
-    Create a BedrockModel instance from the model configuration.
-
-    Args:
-        configuration: Model configuration including model ID and inference parameters.
-
-    Returns:
-        A configured BedrockModel instance.
-    """
-    model_args: dict[str, Any] = {
-        "model_id": configuration.modelId,
-        "max_tokens": configuration.parameters.maxTokens,
-        "temperature": configuration.parameters.temperature,
-        "stop_sequences": configuration.parameters.stopSequences,
-    }
-
-    return BedrockModel(**model_args)
-
-
-def _create_conversation_manager(
-    manager: EConversationManagerType, logger: Logger
-) -> ConversationManager:
-    """
-    Creates and returns a conversation manager instance based on the specified type.
-
-    Args:
-        manager (EConversationManagerType): The type of conversation manager to create
-        logger: Logger instance for logging warnings
-
-    Returns:
-        ConversationManager: An instance of the specified conversation manager type.
-    """
-    if manager == EConversationManagerType.SLIDING_WINDOW:
-        out = SlidingWindowConversationManager()
-    elif manager == EConversationManagerType.SUMMARIZING:
-        out = SummarizingConversationManager()
-    elif manager == EConversationManagerType.NULL:
-        out = NullConversationManager()
-    else:
-        logger.warning(
-            f"Unexpected conversation manager {manager}. Defaulting to SLIDING_WINDOW"
-        )
-        out = SlidingWindowConversationManager()
-
-    return out
 
 
 def _initialize_tools(
@@ -256,14 +191,15 @@ def _initialize_tools(
         },
     )
 
-    return mcp_tools + custom_tools
+    return BaseAgentFactory.combine_tools(mcp_tools, custom_tools, logger)
 
 
 def _initialize_custom_tools(
     agent_def: SwarmAgentDefinition, logger: Logger
 ) -> list[Any]:
-    """
-    Initialize custom tools defined in the agent definition.
+    """Initialize custom tools defined in the agent definition.
+
+    Uses BaseAgentFactory to initialize tools consistently.
 
     Args:
         agent_def: Agent definition containing tool definitions and parameters.
@@ -272,51 +208,13 @@ def _initialize_custom_tools(
     Returns:
         List of initialized tool instances.
     """
-    from shared.base_constants import INVOKE_SUBAGENT_PREFIX, RETRIEVE_FROM_KB_PREFIX
-
     from .registry import AVAILABLE_TOOLS, RetrievalConfiguration
 
-    agent_tools: list[Any] = []
-    for tool_name in agent_def.tools:
-        if tool_name not in agent_def.toolParameters:
-            logger.warning(
-                f"Tool '{tool_name}' not found in toolParameters for agent '{agent_def.name}', skipping"
-            )
-            continue
-
-        params = agent_def.toolParameters[tool_name].copy()
-
-        if tool_name.startswith(RETRIEVE_FROM_KB_PREFIX):
-            kb_id = params["kb_id"]
-            retrieval_cfg = RetrievalConfiguration.model_validate(
-                params["retrieval_cfg"]
-            )
-            tool_factory = AVAILABLE_TOOLS[RETRIEVE_FROM_KB_PREFIX]["factory"]
-            tool = tool_factory(kb_id=kb_id, cfg=retrieval_cfg)
-
-            agent_tools.append(tool)
-            logger.info(f"Connected knowledge base {kb_id} to agent '{agent_def.name}'")
-
-        elif tool_name in AVAILABLE_TOOLS or tool_name.startswith(
-            INVOKE_SUBAGENT_PREFIX
-        ):
-            record = (
-                AVAILABLE_TOOLS[tool_name]
-                if tool_name in AVAILABLE_TOOLS
-                else AVAILABLE_TOOLS[INVOKE_SUBAGENT_PREFIX]
-            )
-            tool_factory = record["factory"]
-            logger.info(
-                f"Initializing tool '{tool_name}' for agent '{agent_def.name}'",
-                extra={"parameters": params},
-            )
-
-            params.pop("invokesSubAgent", None)
-            agent_tools.append(tool_factory(**params))
-            logger.info(f"Added tool '{tool_name}' to agent '{agent_def.name}'")
-        else:
-            logger.warning(
-                f"Unknown tool '{tool_name}' for agent '{agent_def.name}', skipping"
-            )
-
-    return agent_tools
+    return BaseAgentFactory.initialize_custom_tools(
+        tools_list=agent_def.tools,
+        tool_parameters=agent_def.toolParameters,
+        available_tools=AVAILABLE_TOOLS,
+        logger=logger,
+        retrieval_configuration_class=RetrievalConfiguration,
+        context_name=f"agent '{agent_def.name}'",
+    )
