@@ -10,10 +10,11 @@ from datetime import datetime, timezone
 from bedrock_agentcore.runtime import BedrockAgentCoreApp, RequestContext
 from opentelemetry import baggage
 from opentelemetry.context import attach
+from shared.mcp_client import MCPClientManager
+from shared.stream_types import ChatbotAction
 from src.data_source import parse_configuration
 from src.factory import create_swarm
-from src.mcp_client import MCPClientManager
-from src.types import ChatbotAction
+from src.registry import AVAILABLE_MCPS
 from strands import Agent
 from strands.multiagent import Swarm
 
@@ -81,7 +82,9 @@ async def invoke(payload, context: RequestContext):
             # Init MCP Clients if any agent has MCP servers configured
             if all_mcp_servers:
                 MCP_CLIENT_MANAGER = MCPClientManager(
-                    mcp_servers=list(all_mcp_servers), logger=logger
+                    mcp_servers=list(all_mcp_servers),
+                    logger=logger,
+                    mcp_registry=AVAILABLE_MCPS,
                 )
                 MCP_CLIENT_MANAGER.init_mcp_clients()
 

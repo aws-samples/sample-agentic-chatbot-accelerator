@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 import boto3
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
+from shared.utils import deserialize
 
 from .types import (
     AgentReference,
@@ -19,7 +20,6 @@ from .types import (
     SwarmAgentDefinition,
     SwarmConfiguration,
 )
-from .utils import deserialize
 
 if TYPE_CHECKING:
     from logging import Logger
@@ -41,7 +41,7 @@ def _get_agents_table():
                 "agentsTableName environment variable is required for loading agent references"
             )
         dynamodb = boto3.resource("dynamodb", region_name=os.environ.get("AWS_REGION"))
-        _agents_table = dynamodb.Table(table_name)
+        _agents_table = dynamodb.Table(table_name)  # type: ignore
     return _agents_table
 
 
@@ -55,7 +55,7 @@ def _get_summary_table():
                 "agentsSummaryTableName environment variable is required for resolving agent endpoints"
             )
         dynamodb = boto3.resource("dynamodb", region_name=os.environ.get("AWS_REGION"))
-        _summary_table = dynamodb.Table(table_name)
+        _summary_table = dynamodb.Table(table_name)  # type: ignore
     return _summary_table
 
 
@@ -203,7 +203,7 @@ def parse_configuration(logger: Logger) -> SwarmConfiguration:
         )
         raise ValueError(err_message)
 
-    parsed_cfg = deserialize(configuration_str, SwarmConfiguration)
+    parsed_cfg: SwarmConfiguration = deserialize(configuration_str, SwarmConfiguration)  # type: ignore
 
     if parsed_cfg.agentReferences and not parsed_cfg.agents:
         logger.info(

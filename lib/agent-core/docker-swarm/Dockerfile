@@ -1,11 +1,12 @@
 FROM public.ecr.aws/docker/library/python:3.13-slim
 WORKDIR /app
 
-COPY requirements.txt .
+COPY docker-swarm/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py .
-COPY src/ src/.
+COPY docker-swarm/app.py .
+COPY docker-swarm/src/ src/.
+COPY shared/ shared/.
 
 ENV DOCKER_CONTAINER=1
 

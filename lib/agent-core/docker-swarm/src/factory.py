@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from shared.base_constants import RETRIEVE_FROM_KB_PREFIX
+from shared.mcp_client import MCPClientManager
 from strands import Agent
 from strands.agent.conversation_manager import (
     NullConversationManager,
@@ -18,8 +20,6 @@ from strands.models import BedrockModel
 from strands.multiagent import Swarm
 
 from .callbacks import AgentCallbacks
-from .constants import RETRIEVE_FROM_KB_PREFIX
-from .mcp_client import MCPClientManager
 from .types import (
     EConversationManagerType,
     ModelConfiguration,
@@ -272,7 +272,8 @@ def _initialize_custom_tools(
     Returns:
         List of initialized tool instances.
     """
-    from .constants import INVOKE_SUBAGENT_PREFIX, RETRIEVE_FROM_KB_PREFIX
+    from shared.base_constants import INVOKE_SUBAGENT_PREFIX, RETRIEVE_FROM_KB_PREFIX
+
     from .registry import AVAILABLE_TOOLS, RetrievalConfiguration
 
     agent_tools: list[Any] = []
