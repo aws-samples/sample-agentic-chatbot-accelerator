@@ -10,9 +10,9 @@ from typing import TYPE_CHECKING
 
 import boto3
 from botocore.exceptions import ClientError
+from shared.utils import deserialize
 
 from .types import AgentConfiguration
-from .utils import deserialize
 
 if TYPE_CHECKING:
     from logging import Logger

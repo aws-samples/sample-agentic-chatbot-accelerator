@@ -43,6 +43,15 @@ if TYPE_CHECKING:
 ACCOUNT_ID = os.environ.get("accountId")
 REGION_NAME = os.environ.get("AWS_REGION")
 
+RERANK_MODEL_TO_REGIONS = {
+    "amazon.rerank-v1:0": ["us-west-2", "eu-central-1", "ap-northeast-1"],
+    "cohere.rerank-v3-5:0": [
+        "us-east-1",
+        "us-west-2",
+        "eu-central-1",
+        "ap-northeast-1",
+    ],
+}
 
 # -------------------------------------------------------------------- #
 # AWS Clients (lazy initialization)
@@ -252,6 +261,45 @@ class RetrieverTool(AbstractToolObject):
         self._cfg = retrieval_cfg.model_dump(mode="json", exclude_none=True)
         self._runtime_client = bedrock_runtime_client
 
+        self._reranking_cfg = None
+        self._reranking_client = None
+
+        default_region = REGION_NAME
+        reranking_region = None
+
+        if "vectorSearchConfiguration" in self._cfg:
+            vector_config = self._cfg["vectorSearchConfiguration"]
+            if "rerankingConfiguration" in vector_config:
+                self._reranking_cfg = vector_config.pop("rerankingConfiguration")
+
+                model_name = (
+                    self._reranking_cfg.get("bedrockRerankingConfiguration", {})
+                    .get("modelConfiguration", {})
+                    .get("modelArn", "")
+                )
+
+                if default_region and default_region in RERANK_MODEL_TO_REGIONS.get(
+                    model_name, []
+                ):
+                    reranking_region = default_region
+                else:
+                    if default_region and default_region.startswith("us"):
+                        reranking_region = "us-east-1"
+                    elif default_region and default_region.startswith("eu"):
+                        reranking_region = "eu-central-1"
+                    elif default_region and default_region.startswith("ap"):
+                        reranking_region = "ap-northeast-1"
+
+                if reranking_region:
+                    self._reranking_client = boto3.client(
+                        "bedrock-agent-runtime", region_name=reranking_region
+                    )
+                    self._reranking_cfg["bedrockRerankingConfiguration"][
+                        "modelConfiguration"
+                    ][
+                        "modelArn"
+                    ] = f"arn:aws:bedrock:{reranking_region}::foundation-model/{model_name}"
+
         # get KB description
         response = bedrock_client.get_knowledge_base(knowledgeBaseId=self._kb_id)
         kb_description = response["knowledgeBase"]["description"]
@@ -293,9 +341,66 @@ class RetrieverTool(AbstractToolObject):
             "retrievalQuery": {"text": query},
         }
         response = self._runtime_client.retrieve(**payload)
+        initial_results = response.get("retrievalResults", [])
 
-        data = {"retrievalResults": response.get("retrievalResults")}
+        final_results = (
+            self._rerank_results(
+                query=query,
+                results=initial_results,
+                reranking_config=self._reranking_cfg,
+            )
+            if self._reranking_client and self._reranking_cfg
+            else initial_results
+        )
+
+        data = {"retrievalResults": final_results}
         return {"status": "success", "content": [{"json": data}]}
+
+    def _rerank_results(
+        self, query: str, results: list, reranking_config: dict
+    ) -> list:
+        """Rerank results using the dedicated Bedrock Agent Runtime rerank API."""
+        if len(results) <= reranking_config.get(
+            "bedrockRerankingConfiguration", {}
+        ).get("numberOfResults", 0):
+            return results
+
+        if not self._reranking_client:
+            top_k = reranking_config["bedrockRerankingConfiguration"]["numberOfResults"]
+            return results[:top_k]
+
+        # print(reranking_config)
+
+        try:
+            # Prepare sources in the required format
+            sources = [
+                {
+                    "type": "INLINE",
+                    "inlineDocumentSource": {
+                        "type": "TEXT",
+                        "textDocument": {"text": result["content"]["text"]},
+                    },
+                }
+                for result in results
+            ]
+
+            # Call the dedicated rerank API
+            response = self._reranking_client.rerank(
+                queries=[{"type": "TEXT", "textQuery": {"text": query}}],
+                sources=sources,
+                rerankingConfiguration=reranking_config,
+            )
+
+            # Rebuild results in reranked order
+            return [
+                {**results[item["index"]], "score": item["relevanceScore"]}
+                for item in response["results"]
+            ]
+
+        except (ClientError, ValueError, KeyError) as err:
+            print(f"Reranking failed: {err}")
+            top_k = reranking_config["bedrockRerankingConfiguration"]["numberOfResults"]
+            return results[:top_k]
 
 
 class InvokeSubAgentTool(AbstractToolObject):
@@ -408,7 +513,7 @@ class ToolFactory:
 
     @staticmethod
     def create_retrieval_tool(kb_id: str, cfg: RetrievalConfiguration) -> Callable:
-        """Creates a retrieval tool instance for querying knowledge bases.
+        """Creates a retrieval tool instance with reranking support.
 
         Args:
             kb_id (str): The ID of the knowledge base to query.

@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from shared.base_constants import RETRIEVE_FROM_KB_PREFIX
+from shared.mcp_client import MCPClientManager
 from strands import Agent
 from strands.agent.conversation_manager import (
     NullConversationManager,
@@ -20,8 +22,6 @@ from strands.hooks.events import (
 from strands.models import BedrockModel
 
 from .callbacks import AgentCallbacks
-from .constants import RETRIEVE_FROM_KB_PREFIX
-from .mcp_client import MCPClientManager
 from .types import (
     AgentConfiguration,
     EConversationManagerType,
@@ -180,7 +180,8 @@ def _initialize_custom_tools(
         KeyError: If a tool is missing from toolParameters.
     """
     # Import here to avoid circular dependency between factory and registry modules
-    from .constants import INVOKE_SUBAGENT_PREFIX, RETRIEVE_FROM_KB_PREFIX
+    from shared.base_constants import INVOKE_SUBAGENT_PREFIX, RETRIEVE_FROM_KB_PREFIX
+
     from .registry import AVAILABLE_TOOLS
 
     agent_tools: list[Any] = []

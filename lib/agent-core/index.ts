@@ -22,7 +22,6 @@ import { Construct } from "constructs";
 import * as crypto from "crypto";
 import { Shared } from "../shared";
 
-import * as path from "path";
 import { SystemConfig } from "../shared/types";
 import { createLambda, generatePrefix, getTagConditions, stableStringify } from "../shared/utils";
 
@@ -229,14 +228,16 @@ export class AcaAgentCoreContainer extends Construct {
         // AgentCore runtime container
         const imageAsset = new DockerImageAsset(this, "AgentCoreRepository", {
             assetName: `${prefix}-agent-core`,
-            directory: path.join(__dirname, "docker"),
+            directory: __dirname,
+            file: "docker/Dockerfile",
             platform: Platform.LINUX_ARM64,
         });
 
         // Swarm AgentCore runtime container
         const swarmImageAsset = new DockerImageAsset(this, "SwarmAgentCoreRepository", {
             assetName: `${prefix}-swarm-agent-core`,
-            directory: path.join(__dirname, "docker-swarm"),
+            directory: __dirname,
+            file: "docker-swarm/Dockerfile",
             platform: Platform.LINUX_ARM64,
         });
 
@@ -244,7 +245,10 @@ export class AcaAgentCoreContainer extends Construct {
             new PolicyStatement({
                 sid: "ECRImageAccess",
                 actions: ["ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"],
-                resources: [imageAsset.repository.repositoryArn, swarmImageAsset.repository.repositoryArn],
+                resources: [
+                    imageAsset.repository.repositoryArn,
+                    swarmImageAsset.repository.repositoryArn,
+                ],
             }),
             new PolicyStatement({
                 actions: ["logs:DescribeLogStreams", "logs:CreateLogGroup"],

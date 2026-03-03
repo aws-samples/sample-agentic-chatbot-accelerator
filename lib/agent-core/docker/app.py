@@ -13,10 +13,11 @@ from typing import TYPE_CHECKING
 from bedrock_agentcore.runtime import BedrockAgentCoreApp, RequestContext
 from opentelemetry import baggage
 from opentelemetry.context import attach
-from src.agentcore_memory import create_session_manager
+from shared.agentcore_memory import create_session_manager
+from shared.mcp_client import MCPClientManager
 from src.data_source import parse_configuration
 from src.factory import create_agent
-from src.mcp_client import MCPClientManager
+from src.registry import AVAILABLE_MCPS
 from src.types import ChatbotAction
 from strands_evals.mappers import StrandsInMemorySessionMapper
 
@@ -97,7 +98,9 @@ async def invoke(payload, context: RequestContext):
             # Init MCP Clients if provided in agent config
             if configuration.mcpServers:
                 MCP_CLIENT_MANAGER = MCPClientManager(
-                    mcp_servers=configuration.mcpServers, logger=logger
+                    mcp_servers=configuration.mcpServers,
+                    logger=logger,
+                    mcp_registry=AVAILABLE_MCPS,
                 )
                 MCP_CLIENT_MANAGER.init_mcp_clients()
 
@@ -238,7 +241,7 @@ async def invoke(payload, context: RequestContext):
                         if finished_spans:
                             mapper = StrandsInMemorySessionMapper()
                             trajectory_session = mapper.map_to_session(
-                                finished_spans, session_id=session_id
+                                finished_spans, session_id=session_id  # type: ignore
                             )
 
                             # Post-process trajectory to inject captured tool arguments
