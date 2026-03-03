@@ -1,8 +1,5 @@
-// ----------------------------------------------------------------------
 // Copyright 2026 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-//
-// SPDX-License-Identifier: Apache-2.0
-// ----------------------------------------------------------------------
+// SPDX-License-Identifier: MIT-0
 
 import * as cdk from "aws-cdk-lib";
 import * as batch from "aws-cdk-lib/aws-batch";
@@ -24,7 +21,6 @@ export interface ExperimentsBatchProps {
     readonly config: SystemConfig;
     readonly experimentsTableName: string;
     readonly evaluationsBucketName: string;
-    readonly vpc?: ec2.IVpc;
 }
 
 export class ExperimentsBatch extends Construct {
@@ -45,30 +41,28 @@ export class ExperimentsBatch extends Construct {
             platform: Platform.LINUX_ARM64,
         });
 
-        // Create or use existing VPC for Batch
-        const vpc = props.vpc || new ec2.Vpc(this, "BatchVpc", {
+        // Create VPC for Batch compute environment
+        const vpc = new ec2.Vpc(this, "BatchVpc", {
             maxAzs: 2,
             natGateways: 1,
         });
 
         // Add VPC Flow Logs for security compliance
-        if (!props.vpc) {
-            const flowLogRole = new iam.Role(this, "FlowLogRole", {
-                assumedBy: new iam.ServicePrincipal("vpc-flow-logs.amazonaws.com"),
-            });
+        const flowLogRole = new iam.Role(this, "FlowLogRole", {
+            assumedBy: new iam.ServicePrincipal("vpc-flow-logs.amazonaws.com"),
+        });
 
-            const flowLogGroup = new logs.LogGroup(this, "FlowLogGroup", {
-                retention: logs.RetentionDays.ONE_WEEK,
-                removalPolicy: cdk.RemovalPolicy.DESTROY,
-            });
+        const flowLogGroup = new logs.LogGroup(this, "FlowLogGroup", {
+            retention: logs.RetentionDays.ONE_WEEK,
+            removalPolicy: cdk.RemovalPolicy.DESTROY,
+        });
 
-            flowLogGroup.grantWrite(flowLogRole);
+        flowLogGroup.grantWrite(flowLogRole);
 
-            new ec2.FlowLog(this, "FlowLog", {
-                resourceType: ec2.FlowLogResourceType.fromVpc(vpc),
-                destination: ec2.FlowLogDestination.toCloudWatchLogs(flowLogGroup, flowLogRole),
-            });
-        }
+        new ec2.FlowLog(this, "FlowLog", {
+            resourceType: ec2.FlowLogResourceType.fromVpc(vpc),
+            destination: ec2.FlowLogDestination.toCloudWatchLogs(flowLogGroup, flowLogRole),
+        });
 
         // Create IAM role for Batch job execution
         const jobRole = new iam.Role(this, "ExperimentJobRole", {
@@ -169,6 +163,7 @@ export class ExperimentsBatch extends Construct {
                 environment: {
                     EXPERIMENTS_TABLE_NAME: props.experimentsTableName,
                     EXPERIMENTS_BUCKET_NAME: props.evaluationsBucketName,
+                    EXPERIMENTS_S3_PREFIX: "experiments/generated-cases",
                     AWS_REGION: cdk.Aws.REGION,
                 },
                 logging: ecs.LogDriver.awsLogs({
@@ -212,18 +207,16 @@ export class ExperimentsBatch extends Construct {
             true,
         );
 
-        // Suppress VPC flow log warning if using provided VPC
-        if (!props.vpc) {
-            NagSuppressions.addResourceSuppressions(
-                vpc,
-                [
-                    {
-                        id: "AwsSolutions-VPC7",
-                        reason: "VPC Flow Logs are enabled for the Batch VPC.",
-                    },
-                ],
-                true,
-            );
-        }
+        // Suppress VPC flow log warning
+        NagSuppressions.addResourceSuppressions(
+            vpc,
+            [
+                {
+                    id: "AwsSolutions-VPC7",
+                    reason: "VPC Flow Logs are enabled for the Batch VPC.",
+                },
+            ],
+            true,
+        );
     }
 }

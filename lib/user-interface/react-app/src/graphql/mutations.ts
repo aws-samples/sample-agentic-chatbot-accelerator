@@ -380,7 +380,7 @@ export const publishEvaluationUpdate = /* GraphQL */ `mutation PublishEvaluation
 export const createExperiment = /* GraphQL */ `mutation CreateExperiment(
   $name: String!
   $description: String
-  $generationConfig: String
+  $generationConfig: String!
   $modelId: String!
 ) {
   createExperiment(

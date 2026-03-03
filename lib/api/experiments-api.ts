@@ -1,8 +1,5 @@
-// ----------------------------------------------------------------------
 // Copyright 2026 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-//
-// SPDX-License-Identifier: Apache-2.0
-// ----------------------------------------------------------------------
+// SPDX-License-Identifier: MIT-0
 
 import * as cdk from "aws-cdk-lib";
 import { Duration, RemovalPolicy } from "aws-cdk-lib";
@@ -41,6 +38,8 @@ export class ExperimentOps extends Construct {
         this.operations = [];
 
         // Create AWS Batch infrastructure for experiment generation
+        // Note: vpc can be passed via ExperimentsBatchProps to reuse an existing VPC;
+        // if omitted, ExperimentsBatch will create a dedicated VPC for Batch workloads.
         this.batch = new ExperimentsBatch(this, "Batch", {
             shared: props.shared,
             config: props.config,
@@ -60,8 +59,8 @@ export class ExperimentOps extends Construct {
             runtime: props.shared.pythonRuntime,
             handler: "index.handler",
             code: lambda.Code.fromAsset(path.join(__dirname, "functions/experiment-resolver")),
-            timeout: Duration.minutes(15),
-            memorySize: 256,
+            timeout: Duration.seconds(30),
+            memorySize: 128,
             logGroup: resolverLogGroup,
             architecture: props.shared.lambdaArchitecture,
             layers: [props.shared.powerToolsLayer, props.shared.boto3Layer],

@@ -1,9 +1,5 @@
-// -----------------------------------------------------------------------
 // Copyright 2026 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-//
-// SPDX-License-Identifier: Apache-2.0
-//
-// -----------------------------------------------------------------------
+// SPDX-License-Identifier: MIT-0
 import {
     Alert,
     Box,
@@ -537,6 +533,12 @@ export default function ExperimentsManager() {
                         counter={`(${experiments.length})`}
                         actions={
                             <SpaceBetween direction="horizontal" size="xs">
+                                <Button
+                                    iconName="refresh"
+                                    onClick={loadExperiments}
+                                    loading={loading}
+                                    ariaLabel="Refresh experiments"
+                                />
                                 <Button onClick={handleDelete} disabled={selectedItems.length === 0}>
                                     Delete
                                 </Button>

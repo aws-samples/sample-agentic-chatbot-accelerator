@@ -1,9 +1,5 @@
-#!/usr/bin/env python3
-# ---------------------------------------------------------------------------- #
 # Copyright 2026 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-#
-# SPDX-License-Identifier: Apache-2.0
-# ---------------------------------------------------------------------------- #
+# SPDX-License-Identifier: MIT-0
 """
 AWS Batch job runner for experiment generation.
 Standalone script for generating synthetic test cases.
@@ -16,7 +12,7 @@ import os
 import sys
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any, List, TypedDict
 
 import boto3
 from botocore.exceptions import ClientError
@@ -27,6 +23,20 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
+
+EXPERIMENTS_S3_PREFIX = os.environ.get(
+    "EXPERIMENTS_S3_PREFIX", "experiments/generated-cases"
+)
+
+
+class ExperimentItem(TypedDict):
+    ExperimentId: str
+    UserId: str
+    Context: str
+    TaskDescription: str
+    NumCases: int
+    NumTopics: int
+    ModelId: str
 
 
 def update_experiment_status(
@@ -74,7 +84,7 @@ def update_experiment_status(
         raise
 
 
-def get_experiment(experiment_id: str, user_id: str) -> Dict[str, Any]:
+def get_experiment(experiment_id: str, user_id: str) -> ExperimentItem:
     """Retrieve experiment from DynamoDB."""
     dynamodb = boto3.resource("dynamodb")
     table_name = os.environ["EXPERIMENTS_TABLE_NAME"]
@@ -93,7 +103,8 @@ def upload_to_s3(experiment_id: str, user_id: str, test_cases: List[Any]) -> str
     """Upload generated test cases to S3."""
     s3_client = boto3.client("s3")
     bucket_name = os.environ["EXPERIMENTS_BUCKET_NAME"]
-    key = f"experiments/generated-cases/{user_id}/{experiment_id}/cases.json"
+    s3_prefix = EXPERIMENTS_S3_PREFIX
+    key = f"{s3_prefix}/{user_id}/{experiment_id}/cases.json"
 
     # Convert test cases to JSON
     cases_data = []
@@ -145,7 +156,9 @@ async def run_experiment_generation(experiment_id: str, user_id: str):
         task_description = experiment["TaskDescription"]
         num_cases = int(experiment["NumCases"])
         num_topics = int(experiment["NumTopics"])
-        model_id = experiment.get("ModelId", "global.amazon.nova-2-lite-v1:0")
+        model_id = experiment.get("ModelId")
+        if not model_id:
+            raise ValueError("ModelId is required but not set on the experiment")
 
         logger.info(
             f"Generating {num_cases} test cases across {num_topics} topics using model {model_id}"

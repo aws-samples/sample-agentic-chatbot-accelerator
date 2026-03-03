@@ -579,7 +579,7 @@ export type PublishEvaluationUpdateMutation = {
 export type CreateExperimentMutationVariables = {
   name: string,
   description?: string | null,
-  generationConfig?: string | null,
+  generationConfig: string,
   modelId: string,
 };
 

@@ -1,8 +1,5 @@
-# ---------------------------------------------------------------------------- #
 # Copyright 2026 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-#
-# SPDX-License-Identifier: Apache-2.0
-# ---------------------------------------------------------------------------- #
+# SPDX-License-Identifier: MIT-0
 from __future__ import annotations
 
 import json
@@ -31,7 +28,6 @@ logger = Logger(service=SERVICE_ID)
 
 # -------------------- Env Variables ----------------------- #
 EXPERIMENTS_TABLE_NAME = os.environ.get("EXPERIMENTS_TABLE_NAME", "")
-EXPERIMENTS_BUCKET_NAME = os.environ.get("EXPERIMENTS_BUCKET_NAME", "")
 BATCH_JOB_QUEUE = os.environ.get("BATCH_JOB_QUEUE", "")
 BATCH_JOB_DEFINITION = os.environ.get("BATCH_JOB_DEFINITION", "")
 # ---------------------------------------------------------- #
@@ -65,7 +61,7 @@ def list_experiments() -> List[Dict[str, Any]]:
     """
     logger.info("Listing experiments")
 
-    user_id = app.current_event.get("identity", {}).get("username")
+    user_id = app.current_event.get("identity", {}).get("sub")
     if not user_id:
         raise ValueError("User ID not found in request context")
 
@@ -89,7 +85,7 @@ def get_experiment(experimentId: str) -> Optional[Dict[str, Any]]:
     """
     logger.info(f"Getting experiment: {experimentId}")
 
-    user_id = app.current_event.get("identity", {}).get("username")
+    user_id = app.current_event.get("identity", {}).get("sub")
     if not user_id:
         raise ValueError("User ID not found in request context")
 
@@ -115,9 +111,9 @@ def get_experiment(experimentId: str) -> Optional[Dict[str, Any]]:
 @tracer.capture_method
 def create_experiment(
     name: str,
+    generationConfig: str,
+    modelId: str,
     description: Optional[str] = None,
-    generationConfig: Optional[str] = None,
-    modelId: str = "",
 ) -> str:
     """
     Create a new experiment and automatically trigger execution.
@@ -125,14 +121,14 @@ def create_experiment(
     """
     logger.info(f"Creating experiment: {name}")
 
-    user_id = app.current_event.get("identity", {}).get("username")
+    user_id = app.current_event.get("identity", {}).get("sub")
     if not user_id:
         raise ValueError("User ID not found in request context")
 
     experiment_id = str(uuid.uuid4())
     timestamp = datetime.now(timezone.utc).isoformat()
 
-    generation_config = json.loads(generationConfig) if generationConfig else {}
+    generation_config = json.loads(generationConfig)
 
     experiment_item: Dict[str, Any] = {
         "ExperimentId": experiment_id,
@@ -147,15 +143,14 @@ def create_experiment(
     if description:
         experiment_item["Description"] = description
 
-    if generation_config:
-        if "context" in generation_config:
-            experiment_item["Context"] = generation_config["context"]
-        if "taskDescription" in generation_config:
-            experiment_item["TaskDescription"] = generation_config["taskDescription"]
-        if "numCases" in generation_config:
-            experiment_item["NumCases"] = generation_config["numCases"]
-        if "numTopics" in generation_config:
-            experiment_item["NumTopics"] = generation_config["numTopics"]
+    if "context" in generation_config:
+        experiment_item["Context"] = generation_config["context"]
+    if "taskDescription" in generation_config:
+        experiment_item["TaskDescription"] = generation_config["taskDescription"]
+    if "numCases" in generation_config:
+        experiment_item["NumCases"] = generation_config["numCases"]
+    if "numTopics" in generation_config:
+        experiment_item["NumTopics"] = generation_config["numTopics"]
 
     if not all(
         [
@@ -174,6 +169,22 @@ def create_experiment(
         EXPERIMENTS_TABLE.put_item(Item=experiment_item)
     except ClientError as e:
         logger.exception(f"Error creating experiment: {str(e)}")
+        # Mark experiment as FAILED so the user knows something went wrong
+        try:
+            EXPERIMENTS_TABLE.update_item(
+                Key={"ExperimentId": experiment_id, "UserId": user_id},
+                UpdateExpression="SET #status = :status, UpdatedAt = :updatedAt, ErrorMessage = :errorMessage",
+                ExpressionAttributeNames={"#status": "Status"},
+                ExpressionAttributeValues={
+                    ":status": ExperimentStatus.FAILED,
+                    ":updatedAt": datetime.now(timezone.utc).isoformat(),
+                    ":errorMessage": str(e),
+                    ":userId": user_id,
+                },
+                ConditionExpression="UserId = :userId",
+            )
+        except ClientError:
+            logger.exception("Failed to update experiment status to FAILED")
         raise ValueError(f"Failed to create experiment: {str(e)}")
 
     logger.info(f"Created experiment: {experiment_id}, auto-running")
@@ -196,7 +207,7 @@ def update_experiment(
     """
     logger.info(f"Updating experiment: {experimentId}")
 
-    user_id = app.current_event.get("identity", {}).get("username")
+    user_id = app.current_event.get("identity", {}).get("sub")
     if not user_id:
         raise ValueError("User ID not found in request context")
 
@@ -251,7 +262,7 @@ def delete_experiment(experimentId: str) -> Dict[str, Any]:
     """
     logger.info(f"Deleting experiment: {experimentId}")
 
-    user_id = app.current_event.get("identity", {}).get("username")
+    user_id = app.current_event.get("identity", {}).get("sub")
     if not user_id:
         raise ValueError("User ID not found in request context")
 
@@ -278,7 +289,7 @@ def run_experiment(experimentId: str) -> Dict[str, Any]:
     """
     logger.info(f"Running experiment: {experimentId}")
 
-    user_id = app.current_event.get("identity", {}).get("username")
+    user_id = app.current_event.get("identity", {}).get("sub")
     if not user_id:
         raise ValueError("User ID not found in request context")
 
@@ -379,7 +390,7 @@ def get_experiment_presigned_url(s3Uri: str) -> Optional[str]:
     """
     Generate a presigned URL for accessing an S3 object in the evaluations bucket.
     """
-    user_id = app.current_event.get("identity", {}).get("username")
+    user_id = app.current_event.get("identity", {}).get("sub")
     if not user_id:
         raise ValueError("User ID not found in request context")
 

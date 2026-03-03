@@ -1,9 +1,5 @@
-// -----------------------------------------------------------------------
 // Copyright 2026 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-//
-// SPDX-License-Identifier: Apache-2.0
-//
-// -----------------------------------------------------------------------
+// SPDX-License-Identifier: MIT-0
 import { BreadcrumbGroup, Header, HelpPanel, SpaceBetween } from "@cloudscape-design/components";
 import { useState } from "react";
 import { CHATBOT_NAME } from "../../common/constants";
