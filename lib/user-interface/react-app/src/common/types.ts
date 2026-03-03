@@ -10,6 +10,10 @@ export interface EvaluatorConfigType {
     defaultRubrics?: Record<string, string>;
 }
 
+export interface ExperimentsConfigType {
+    supportedModels: Record<string, string>;
+}
+
 export interface AppConfig {
     aws_project_region: string;
     aws_cognito_identity_pool_id: string;
@@ -19,6 +23,7 @@ export interface AppConfig {
     aws_bedrock_supported_reranking_models?: Record<string, string>;
     knowledgeBaseIsSupported?: boolean;
     evaluatorConfig?: EvaluatorConfigType;
+    experimentsConfig?: ExperimentsConfigType;
 }
 
 export interface NavigationPanelState {

@@ -156,6 +156,7 @@ export class EvaluationApi extends Construct {
         const evaluationExecutor = new lambda.Function(this, "EvaluationExecutor", {
             functionName: `${prefix}-evaluation-executor`,
             code: lambda.Code.fromAsset(path.join(__dirname, "functions/evaluation-executor"), {
+                exclude: ["**/__pycache__", "**/*.рус", "**/.pytest_cache"],
                 bundling: {
                     image: props.shared.pythonRuntime.bundlingImage,
                     platform: props.shared.lambdaArchitecture.dockerPlatform,

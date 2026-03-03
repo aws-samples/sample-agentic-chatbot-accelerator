@@ -119,6 +119,11 @@ export class UserInterface extends Construct {
                 evaluatorConfig: props.config.evaluatorConfig,
             }),
 
+            // Experiments configuration
+            ...(props.config.experimentsConfig && {
+                experimentsConfig: props.config.experimentsConfig,
+            }),
+
             // Feature flags
             knowledgeBaseIsSupported: !!props.dataBucket,
 

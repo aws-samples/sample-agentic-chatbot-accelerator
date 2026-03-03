@@ -12,14 +12,15 @@ import "./styles/app.scss";
 
 import AgentCoreManagerPage from "./pages/admin/agent-core-manager";
 import AgentCoreWizardPage from "./pages/admin/agent-core-wizard-page";
+import CreateExperimentPage from "./pages/admin/create-experiment";
 import DocumentManagerPage from "./pages/admin/documents";
 import EvaluationsManagerPage from "./pages/admin/evaluations-manager";
 import EvaluationsWizardPage from "./pages/admin/evaluations-wizard-page";
+import ExperimentsManagerPage from "./pages/admin/experiments-manager";
 import KnowledgeBaseManagerPage from "./pages/admin/kb-manager";
 import SessionPage from "./pages/chatbot/sessions";
 
 function App() {
-    // const appContext = useContext(AppContext);
     const Router = BrowserRouter;
 
     return (
@@ -38,6 +39,8 @@ function App() {
                         <Route path="/agent-core/create" element={<AgentCoreWizardPage />} />
                         <Route path="/evaluations" element={<EvaluationsManagerPage />} />
                         <Route path="/evaluations/create" element={<EvaluationsWizardPage />} />
+                        <Route path="/experiments" element={<ExperimentsManagerPage />} />
+                        <Route path="/experiments/create" element={<CreateExperimentPage />} />
                         <Route path="*" element={<NotFound />} />
                     </Routes>
                 </div>

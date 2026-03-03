@@ -329,3 +329,60 @@ export const getEvaluator = /* GraphQL */ `query GetEvaluator($evaluatorId: ID!)
   APITypes.GetEvaluatorQueryVariables,
   APITypes.GetEvaluatorQuery
 >;
+export const listExperiments = /* GraphQL */ `query ListExperiments {
+  listExperiments {
+    experimentId
+    userId
+    name
+    description
+    createdAt
+    updatedAt
+    status
+    generatedCasesS3Url
+    taskDescription
+    context
+    numCases
+    numTopics
+    modelId
+    generatedCasesCount
+    errorMessage
+    batchJobId
+    __typename
+  }
+}
+` as GeneratedQuery<
+  APITypes.ListExperimentsQueryVariables,
+  APITypes.ListExperimentsQuery
+>;
+export const getExperiment = /* GraphQL */ `query GetExperiment($experimentId: String!) {
+  getExperiment(experimentId: $experimentId) {
+    experimentId
+    userId
+    name
+    description
+    createdAt
+    updatedAt
+    status
+    generatedCasesS3Url
+    taskDescription
+    context
+    numCases
+    numTopics
+    modelId
+    generatedCasesCount
+    errorMessage
+    batchJobId
+    __typename
+  }
+}
+` as GeneratedQuery<
+  APITypes.GetExperimentQueryVariables,
+  APITypes.GetExperimentQuery
+>;
+export const getExperimentPresignedUrl = /* GraphQL */ `query GetExperimentPresignedUrl($s3Uri: String!) {
+  getExperimentPresignedUrl(s3Uri: $s3Uri)
+}
+` as GeneratedQuery<
+  APITypes.GetExperimentPresignedUrlQueryVariables,
+  APITypes.GetExperimentPresignedUrlQuery
+>;

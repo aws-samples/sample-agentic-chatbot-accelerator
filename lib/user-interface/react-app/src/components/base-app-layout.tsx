@@ -22,12 +22,13 @@ interface BaseAppLayoutProps extends AppLayoutProps {
     info?: ReactElement;
     customDrawers?: AppLayoutPropsType.Drawer[];
     drawerAction?: DrawerActionConfig;
+    splitPanel?: ReactElement;
 }
 
 export default function BaseAppLayout(props: BaseAppLayoutProps) {
     const [navigationPanelState, setNavigationPanelState] = useNavigationPanelState();
     const [activeDrawerId, setActiveDrawerId] = useState<string | null>(null);
-    const { customDrawers, drawerAction, info, ...appLayoutProps } = props;
+    const { customDrawers, drawerAction, info, splitPanel, ...appLayoutProps } = props;
 
     // Build drawers array - combine action drawer, info drawer, and custom drawers
     const allDrawers: AppLayoutPropsType.Drawer[] = [];
@@ -88,6 +89,7 @@ export default function BaseAppLayout(props: BaseAppLayoutProps) {
             drawers={allDrawers.length > 0 ? allDrawers : undefined}
             activeDrawerId={activeDrawerId}
             onDrawerChange={handleDrawerChange}
+            splitPanel={splitPanel}
             {...appLayoutProps}
         />
     );

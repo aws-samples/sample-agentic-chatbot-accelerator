@@ -88,6 +88,15 @@ export function getConfig(): SystemConfig {
                     Score 0.0 if the trajectory was significantly flawed or failed to achieve the goal.`,
             },
         },
+
+        experimentsConfig: {
+            // Models available for synthetic data generation
+            supportedModels: {
+                "Claude Haiku 4.5": "[REGION-PREFIX].anthropic.claude-haiku-4-5-20251001-v1:0",
+                "Claude Sonnet 4.5": "[REGION-PREFIX].anthropic.claude-sonnet-4-5-20250929-v1:0",
+                "Nova 2 Lite": "[REGION-PREFIX].amazon.nova-2-lite-v1:0",
+            },
+        },
     };
 }
 

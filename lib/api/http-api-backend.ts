@@ -26,6 +26,7 @@ export interface HttpApiBackendProps {
     readonly userPool: cognito.UserPool;
     readonly sessionsTable: dynamodb.Table;
     readonly favoriteRuntimeTable: dynamodb.Table;
+    readonly experimentsTable: dynamodb.Table;
     readonly toolRegistryTable: dynamodb.Table;
     readonly mcpServerRegistryTable: dynamodb.Table;
     readonly byUserIdIndex: string;
@@ -60,6 +61,7 @@ export class HttpApiBackend extends Construct {
             ...props.shared.defaultEnvironmentVariables,
             SESSIONS_TABLE_NAME: props.sessionsTable.tableName,
             SESSIONS_BY_USER_ID_INDEX_NAME: props.byUserIdIndex,
+            EXPERIMENTS_TABLE_NAME: props.experimentsTable.tableName,
             TOOL_REGISTRY_TABLE: props.toolRegistryTable.tableName,
             MCP_SERVER_REGISTRY_TABLE: props.mcpServerRegistryTable.tableName,
             REGION_NAME: cdk.Aws.REGION,
@@ -83,6 +85,7 @@ export class HttpApiBackend extends Construct {
 
         props.sessionsTable.grantReadWriteData(lambdaResolver);
         props.favoriteRuntimeTable.grantReadWriteData(lambdaResolver);
+        props.experimentsTable.grantReadWriteData(lambdaResolver);
         props.toolRegistryTable.grantReadData(lambdaResolver);
         props.mcpServerRegistryTable.grantReadData(lambdaResolver);
 

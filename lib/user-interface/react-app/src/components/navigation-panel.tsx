@@ -38,6 +38,12 @@ export default function NavigationPanel() {
                 href: "/evaluations",
                 info: <Icon name="check" />,
             },
+            {
+                type: "link",
+                text: "Experiments Generator",
+                href: "/experiments",
+                info: <Icon name="status-positive" />,
+            },
         ];
 
         // Only add Document Manager and Knowledge Base Manager if knowledge base is supported
