@@ -65,6 +65,7 @@ class BaseAgentFactory:
             max_tokens (int): Maximum tokens for generation
             temperature (float): Temperature for sampling
             stop_sequences (list[str] | None): Stop sequences for generation. Defaults to None.
+                Only included in model config if provided and non-empty.
             enable_caching (bool): Whether to enable prompt caching if supported. Defaults to True.
 
         Returns:
@@ -74,8 +75,12 @@ class BaseAgentFactory:
             "model_id": model_id,
             "max_tokens": max_tokens,
             "temperature": temperature,
-            "stop_sequences": stop_sequences or [],
         }
+
+        # Only include stop_sequences if explicitly provided and non-empty
+        # Some models (e.g., openai.gpt-oss-20b-1:0) don't support this field
+        if stop_sequences:
+            model_args["stop_sequences"] = stop_sequences
 
         # Add prompt caching if enabled and model supports it
         if enable_caching and any(
