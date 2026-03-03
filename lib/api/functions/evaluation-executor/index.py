@@ -24,6 +24,7 @@ from aws_lambda_powertools import Logger, Tracer
 from aws_lambda_powertools.utilities.data_classes import SQSEvent, event_source
 from aws_lambda_powertools.utilities.data_classes.sqs_event import SQSRecord
 from aws_lambda_powertools.utilities.parser import BaseModel, parse
+from botocore.config import Config
 from botocore.exceptions import ClientError
 
 # Import evaluator classes
@@ -79,7 +80,16 @@ EVALUATIONS_BUCKET = os.environ.get("EVALUATIONS_BUCKET", "")
 DYNAMODB = boto3.resource("dynamodb")
 EVALUATIONS_TABLE = DYNAMODB.Table(EVALUATIONS_TABLE_NAME) if EVALUATIONS_TABLE_NAME else None  # type: ignore
 S3_CLIENT = boto3.client("s3")
-AC_CLIENT = boto3.client("bedrock-agentcore")
+
+# Configure extended timeout for agent runtime invocations
+# Agent invocations can take a long time for complex tasks
+# Default boto3 timeout is 60 seconds, which is insufficient
+AGENT_RUNTIME_CONFIG = Config(
+    read_timeout=300,  # 5 minutes for reading response
+    connect_timeout=30,  # 30 seconds for initial connection
+    retries={"max_attempts": 2},
+)
+AC_CLIENT = boto3.client("bedrock-agentcore", config=AGENT_RUNTIME_CONFIG)
 ACC_CLIENT = boto3.client("bedrock-agentcore-control")
 # ---------------------------------------------------------- #
 
