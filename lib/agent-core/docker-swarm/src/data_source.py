@@ -6,12 +6,11 @@
 from __future__ import annotations
 
 import json
-import os
 from typing import TYPE_CHECKING
 
-import boto3
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
+from shared.base_data_source import BaseConfigurationLoader
 from shared.utils import deserialize
 
 from .types import (
@@ -24,134 +23,173 @@ from .types import (
 if TYPE_CHECKING:
     from logging import Logger
 
-TABLE = boto3.resource("dynamodb", region_name=os.environ.get("AWS_REGION")).Table(os.environ["tableName"])  # type: ignore
 
-# Agent configuration table (for loading referenced agents)
-_agents_table = None
-_summary_table = None
+class SwarmConfigurationLoader(BaseConfigurationLoader):
+    """Loader for swarm configurations from DynamoDB.
 
-
-def _get_agents_table():
-    """Get the DynamoDB agents table with lazy initialization."""
-    global _agents_table
-    if _agents_table is None:
-        table_name = os.environ.get("agentsTableName")
-        if not table_name:
-            raise ValueError(
-                "agentsTableName environment variable is required for loading agent references"
-            )
-        dynamodb = boto3.resource("dynamodb", region_name=os.environ.get("AWS_REGION"))
-        _agents_table = dynamodb.Table(table_name)  # type: ignore
-    return _agents_table
-
-
-def _get_summary_table():
-    """Get the DynamoDB summary table"""
-    global _summary_table
-    if _summary_table is None:
-        table_name = os.environ.get("agentsSummaryTableName")
-        if not table_name:
-            raise ValueError(
-                "agentsSummaryTableName environment variable is required for resolving agent endpoints"
-            )
-        dynamodb = boto3.resource("dynamodb", region_name=os.environ.get("AWS_REGION"))
-        _summary_table = dynamodb.Table(table_name)  # type: ignore
-    return _summary_table
-
-
-def _load_agent_config(ref: AgentReference, logger: Logger) -> SwarmAgentDefinition:
-    """Load an agent configuration from DynamoDB by endpoint name.
-
-    Resolves the endpoint name to a version via the summary table's
-    QualifierToVersion mapping, then fetches the config for that version.
-
-    Args:
-        ref (AgentReference): Reference containing agentName and endpointName
-        logger (Logger): Logger instance
-
-    Returns:
-        SwarmAgentDefinition: The agent definition for use in the swarm
-
-    Raises:
-        ValueError: If agent/endpoint not found or has no configuration
-        ClientError: If DynamoDB query fails
+    This loader supports loading swarm configurations that may reference
+    other agents via agentReferences. It will automatically resolve and
+    load referenced agent configurations.
     """
-    summary_table = _get_summary_table()
-    agents_table = _get_agents_table()
 
-    try:
-        response = summary_table.query(
-            KeyConditionExpression="AgentName = :agent",
-            ExpressionAttributeValues={":agent": ref.agentName},
+    def __init__(self, logger: Logger):
+        """Initialize the swarm configuration loader.
+
+        Args:
+            logger (Logger): Logger instance for recording operations
+        """
+        super().__init__(logger)
+        self._agents_table = None
+        self._summary_table = None
+
+    def _get_agents_table(self):
+        """Get the DynamoDB agents table with lazy initialization."""
+        return self._get_lazy_table("agentsTableName", "_agents_table")
+
+    def _get_summary_table(self):
+        """Get the DynamoDB summary table with lazy initialization."""
+        return self._get_lazy_table("agentsSummaryTableName", "_summary_table")
+
+    def _load_agent_config(self, ref: AgentReference) -> SwarmAgentDefinition:
+        """Load an agent configuration from DynamoDB by endpoint name.
+
+        Resolves the endpoint name to a version via the summary table's
+        QualifierToVersion mapping, then fetches the config for that version.
+
+        Args:
+            ref (AgentReference): Reference containing agentName and endpointName
+
+        Returns:
+            SwarmAgentDefinition: The agent definition for use in the swarm
+
+        Raises:
+            ValueError: If agent/endpoint not found or has no configuration
+            ClientError: If DynamoDB query fails
+        """
+        summary_table = self._get_summary_table()
+        agents_table = self._get_agents_table()
+
+        try:
+            response = summary_table.query(
+                KeyConditionExpression="AgentName = :agent",
+                ExpressionAttributeValues={":agent": ref.agentName},
+            )
+        except ClientError as err:
+            self._logger.error(
+                f"Error querying summary table for agent '{ref.agentName}'",
+                extra={"rawErrorMessage": str(err)},
+            )
+            raise
+
+        items = response.get("Items", [])
+        if not items:
+            raise ValueError(f"Agent '{ref.agentName}' not found in summary table")
+
+        qualifier_to_version = items[0].get("QualifierToVersion", {})
+        if ref.endpointName not in qualifier_to_version:
+            raise ValueError(
+                f"Agent '{ref.agentName}' has no endpoint '{ref.endpointName}'. "
+                f"Available endpoints: {list(qualifier_to_version.keys())}"
+            )
+
+        version = str(qualifier_to_version[ref.endpointName])
+
+        self._logger.info(
+            f"Loading config for agent '{ref.agentName}' "
+            f"endpoint '{ref.endpointName}' (version {version})",
         )
-    except ClientError as err:
-        logger.error(
-            f"Error querying summary table for agent '{ref.agentName}'",
-            extra={"rawErrorMessage": str(err)},
-        )
-        raise
 
-    items = response.get("Items", [])
-    if not items:
-        raise ValueError(f"Agent '{ref.agentName}' not found in summary table")
+        try:
+            response = agents_table.query(
+                IndexName="byAgentNameAndVersion",
+                KeyConditionExpression=Key("AgentName").eq(ref.agentName)
+                & Key("AgentRuntimeVersion").eq(version),
+            )
+        except ClientError as err:
+            self._logger.error(
+                f"Error querying agent '{ref.agentName}' from DynamoDB",
+                extra={"rawErrorMessage": str(err)},
+            )
+            raise
 
-    qualifier_to_version = items[0].get("QualifierToVersion", {})
-    if ref.endpointName not in qualifier_to_version:
-        raise ValueError(
-            f"Agent '{ref.agentName}' has no endpoint '{ref.endpointName}'. "
-            f"Available endpoints: {list(qualifier_to_version.keys())}"
-        )
+        items = response.get("Items", [])
+        if not items:
+            raise ValueError(
+                f"Agent '{ref.agentName}' endpoint '{ref.endpointName}' "
+                f"(version {version}) not found in agents table"
+            )
 
-    version = str(qualifier_to_version[ref.endpointName])
+        config_str = items[0].get("ConfigurationValue")
+        if config_str is None:
+            raise ValueError(f"Agent '{ref.agentName}' has no configuration")
 
-    logger.info(
-        f"Loading config for agent '{ref.agentName}' "
-        f"endpoint '{ref.endpointName}' (version {version})",
-    )
+        config_data = json.loads(config_str)
 
-    try:
-        response = agents_table.query(
-            IndexName="byAgentNameAndVersion",
-            KeyConditionExpression=Key("AgentName").eq(ref.agentName)
-            & Key("AgentRuntimeVersion").eq(version),
-        )
-    except ClientError as err:
-        logger.error(
-            f"Error querying agent '{ref.agentName}' from DynamoDB",
-            extra={"rawErrorMessage": str(err)},
-        )
-        raise
-
-    items = response.get("Items", [])
-    if not items:
-        raise ValueError(
-            f"Agent '{ref.agentName}' endpoint '{ref.endpointName}' "
-            f"(version {version}) not found in agents table"
+        agent_def = SwarmAgentDefinition(
+            name=ref.agentName,
+            instructions=config_data.get("instructions", ""),
+            modelInferenceParameters=ModelConfiguration.model_validate(
+                config_data.get("modelInferenceParameters", {})
+            ),
+            tools=config_data.get("tools", []),
+            toolParameters=config_data.get("toolParameters", {}),
+            mcpServers=config_data.get("mcpServers", []),
         )
 
-    config_str = items[0].get("ConfigurationValue")
-    if config_str is None:
-        raise ValueError(f"Agent '{ref.agentName}' has no configuration")
+        self._logger.info(
+            f"Successfully loaded agent '{ref.agentName}'",
+            extra={"toolCount": len(agent_def.tools)},
+        )
 
-    config_data = json.loads(config_str)
+        return agent_def
 
-    agent_def = SwarmAgentDefinition(
-        name=ref.agentName,
-        instructions=config_data.get("instructions", ""),
-        modelInferenceParameters=ModelConfiguration.model_validate(
-            config_data.get("modelInferenceParameters", {})
-        ),
-        tools=config_data.get("tools", []),
-        toolParameters=config_data.get("toolParameters", {}),
-        mcpServers=config_data.get("mcpServers", []),
-    )
+    def parse_configuration(self) -> SwarmConfiguration:
+        """Parse swarm configuration from DynamoDB.
 
-    logger.info(
-        f"Successfully loaded agent '{ref.agentName}'",
-        extra={"toolCount": len(agent_def.tools)},
-    )
+        If the configuration uses agentReferences, this method will load
+        each referenced agent's configuration and populate the agents list.
 
-    return agent_def
+        Returns:
+            SwarmConfiguration: Parsed swarm configuration with agents populated
+
+        Raises:
+            ClientError: If DynamoDB read fails
+            ValueError: If configuration not found or invalid
+        """
+        configuration_str = self._fetch_item_from_dynamodb(entity_type="swarm")
+
+        parsed_cfg: SwarmConfiguration = deserialize(
+            configuration_str, SwarmConfiguration
+        )  # type: ignore
+
+        if parsed_cfg.agentReferences and not parsed_cfg.agents:
+            self._logger.info(
+                f"Loading {len(parsed_cfg.agentReferences)} referenced agents",
+                extra={"references": [r.agentName for r in parsed_cfg.agentReferences]},
+            )
+
+            loaded_agents: list[SwarmAgentDefinition] = []
+            for ref in parsed_cfg.agentReferences:
+                agent_def = self._load_agent_config(ref)
+                loaded_agents.append(agent_def)
+
+            parsed_cfg = SwarmConfiguration(
+                agents=loaded_agents,
+                agentReferences=[],
+                entryAgent=parsed_cfg.entryAgent,
+                orchestrator=parsed_cfg.orchestrator,
+                conversationManager=parsed_cfg.conversationManager,
+            )
+
+        self._logger.info(
+            "Successfully parsed the swarm configuration",
+            extra={
+                "configurationValues": parsed_cfg.model_dump(),
+                "agentCount": len(parsed_cfg.agents),
+                "entryAgent": parsed_cfg.entryAgent,
+            },
+        )
+        return parsed_cfg  # type: ignore
 
 
 def parse_configuration(logger: Logger) -> SwarmConfiguration:
@@ -170,66 +208,5 @@ def parse_configuration(logger: Logger) -> SwarmConfiguration:
         ClientError: If DynamoDB read fails
         ValueError: If configuration not found or invalid
     """
-    agent_name = os.environ["agentName"]
-    created_at = int(os.environ["createdAt"])
-    logger.info(
-        "Fetching swarm configuration value from DynamoDb",
-        extra={"compositeKey": {"AgentName": agent_name, "CreatedAt": created_at}},
-    )
-    try:
-        response = TABLE.get_item(
-            Key={
-                "AgentName": agent_name,
-                "CreatedAt": created_at,
-            }
-        )
-    except ClientError as err:
-        logger.error(
-            "Error reading from dynamoDB table", extra={"rawErrorMessage": str(err)}
-        )
-        raise
-
-    if "Item" not in response:
-        err_message = (
-            f"Did not find a match for swarm {agent_name} created at {created_at}"
-        )
-        logger.error(err_message)
-        raise ValueError(err_message)
-
-    configuration_str = response["Item"].get("ConfigurationValue")
-    if configuration_str is None:
-        err_message = (
-            f"The item {agent_name} created at {created_at} has no configuration"
-        )
-        raise ValueError(err_message)
-
-    parsed_cfg: SwarmConfiguration = deserialize(configuration_str, SwarmConfiguration)  # type: ignore
-
-    if parsed_cfg.agentReferences and not parsed_cfg.agents:
-        logger.info(
-            f"Loading {len(parsed_cfg.agentReferences)} referenced agents",
-            extra={"references": [r.agentName for r in parsed_cfg.agentReferences]},
-        )
-
-        loaded_agents: list[SwarmAgentDefinition] = []
-        for ref in parsed_cfg.agentReferences:
-            agent_def = _load_agent_config(ref, logger)
-            loaded_agents.append(agent_def)
-
-        parsed_cfg = SwarmConfiguration(
-            agents=loaded_agents,
-            agentReferences=[],
-            entryAgent=parsed_cfg.entryAgent,
-            orchestrator=parsed_cfg.orchestrator,
-            conversationManager=parsed_cfg.conversationManager,
-        )
-
-    logger.info(
-        "Successfully parsed the swarm configuration",
-        extra={
-            "configurationValues": parsed_cfg.model_dump(),
-            "agentCount": len(parsed_cfg.agents),
-            "entryAgent": parsed_cfg.entryAgent,
-        },
-    )
-    return parsed_cfg  # type: ignore
+    loader = SwarmConfigurationLoader(logger)
+    return loader.parse_configuration()

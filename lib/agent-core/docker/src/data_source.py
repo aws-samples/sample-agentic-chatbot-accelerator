@@ -5,11 +5,9 @@
 # ------------------------------------------------------------------------ #
 from __future__ import annotations
 
-import os
 from typing import TYPE_CHECKING
 
-import boto3
-from botocore.exceptions import ClientError
+from shared.base_data_source import BaseConfigurationLoader
 from shared.utils import deserialize
 
 from .types import AgentConfiguration
@@ -17,47 +15,43 @@ from .types import AgentConfiguration
 if TYPE_CHECKING:
     from logging import Logger
 
-TABLE = boto3.resource("dynamodb", region_name=os.environ.get("AWS_REGION")).Table(os.environ["tableName"])  # type: ignore
+
+class AgentConfigurationLoader(BaseConfigurationLoader):
+    """Loader for agent configurations from DynamoDB."""
+
+    def parse_configuration(self) -> AgentConfiguration:
+        """Parse and return the agent configuration.
+
+        Returns:
+            AgentConfiguration: Parsed agent configuration
+
+        Raises:
+            ClientError: If DynamoDB query fails
+            ValueError: If configuration not found or invalid
+        """
+        configuration_str = self._fetch_item_from_dynamodb(entity_type="agent")
+
+        parsed_cfg = deserialize(configuration_str, AgentConfiguration)
+
+        self._logger.info(
+            "Successfully parsed the configuration",
+            extra={"configurationValues": parsed_cfg.model_dump()},
+        )
+        return parsed_cfg  # type: ignore
 
 
 def parse_configuration(logger: Logger) -> AgentConfiguration:
-    agent_name = os.environ["agentName"]
-    created_at = int(os.environ["createdAt"])
-    logger.info(
-        "Fetching configuration value from DynamoDb",
-        extra={"compositeKey": {"AgentName": agent_name, "CreatedAt": created_at}},
-    )
-    try:
-        response = TABLE.get_item(
-            Key={
-                "AgentName": agent_name,
-                "CreatedAt": created_at,
-            }
-        )
-    except ClientError as err:
-        logger.error(
-            "Error reading from dynamoDB table", extra={"rawErrorMessage": str(err)}
-        )
-        raise
+    """Parse agent configuration from DynamoDB.
 
-    if "Item" not in response:
-        err_message = (
-            f"Did not find a match for agent {agent_name} created at {created_at}"
-        )
-        logger.error(err_message)
-        raise ValueError(err_message)
+    Args:
+        logger (Logger): Logger instance for logging events
 
-    configuration_str = response["Item"].get("ConfigurationValue")
-    if configuration_str is None:
-        err_message = (
-            f"The item {agent_name} created at {created_at} has no configuration"
-        )
-        raise ValueError(err_message)
+    Returns:
+        AgentConfiguration: Parsed agent configuration
 
-    parsed_cfg = deserialize(configuration_str, AgentConfiguration)
-
-    logger.info(
-        "Successfully parsed the configuration",
-        extra={"configurationValues": parsed_cfg.model_dump()},
-    )
-    return parsed_cfg  # type: ignore
+    Raises:
+        ClientError: If DynamoDB read fails
+        ValueError: If configuration not found or invalid
+    """
+    loader = AgentConfigurationLoader(logger)
+    return loader.parse_configuration()
