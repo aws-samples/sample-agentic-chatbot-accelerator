@@ -15,6 +15,7 @@ from opentelemetry import baggage
 from opentelemetry.context import attach
 from shared.agentcore_memory import create_session_manager
 from shared.mcp_client import MCPClientManager
+from shared.utils import enrich_trajectory
 from src.data_source import parse_configuration
 from src.factory import create_agent
 from src.registry import AVAILABLE_MCPS
@@ -248,7 +249,7 @@ async def invoke(payload, context: RequestContext):
                             # The OpenTelemetry spans don't capture MCP tool arguments properly,
                             # so we enrich the trajectory with data captured in callbacks
                             if CALLBACKS and hasattr(CALLBACKS, "tool_executions"):
-                                trajectory_session = _enrich_trajectory(
+                                trajectory_session = enrich_trajectory(
                                     trajectory_session,
                                     CALLBACKS.tool_executions,
                                     logger,
@@ -289,74 +290,6 @@ async def invoke(payload, context: RequestContext):
     except Exception as err:
         logger.exception(err)
         yield {"error": str(err), "action": "error"}
-
-
-def _enrich_trajectory(trajectory_session, tool_executions: dict, log) -> dict:
-    """Enrich trajectory with captured tool arguments and results.
-
-    The Strands OpenTelemetry instrumentation doesn't capture MCP tool arguments
-    properly. This function post-processes the trajectory to inject the tool
-    data that was captured by the callbacks.
-
-    Args:
-        trajectory_session: Session object from StrandsInMemorySessionMapper
-        tool_executions: Dict of tool execution data keyed by tool_call_id
-        log: Logger instance
-
-    Returns:
-        Enriched trajectory (either Session object or dict depending on input)
-    """
-    if not tool_executions:
-        return trajectory_session
-
-    try:
-        # Handle both Session object and dict representation
-        if hasattr(trajectory_session, "model_dump"):
-            # Convert to dict for easier manipulation
-            trajectory_dict = trajectory_session.model_dump()
-        elif hasattr(trajectory_session, "dict"):
-            trajectory_dict = trajectory_session.dict()
-        elif isinstance(trajectory_session, dict):
-            trajectory_dict = trajectory_session
-        else:
-            log.warning(f"Unknown trajectory type: {type(trajectory_session)}")
-            return trajectory_session
-
-        enriched_count = 0
-
-        # Iterate through traces and spans to find tool execution spans
-        for trace in trajectory_dict.get("traces", []):
-            for span in trace.get("spans", []):
-                # Check if this is a tool execution span
-                tool_call = span.get("tool_call")
-                if tool_call:
-                    tool_call_id = tool_call.get("tool_call_id", "")
-
-                    # Look up the captured tool data
-                    if tool_call_id in tool_executions:
-                        captured_data = tool_executions[tool_call_id]
-
-                        # Inject arguments if they were captured
-                        if "arguments" in captured_data:
-                            tool_call["arguments"] = captured_data["arguments"]
-                            enriched_count = 1
-
-                        # Inject result if it was captured
-                        tool_result = span.get("tool_result")
-                        if tool_result and "result" in captured_data:
-                            tool_result["content"] = captured_data["result"]
-
-        if enriched_count > 0:
-            log.info(
-                f"Enriched {enriched_count} tool calls in trajectory with captured arguments",
-                extra={"enrichedCount": enriched_count},
-            )
-
-        return trajectory_dict
-
-    except Exception as e:
-        log.warning(f"Failed to enrich trajectory: {e}", extra={"error": str(e)})
-        return trajectory_session
 
 
 if __name__ == "__main__":

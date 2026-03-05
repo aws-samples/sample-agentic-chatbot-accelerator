@@ -51,7 +51,7 @@ from .stream_types import (
     StrandToken,
     Token,
 )
-from .utils import deserialize, extract_tag_content
+from .utils import deserialize, enrich_trajectory, extract_tag_content
 
 __all__ = [
     # AgentCore Memory
@@ -102,4 +102,5 @@ __all__ = [
     # utils
     "deserialize",
     "extract_tag_content",
+    "enrich_trajectory",
 ]
