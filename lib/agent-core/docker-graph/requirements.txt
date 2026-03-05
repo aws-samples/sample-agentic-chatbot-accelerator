@@ -1,0 +1,6 @@
+langgraph==0.4.1
+strands-agents==1.19.0
+bedrock-agentcore==1.0.4
+pydantic==2.12.3
+boto3==1.40.57
+aws-opentelemetry-distro==0.10.1
