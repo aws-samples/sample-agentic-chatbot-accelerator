@@ -3,7 +3,6 @@
 //
 // SPDX-License-Identifier: MIT-0
 // ----------------------------------------------------------------------
-import React from "react";
 import {
     Alert,
     Box,
@@ -18,12 +17,9 @@ import {
     Table,
     Toggle,
 } from "@cloudscape-design/components";
+import React from "react";
 import { RuntimeSummary } from "../../../API";
-import {
-    GraphConfiguration,
-    GraphEdgeDefinition,
-    GraphNodeDefinition,
-} from "../types";
+import { GraphConfiguration, GraphEdgeDefinition, GraphNodeDefinition } from "../types";
 
 interface GraphDesignerProps {
     graphConfig: GraphConfiguration;
@@ -39,9 +35,7 @@ export default function GraphDesigner({
     currentAgentName,
 }: GraphDesignerProps) {
     // Filter out the current agent being created to prevent self-referencing
-    const selectableAgents = availableAgents.filter(
-        (a) => a.agentName !== currentAgentName,
-    );
+    const selectableAgents = availableAgents.filter((a) => a.agentName !== currentAgentName);
 
     // ----------------------------------------------------------------
     // Node management
@@ -50,12 +44,8 @@ export default function GraphDesigner({
         const agent = selectableAgents.find((a) => a.agentName === agentName);
         if (!agent) return;
 
-        const existingCount = graphConfig.nodes.filter(
-            (n) => n.agentName === agentName,
-        ).length;
-        const nodeId = existingCount > 0
-            ? `${agentName}_${existingCount + 1}`
-            : agentName;
+        const existingCount = graphConfig.nodes.filter((n) => n.agentName === agentName).length;
+        const nodeId = existingCount > 0 ? `${agentName}_${existingCount + 1}` : agentName;
 
         const newNode: GraphNodeDefinition = {
             id: nodeId,
@@ -74,9 +64,7 @@ export default function GraphDesigner({
         setGraphConfig((prev) => ({
             ...prev,
             nodes: prev.nodes.filter((n) => n.id !== nodeId),
-            edges: prev.edges.filter(
-                (e) => e.source !== nodeId && e.target !== nodeId,
-            ),
+            edges: prev.edges.filter((e) => e.source !== nodeId && e.target !== nodeId),
             entryPoint: prev.entryPoint === nodeId ? "" : prev.entryPoint,
         }));
     };
@@ -84,18 +72,14 @@ export default function GraphDesigner({
     const updateNodeEndpoint = (nodeId: string, endpointName: string) => {
         setGraphConfig((prev) => ({
             ...prev,
-            nodes: prev.nodes.map((n) =>
-                n.id === nodeId ? { ...n, endpointName } : n,
-            ),
+            nodes: prev.nodes.map((n) => (n.id === nodeId ? { ...n, endpointName } : n)),
         }));
     };
 
     const updateNodeLabel = (nodeId: string, label: string) => {
         setGraphConfig((prev) => ({
             ...prev,
-            nodes: prev.nodes.map((n) =>
-                n.id === nodeId ? { ...n, label } : n,
-            ),
+            nodes: prev.nodes.map((n) => (n.id === nodeId ? { ...n, label } : n)),
         }));
     };
 
@@ -189,9 +173,7 @@ export default function GraphDesigner({
             errors.push("At least one node is required.");
         }
         if (graphConfig.nodes.length > 0 && !graphConfig.entryPoint) {
-            errors.push(
-                "An entry point is required. Select one node as the graph entry point.",
-            );
+            errors.push("An entry point is required. Select one node as the graph entry point.");
         }
         if (
             graphConfig.entryPoint &&
@@ -204,15 +186,11 @@ export default function GraphDesigner({
         // Check non-terminal nodes have outgoing edges
         const nodesWithOutgoing = new Set(graphConfig.edges.map((e) => e.source));
         const terminalTargets = new Set(
-            graphConfig.edges
-                .filter((e) => e.target === "__end__")
-                .map((e) => e.source),
+            graphConfig.edges.filter((e) => e.target === "__end__").map((e) => e.source),
         );
         for (const node of graphConfig.nodes) {
             if (!nodesWithOutgoing.has(node.id) && !terminalTargets.has(node.id)) {
-                errors.push(
-                    `Node '${node.id}' has no outgoing edges and is not terminal.`,
-                );
+                errors.push(`Node '${node.id}' has no outgoing edges and is not terminal.`);
             }
         }
         return errors;
@@ -291,11 +269,16 @@ export default function GraphDesigner({
                     >
                         <Select
                             placeholder="Select an agent..."
-                            options={selectableAgents.map((a) => ({
-                                label: a.agentName,
-                                value: a.agentName,
-                                description: a.architectureType || undefined,
-                            }))}
+                            options={selectableAgents
+                                .filter(
+                                    (a) =>
+                                        !graphConfig.nodes.some((n) => n.agentName === a.agentName),
+                                )
+                                .map((a) => ({
+                                    label: a.agentName,
+                                    value: a.agentName,
+                                    description: a.architectureType || undefined,
+                                }))}
                             onChange={({ detail }) => {
                                 if (detail.selectedOption?.value) {
                                     addNode(detail.selectedOption.value);
@@ -307,8 +290,7 @@ export default function GraphDesigner({
                     </FormField>
                     {graphConfig.nodes.length === 0 ? (
                         <Alert type="info">
-                            No nodes added yet. Select an agent above to add a
-                            node.
+                            No nodes added yet. Select an agent above to add a node.
                         </Alert>
                     ) : (
                         <Table
@@ -327,10 +309,7 @@ export default function GraphDesigner({
                                         <Input
                                             value={item.label || ""}
                                             onChange={({ detail }) =>
-                                                updateNodeLabel(
-                                                    item.id,
-                                                    detail.value,
-                                                )
+                                                updateNodeLabel(item.id, detail.value)
                                             }
                                             placeholder={item.id}
                                         />
@@ -341,25 +320,14 @@ export default function GraphDesigner({
                                     header: "Agent",
                                     cell: (item) => {
                                         const agent = availableAgents.find(
-                                            (a) =>
-                                                a.agentName === item.agentName,
+                                            (a) => a.agentName === item.agentName,
                                         );
                                         return (
-                                            <SpaceBetween
-                                                direction="horizontal"
-                                                size="xs"
-                                            >
+                                            <SpaceBetween direction="horizontal" size="xs">
                                                 <span>{item.agentName}</span>
                                                 {agent?.architectureType && (
-                                                    <Box
-                                                        color="text-status-info"
-                                                        fontSize="body-s"
-                                                    >
-                                                        (
-                                                        {
-                                                            agent.architectureType
-                                                        }
-                                                        )
+                                                    <Box color="text-status-info" fontSize="body-s">
+                                                        ({agent.architectureType})
                                                     </Box>
                                                 )}
                                             </SpaceBetween>
@@ -370,17 +338,13 @@ export default function GraphDesigner({
                                     id: "endpoint",
                                     header: "Endpoint",
                                     cell: (item) => {
-                                        const options = getEndpointOptions(
-                                            item.agentName,
-                                        );
+                                        const options = getEndpointOptions(item.agentName);
                                         return (
                                             <Select
                                                 expandToViewport
                                                 selectedOption={
                                                     options.find(
-                                                        (o) =>
-                                                            o.value ===
-                                                            item.endpointName,
+                                                        (o) => o.value === item.endpointName,
                                                     ) || {
                                                         label: item.endpointName,
                                                         value: item.endpointName,
@@ -389,9 +353,7 @@ export default function GraphDesigner({
                                                 onChange={({ detail }) =>
                                                     updateNodeEndpoint(
                                                         item.id,
-                                                        detail.selectedOption
-                                                            ?.value ||
-                                                            "DEFAULT",
+                                                        detail.selectedOption?.value || "DEFAULT",
                                                     )
                                                 }
                                                 options={options}
@@ -405,8 +367,7 @@ export default function GraphDesigner({
                                     cell: (item) => (
                                         <Button
                                             variant={
-                                                graphConfig.entryPoint ===
-                                                item.id
+                                                graphConfig.entryPoint === item.id
                                                     ? "primary"
                                                     : "normal"
                                             }
@@ -417,9 +378,7 @@ export default function GraphDesigner({
                                                 }))
                                             }
                                         >
-                                            {graphConfig.entryPoint === item.id
-                                                ? "✓ Entry"
-                                                : "Set"}
+                                            {graphConfig.entryPoint === item.id ? "✓ Entry" : "Set"}
                                         </Button>
                                     ),
                                 },
@@ -430,9 +389,7 @@ export default function GraphDesigner({
                                         <Button
                                             variant="icon"
                                             iconName="close"
-                                            onClick={() =>
-                                                removeNode(item.id)
-                                            }
+                                            onClick={() => removeNode(item.id)}
                                         />
                                     ),
                                 },
@@ -449,38 +406,30 @@ export default function GraphDesigner({
                         <FormField label="Source Node">
                             <Select
                                 placeholder="Select source..."
-                                options={nodeIdOptions}
+                                options={nodeIdOptions.filter((o) => o.value !== newEdgeTarget)}
                                 selectedOption={
                                     newEdgeSource
-                                        ? nodeIdOptions.find(
-                                              (o) =>
-                                                  o.value === newEdgeSource,
-                                          ) || null
+                                        ? nodeIdOptions.find((o) => o.value === newEdgeSource) ||
+                                          null
                                         : null
                                 }
                                 onChange={({ detail }) =>
-                                    setNewEdgeSource(
-                                        detail.selectedOption?.value || "",
-                                    )
+                                    setNewEdgeSource(detail.selectedOption?.value || "")
                                 }
                             />
                         </FormField>
                         <FormField label="Target Node">
                             <Select
                                 placeholder="Select target..."
-                                options={targetOptions}
+                                options={targetOptions.filter((o) => o.value !== newEdgeSource)}
                                 selectedOption={
                                     newEdgeTarget
-                                        ? targetOptions.find(
-                                              (o) =>
-                                                  o.value === newEdgeTarget,
-                                          ) || null
+                                        ? targetOptions.find((o) => o.value === newEdgeTarget) ||
+                                          null
                                         : null
                                 }
                                 onChange={({ detail }) =>
-                                    setNewEdgeTarget(
-                                        detail.selectedOption?.value || "",
-                                    )
+                                    setNewEdgeTarget(detail.selectedOption?.value || "")
                                 }
                             />
                         </FormField>
@@ -488,9 +437,7 @@ export default function GraphDesigner({
                             <FormField label="Condition Expression">
                                 <Input
                                     value={newEdgeCondition}
-                                    onChange={({ detail }) =>
-                                        setNewEdgeCondition(detail.value)
-                                    }
+                                    onChange={({ detail }) => setNewEdgeCondition(detail.value)}
                                     placeholder="e.g. approved, rejected, done"
                                 />
                             </FormField>
@@ -507,9 +454,7 @@ export default function GraphDesigner({
                                 </Toggle>
                                 <Button
                                     onClick={addEdge}
-                                    disabled={
-                                        !newEdgeSource || !newEdgeTarget
-                                    }
+                                    disabled={!newEdgeSource || !newEdgeTarget}
                                 >
                                     Add Edge
                                 </Button>
@@ -518,8 +463,7 @@ export default function GraphDesigner({
                     </ColumnLayout>
                     {graphConfig.edges.length === 0 ? (
                         <Alert type="info">
-                            No edges defined yet. Add edges to connect your
-                            nodes.
+                            No edges defined yet. Add edges to connect your nodes.
                         </Alert>
                     ) : (
                         <Table
@@ -542,16 +486,14 @@ export default function GraphDesigner({
                                 {
                                     id: "arrow",
                                     header: "",
-                                    cell: (item) =>
-                                        item.condition ? "- - →" : "———→",
+                                    cell: (item) => (item.condition ? "- - →" : "———→"),
                                     width: 60,
                                 },
                                 {
                                     id: "target",
                                     header: "Target",
                                     cell: (item) => {
-                                        if (item.target === "__end__")
-                                            return "__end__";
+                                        if (item.target === "__end__") return "__end__";
                                         const node = graphConfig.nodes.find(
                                             (n) => n.id === item.target,
                                         );
@@ -563,9 +505,7 @@ export default function GraphDesigner({
                                     header: "Condition",
                                     cell: (item) =>
                                         item.condition || (
-                                            <Box color="text-status-inactive">
-                                                Unconditional
-                                            </Box>
+                                            <Box color="text-status-inactive">Unconditional</Box>
                                         ),
                                 },
                                 {
@@ -575,9 +515,7 @@ export default function GraphDesigner({
                                         <Button
                                             variant="icon"
                                             iconName="close"
-                                            onClick={() =>
-                                                removeEdge(item._index)
-                                            }
+                                            onClick={() => removeEdge(item._index)}
                                         />
                                     ),
                                 },
@@ -591,16 +529,14 @@ export default function GraphDesigner({
             <Container header={<Header variant="h2">State Schema</Header>}>
                 <SpaceBetween direction="vertical" size="m">
                     <Box color="text-body-secondary">
-                        Define the shared state fields that flow through the
-                        graph and are accessible by all nodes.
+                        Define the shared state fields that flow through the graph and are
+                        accessible by all nodes.
                     </Box>
                     <ColumnLayout columns={3}>
                         <FormField label="Field Name">
                             <Input
                                 value={newFieldName}
-                                onChange={({ detail }) =>
-                                    setNewFieldName(detail.value)
-                                }
+                                onChange={({ detail }) => setNewFieldName(detail.value)}
                                 placeholder="e.g. messages"
                             />
                         </FormField>
@@ -611,9 +547,7 @@ export default function GraphDesigner({
                                     value: newFieldType,
                                 }}
                                 onChange={({ detail }) =>
-                                    setNewFieldType(
-                                        detail.selectedOption?.value || "str",
-                                    )
+                                    setNewFieldType(detail.selectedOption?.value || "str")
                                 }
                                 options={[
                                     { label: "str", value: "str" },
@@ -626,18 +560,15 @@ export default function GraphDesigner({
                             />
                         </FormField>
                         <FormField label=" ">
-                            <Button
-                                onClick={addSchemaField}
-                                disabled={!newFieldName.trim()}
-                            >
+                            <Button onClick={addSchemaField} disabled={!newFieldName.trim()}>
                                 Add Field
                             </Button>
                         </FormField>
                     </ColumnLayout>
                     {stateSchemaEntries.length === 0 ? (
                         <Alert type="info">
-                            No state fields defined. The graph will use a
-                            default messages-only state.
+                            No state fields defined. The graph will use a default messages-only
+                            state.
                         </Alert>
                     ) : (
                         <Table
@@ -664,9 +595,7 @@ export default function GraphDesigner({
                                         <Button
                                             variant="icon"
                                             iconName="close"
-                                            onClick={() =>
-                                                removeSchemaField(item.name)
-                                            }
+                                            onClick={() => removeSchemaField(item.name)}
                                         />
                                     ),
                                 },
