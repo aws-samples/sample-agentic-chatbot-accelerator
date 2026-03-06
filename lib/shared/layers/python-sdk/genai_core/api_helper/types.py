@@ -237,11 +237,12 @@ class AgentConfiguration(BaseModel):
 
 
 class ArchitectureType(str, Enum):
-    """Distinguishes between single-agent (which supports agents as tools)
-    and swarm (multi-agent) runtime architectures."""
+    """Distinguishes between single-agent (which supports agents as tools),
+    swarm (multi-agent), and graph (LangGraph workflow) runtime architectures."""
 
     SINGLE = "SINGLE"
     SWARM = "SWARM"
+    GRAPH = "GRAPH"
 
 
 # ============================================================================ #
@@ -358,4 +359,151 @@ class SwarmConfiguration(BaseModel):
             if len(ref_names) != len(set(ref_names)):
                 duplicates = [name for name in ref_names if ref_names.count(name) > 1]
                 raise ValueError(f"Duplicate agent references found: {set(duplicates)}")
+        return self
+
+
+# ============================================================================ #
+# Graph Agent Types
+# ============================================================================ #
+
+# Graph-Specific Constants
+DEFAULT_GRAPH_MAX_ITERATIONS = 50
+DEFAULT_GRAPH_EXECUTION_TIMEOUT = 300.0  # 5 minutes
+DEFAULT_GRAPH_NODE_TIMEOUT = 60.0  # 1 minute
+TERMINAL_NODE = "__end__"
+
+
+class GraphNodeDefinition(BaseModel):
+    """Definition for a node within a graph workflow.
+
+    Each node references a pre-existing AgentCore runtime by agent name
+    and endpoint name. Multiple nodes may reference the same agent with
+    distinct IDs.
+
+    Attributes:
+        id: Unique identifier for this node within the graph.
+        agentName: Name of the existing AgentCore runtime to invoke.
+        endpointName: Endpoint qualifier (e.g. "DEFAULT").
+        label: Optional display name for the node on the canvas.
+    """
+
+    id: str = Field(..., min_length=1)
+    agentName: str = Field(..., min_length=1)
+    endpointName: str = Field(default="DEFAULT", min_length=1)
+    label: Optional[str] = None
+
+
+class GraphEdgeDefinition(BaseModel):
+    """Definition for a directed edge between two graph nodes.
+
+    Edges can be unconditional (always followed) or conditional (evaluated
+    at runtime against the current state).
+
+    Attributes:
+        source: Node ID where the edge originates.
+        target: Node ID where the edge leads (or "__end__" for terminal).
+        condition: Optional condition expression for conditional edges.
+    """
+
+    source: str = Field(..., min_length=1)
+    target: str = Field(..., min_length=1)
+    condition: Optional[str] = None
+
+
+class GraphOrchestratorConfig(BaseModel):
+    """Configuration for graph execution controls.
+
+    Attributes:
+        maxIterations: Maximum total iterations (used as LangGraph recursion_limit).
+        executionTimeoutSeconds: Total graph execution timeout in seconds.
+        nodeTimeoutSeconds: Timeout per individual node invocation in seconds.
+    """
+
+    maxIterations: int = Field(default=DEFAULT_GRAPH_MAX_ITERATIONS, ge=1)
+    executionTimeoutSeconds: float = Field(
+        default=DEFAULT_GRAPH_EXECUTION_TIMEOUT, gt=0
+    )
+    nodeTimeoutSeconds: float = Field(default=DEFAULT_GRAPH_NODE_TIMEOUT, gt=0)
+
+    @model_validator(mode="after")
+    def validate_timeout_consistency(self):
+        """Validates that nodeTimeoutSeconds does not exceed executionTimeoutSeconds."""
+        if self.nodeTimeoutSeconds > self.executionTimeoutSeconds:
+            raise ValueError(
+                f"nodeTimeoutSeconds ({self.nodeTimeoutSeconds}) must not exceed "
+                f"executionTimeoutSeconds ({self.executionTimeoutSeconds})"
+            )
+        return self
+
+
+class GraphConfiguration(BaseModel):
+    """Configuration for a graph-based agent workflow.
+
+    Defines a directed graph where each node invokes a pre-existing AgentCore
+    runtime and edges define the execution flow between nodes.
+
+    Attributes:
+        nodes: List of node definitions (at least one required).
+        edges: List of edge definitions connecting nodes.
+        entryPoint: Node ID where graph execution begins.
+        stateSchema: User-defined schema for shared state fields and types.
+        orchestrator: Execution control settings.
+    """
+
+    nodes: list[GraphNodeDefinition] = Field(..., min_length=1)
+    edges: list[GraphEdgeDefinition] = Field(default=[])
+    entryPoint: str = Field(..., min_length=1)
+    stateSchema: dict[str, str] = Field(default={})
+    orchestrator: GraphOrchestratorConfig = GraphOrchestratorConfig()
+
+    @model_validator(mode="after")
+    def validate_unique_node_ids(self):
+        """Validates that all node IDs are unique."""
+        ids = [n.id for n in self.nodes]
+        if len(ids) != len(set(ids)):
+            duplicates = [i for i in ids if ids.count(i) > 1]
+            raise ValueError(f"Duplicate node IDs: {set(duplicates)}")
+        return self
+
+    @model_validator(mode="after")
+    def validate_entry_point(self):
+        """Validates that the entry point references an existing node ID."""
+        node_ids = {n.id for n in self.nodes}
+        if self.entryPoint not in node_ids:
+            raise ValueError(
+                f"entryPoint '{self.entryPoint}' not found in nodes. "
+                f"Available: {node_ids}"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def validate_edge_references(self):
+        """Validates that all edge source/target values reference valid nodes."""
+        node_ids = {n.id for n in self.nodes}
+        valid_targets = node_ids | {TERMINAL_NODE}  # __end__ is only valid as a target
+        for edge in self.edges:
+            if edge.source not in node_ids:
+                raise ValueError(f"Edge source '{edge.source}' not in nodes")
+            if edge.target not in valid_targets:
+                raise ValueError(f"Edge target '{edge.target}' not in nodes")
+        return self
+
+    @model_validator(mode="after")
+    def validate_non_terminal_nodes_have_outgoing_edges(self):
+        """Validates that every non-terminal node has at least one outgoing edge.
+
+        A node is considered terminal if it has an edge to __end__.
+        All other nodes must have at least one outgoing edge.
+        """
+        node_ids = {n.id for n in self.nodes}
+        terminal_nodes = {
+            edge.source for edge in self.edges if edge.target == TERMINAL_NODE
+        }
+        nodes_with_outgoing = {edge.source for edge in self.edges}
+
+        for node_id in node_ids:
+            if node_id not in terminal_nodes and node_id not in nodes_with_outgoing:
+                raise ValueError(
+                    f"Node '{node_id}' has no outgoing edges and is not terminal."
+                )
         return self

@@ -34,6 +34,7 @@ interface AcaAgentCoreContainerProps {
 export class AcaAgentCoreContainer extends Construct {
     public readonly imageAsset: DockerImageAsset;
     public readonly swarmImageAsset: DockerImageAsset;
+    public readonly graphImageAsset: DockerImageAsset;
     public readonly executionRole: Role;
     public readonly agentCoreRuntimeTable: dynamodb.Table;
     public readonly toolRegistry: dynamodb.Table;
@@ -241,6 +242,14 @@ export class AcaAgentCoreContainer extends Construct {
             platform: Platform.LINUX_ARM64,
         });
 
+        // Graph AgentCore runtime container
+        const graphImageAsset = new DockerImageAsset(this, "GraphAgentCoreRepository", {
+            assetName: `${prefix}-graph-agent-core`,
+            directory: __dirname,
+            file: "docker-graph/Dockerfile",
+            platform: Platform.LINUX_ARM64,
+        });
+
         const statements = [
             new PolicyStatement({
                 sid: "ECRImageAccess",
@@ -248,6 +257,7 @@ export class AcaAgentCoreContainer extends Construct {
                 resources: [
                     imageAsset.repository.repositoryArn,
                     swarmImageAsset.repository.repositoryArn,
+                    graphImageAsset.repository.repositoryArn,
                 ],
             }),
             new PolicyStatement({
@@ -560,6 +570,7 @@ export class AcaAgentCoreContainer extends Construct {
         this.agentCoreSummaryTable = agentCoreSummaryTable;
         this.imageAsset = imageAsset;
         this.swarmImageAsset = swarmImageAsset;
+        this.graphImageAsset = graphImageAsset;
         this.executionRole = executionRole;
         this.agentToolsTopic = agentToolsTopic;
 

@@ -26,6 +26,7 @@ BAC_CLIENT = boto3.client("bedrock-agentcore-control")
 # --------------- Boto3 Clients/Resource ------------------- #
 CONTAINER_URI = os.environ["CONTAINER_URI"]
 SWARM_CONTAINER_URI = os.environ.get("SWARM_CONTAINER_URI", "")
+GRAPH_CONTAINER_URI = os.environ.get("GRAPH_CONTAINER_URI", "")
 AGENT_CORE_RUNTIME_ROLE_ARN = os.environ["AGENT_CORE_RUNTIME_ROLE_ARN"]
 AGENT_CORE_RUNTIME_TABLE = os.environ["AGENT_CORE_RUNTIME_TABLE"]
 TOOL_REGISTRY_TABLE = os.environ["TOOL_REGISTRY_TABLE"]
@@ -163,10 +164,21 @@ def handler(event: InputModel, _) -> dict:
 
     # Select container URI based on architecture type
     is_swarm = event.architectureType == ArchitectureType.SWARM.value
-    container_uri = SWARM_CONTAINER_URI if is_swarm else CONTAINER_URI
+    is_graph = event.architectureType == ArchitectureType.GRAPH.value
+    if is_swarm:
+        container_uri = SWARM_CONTAINER_URI
+    elif is_graph:
+        container_uri = GRAPH_CONTAINER_URI
+    else:
+        container_uri = CONTAINER_URI
 
     if is_swarm and not SWARM_CONTAINER_URI:
         err_msg = f"SWARM_CONTAINER_URI environment variable is not set but architectureType is {ArchitectureType.SWARM.value}"
+        logger.error(err_msg)
+        raise AcaException(err_msg)
+
+    if is_graph and not GRAPH_CONTAINER_URI:
+        err_msg = f"GRAPH_CONTAINER_URI environment variable is not set but architectureType is {ArchitectureType.GRAPH.value}"
         logger.error(err_msg)
         raise AcaException(err_msg)
 
@@ -189,9 +201,10 @@ def handler(event: InputModel, _) -> dict:
         },
     }
 
-    if is_swarm:
+    if is_swarm or is_graph:
         if not AGENTS_TABLE_NAME or not AGENTS_SUMMARY_TABLE_NAME:
-            err_msg = f"AGENTS_TABLE_NAME and AGENTS_SUMMARY_TABLE_NAME environment variables must be set for {ArchitectureType.SWARM.value} architecture"
+            arch_type = ArchitectureType.SWARM.value if is_swarm else ArchitectureType.GRAPH.value
+            err_msg = f"AGENTS_TABLE_NAME and AGENTS_SUMMARY_TABLE_NAME environment variables must be set for {arch_type} architecture"
             logger.error(err_msg)
             raise ValueError(err_msg)
         api_args["environmentVariables"]["agentsTableName"] = AGENTS_TABLE_NAME

@@ -31,6 +31,7 @@ export interface AgentCoreApisProps {
     readonly config: SystemConfig;
     readonly agentCoreContainer: DockerImageAsset;
     readonly swarmAgentCoreContainer: DockerImageAsset;
+    readonly graphAgentCoreContainer: DockerImageAsset;
     readonly agentCoreRuntimeTable: dynamodb.Table;
     readonly agentCoreSummaryTable: dynamodb.Table;
     readonly toolRegistryTable: dynamodb.Table;
@@ -77,6 +78,7 @@ export class AgentCoreApis extends Construct {
                 ...props.shared.defaultEnvironmentVariables,
                 CONTAINER_URI: props.agentCoreContainer.imageUri,
                 SWARM_CONTAINER_URI: props.swarmAgentCoreContainer.imageUri,
+                GRAPH_CONTAINER_URI: props.graphAgentCoreContainer.imageUri,
                 AGENT_CORE_RUNTIME_ROLE_ARN: props.agentCoreExecutionRole.roleArn,
                 AGENT_CORE_RUNTIME_TABLE: props.agentCoreRuntimeTable.tableName,
                 AGENT_CORE_SUMMARY_TABLE: props.agentCoreSummaryTable.tableName,
@@ -571,6 +573,7 @@ export class AgentCoreApis extends Construct {
                 ...props.shared.defaultEnvironmentVariables,
                 CONTAINER_URI: props.agentCoreContainer.imageUri,
                 SWARM_CONTAINER_URI: props.swarmAgentCoreContainer.imageUri,
+                GRAPH_CONTAINER_URI: props.graphAgentCoreContainer.imageUri,
                 AGENT_CORE_RUNTIME_ROLE_ARN: props.agentCoreExecutionRole.roleArn,
                 AGENT_CORE_RUNTIME_TABLE: props.agentCoreRuntimeTable.tableName,
                 TOOL_REGISTRY_TABLE: props.toolRegistryTable.tableName,
