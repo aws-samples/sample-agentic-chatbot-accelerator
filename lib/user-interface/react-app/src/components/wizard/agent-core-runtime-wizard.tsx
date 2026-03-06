@@ -30,11 +30,13 @@ import {
     listKnowledgeBases as listKnowledgeBasesQuery,
     listRuntimeAgents as listRuntimeAgentsQuery,
 } from "../../graphql/queries";
+import { getGraphAgentSteps, isGraphStepValid } from "./architectures/graph-agent-steps";
 import { getSingleAgentSteps, isSingleAgentStepValid } from "./architectures/single-agent-steps";
 import { getSwarmAgentSteps, isSwarmStepValid } from "./architectures/swarm-agent-steps";
 import {
     AgentCoreRuntimeConfiguration,
     ArchitectureType,
+    GraphConfiguration,
     SearchType,
     SwarmConfiguration,
 } from "./types";
@@ -87,6 +89,19 @@ export default function AgentCoreRuntimeCreatorWizard({
                 nodeTimeoutSeconds: 60,
             },
             conversationManager: "sliding_window",
+        },
+    );
+    const [graphConfig, setGraphConfig] = useState<GraphConfiguration>(
+        initialData?.graphConfig || {
+            nodes: [],
+            edges: [],
+            entryPoint: "",
+            stateSchema: {},
+            orchestrator: {
+                maxIterations: 50,
+                executionTimeoutSeconds: 300,
+                nodeTimeoutSeconds: 60,
+            },
         },
     );
 
@@ -471,6 +486,12 @@ export default function AgentCoreRuntimeCreatorWizard({
                                         description:
                                             "Multiple specialized agents that collaborate via handoffs",
                                     },
+                                    {
+                                        value: "GRAPH",
+                                        label: "Graph",
+                                        description:
+                                            "Compose existing agents into a stateful LangGraph workflow with directed edges and conditional routing",
+                                    },
                                 ]}
                             />
                         </FormField>
@@ -504,36 +525,46 @@ export default function AgentCoreRuntimeCreatorWizard({
                   addKnowledgeBase,
                   openConfigureModal,
               })
-            : getSwarmAgentSteps({
-                  config,
-                  setConfig,
-                  swarmConfig,
-                  setSwarmConfig,
-                  availableAgents,
-                  isCreating,
-                  architectureType,
-                  addAgentReference,
-                  removeAgentReference,
-                  updateAgentReferenceEndpoint,
-                  getSwarmAgentNames,
-              });
+            : architectureType === "GRAPH"
+              ? getGraphAgentSteps({
+                    config,
+                    setConfig,
+                    graphConfig,
+                    setGraphConfig,
+                    availableAgents,
+                    isCreating,
+                })
+              : getSwarmAgentSteps({
+                    config,
+                    setConfig,
+                    swarmConfig,
+                    setSwarmConfig,
+                    availableAgents,
+                    isCreating,
+                    architectureType,
+                    addAgentReference,
+                    removeAgentReference,
+                    updateAgentReferenceEndpoint,
+                    getSwarmAgentNames,
+                });
 
     const steps = isNewVersion
         ? [...architectureSpecificSteps]
         : [architectureStep, ...architectureSpecificSteps];
 
     const isStepValid = (stepIndex: number) => {
+        const getArchStepValidity = (archStepIndex: number) => {
+            if (architectureType === "SINGLE") return isSingleAgentStepValid(archStepIndex, config);
+            if (architectureType === "GRAPH") return isGraphStepValid(archStepIndex, config, graphConfig);
+            return isSwarmStepValid(archStepIndex, config, swarmConfig);
+        };
+
         if (!isNewVersion) {
             if (stepIndex === 0) return true; // Architecture type step
-            const archStepIndex = stepIndex - 1;
-            return architectureType === "SINGLE"
-                ? isSingleAgentStepValid(archStepIndex, config)
-                : isSwarmStepValid(archStepIndex, config, swarmConfig);
+            return getArchStepValidity(stepIndex - 1);
         }
         // New version: no architecture step offset
-        return architectureType === "SINGLE"
-            ? isSingleAgentStepValid(stepIndex, config)
-            : isSwarmStepValid(stepIndex, config, swarmConfig);
+        return getArchStepValidity(stepIndex);
     };
 
     // ----------------------------------------------------------------
@@ -559,6 +590,7 @@ export default function AgentCoreRuntimeCreatorWizard({
                     ...config,
                     architectureType,
                     ...(architectureType === "SWARM" ? { swarmConfig } : {}),
+                    ...(architectureType === "GRAPH" ? { graphConfig } : {}),
                 })
             }
             steps={steps.map((step) => ({

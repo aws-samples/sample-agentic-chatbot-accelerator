@@ -57,6 +57,11 @@ export default function AgentCoreWizardPage() {
                     (Array.isArray(rawConfig.agents) || Array.isArray(rawConfig.agentReferences)) &&
                     typeof rawConfig.entryAgent === "string";
 
+                const isGraph =
+                    rawConfig &&
+                    Array.isArray(rawConfig.nodes) &&
+                    typeof rawConfig.entryPoint === "string";
+
                 if (isSwarm) {
                     setInitialData({
                         agentName: fromAgentName,
@@ -67,6 +72,21 @@ export default function AgentCoreWizardPage() {
                         toolParameters: {},
                         mcpServers: [],
                         conversationManager: rawConfig.conversationManager || "sliding_window",
+                        modelInferenceParameters: {
+                            modelId: "",
+                            parameters: { temperature: 0.2, maxTokens: 3000 },
+                        },
+                    });
+                } else if (isGraph) {
+                    setInitialData({
+                        agentName: fromAgentName,
+                        architectureType: "GRAPH",
+                        graphConfig: rawConfig,
+                        instructions: "",
+                        tools: [],
+                        toolParameters: {},
+                        mcpServers: [],
+                        conversationManager: "sliding_window",
                         modelInferenceParameters: {
                             modelId: "",
                             parameters: { temperature: 0.2, maxTokens: 3000 },
@@ -95,11 +115,13 @@ export default function AgentCoreWizardPage() {
         setIsCreating(true);
         setError(null); // Clear previous errors
         try {
-            const { agentName, architectureType, swarmConfig, ...singleConfigValues } = config;
+            const { agentName, architectureType, swarmConfig, graphConfig, ...singleConfigValues } = config;
 
             let configValue: string;
             if (architectureType === "SWARM" && swarmConfig) {
                 configValue = JSON.stringify(swarmConfig);
+            } else if (architectureType === "GRAPH" && graphConfig) {
+                configValue = JSON.stringify(graphConfig);
             } else {
                 configValue = JSON.stringify(singleConfigValues);
             }

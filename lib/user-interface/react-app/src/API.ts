@@ -40,6 +40,7 @@ export enum ResponseStatus {
 export enum ArchitectureType {
   SINGLE = "SINGLE",
   SWARM = "SWARM",
+  GRAPH = "GRAPH",
 }
 
 
