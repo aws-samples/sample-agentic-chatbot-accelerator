@@ -19,7 +19,7 @@ import { useContext, useEffect, useState } from "react";
 import { McpServer } from "../../../API";
 import { AppContext } from "../../../common/app-context";
 import { listAvailableMcpServers as listAvailableMcpServersQuery } from "../../../graphql/queries";
-import { AgentCoreRuntimeConfiguration, SwarmConfiguration } from "../../wizard/types";
+import { AgentCoreRuntimeConfiguration, GraphConfiguration, SwarmConfiguration } from "../../wizard/types";
 
 const apiClient = generateClient();
 
@@ -30,6 +30,15 @@ const isSwarmConfig = (config: any): config is SwarmConfiguration => {
         typeof config.entryAgent === "string"
     );
 };
+
+const isGraphConfig = (config: any): config is GraphConfiguration => {
+    return (
+        config &&
+        Array.isArray(config.nodes) &&
+        typeof config.entryPoint === "string"
+    );
+};
+
 
 interface VersionInfo {
     version: string;
@@ -365,6 +374,90 @@ export default function ViewVersionModal({
                             {agentConfig.conversationManager && (
                                 <FormField label="Conversation Manager">
                                     <Box padding="m">{agentConfig.conversationManager}</Box>
+                                </FormField>
+                            )}
+                        </SpaceBetween>
+                    ) : isGraphConfig(agentConfig) ? (
+                        <SpaceBetween direction="vertical" size="m">
+                            <FormField label="Entry Point">
+                                <Box padding="m">{agentConfig.entryPoint}</Box>
+                            </FormField>
+
+                            {agentConfig.nodes && agentConfig.nodes.length > 0 && (
+                                <FormField label="Graph Nodes">
+                                    <Table
+                                        items={agentConfig.nodes}
+                                        columnDefinitions={[
+                                            {
+                                                id: "id",
+                                                header: "Node ID",
+                                                cell: (item: any) => item.id,
+                                                isRowHeader: true,
+                                            },
+                                            {
+                                                id: "agentName",
+                                                header: "Agent",
+                                                cell: (item: any) => item.agentName,
+                                            },
+                                            {
+                                                id: "endpointName",
+                                                header: "Endpoint",
+                                                cell: (item: any) => item.endpointName || "DEFAULT",
+                                            },
+                                            {
+                                                id: "label",
+                                                header: "Label",
+                                                cell: (item: any) => item.label || "-",
+                                            },
+                                        ]}
+                                    />
+                                </FormField>
+                            )}
+
+                            {agentConfig.edges && agentConfig.edges.length > 0 && (
+                                <FormField label="Graph Edges">
+                                    <Table
+                                        items={agentConfig.edges}
+                                        columnDefinitions={[
+                                            {
+                                                id: "source",
+                                                header: "Source",
+                                                cell: (item: any) => item.source,
+                                                isRowHeader: true,
+                                            },
+                                            {
+                                                id: "target",
+                                                header: "Target",
+                                                cell: (item: any) => item.target,
+                                            },
+                                            {
+                                                id: "condition",
+                                                header: "Condition",
+                                                cell: (item: any) => item.condition || "Unconditional",
+                                            },
+                                        ]}
+                                    />
+                                </FormField>
+                            )}
+
+                            {agentConfig.orchestrator && (
+                                <FormField label="Orchestrator Settings">
+                                    <Box padding="m">
+                                        <ColumnLayout columns={3} variant="text-grid">
+                                            <div>
+                                                <Box variant="awsui-key-label">Max Iterations</Box>
+                                                <Box>{agentConfig.orchestrator.maxIterations ?? "N/A"}</Box>
+                                            </div>
+                                            <div>
+                                                <Box variant="awsui-key-label">Execution Timeout</Box>
+                                                <Box>{agentConfig.orchestrator.executionTimeoutSeconds ?? "N/A"}s</Box>
+                                            </div>
+                                            <div>
+                                                <Box variant="awsui-key-label">Node Timeout</Box>
+                                                <Box>{agentConfig.orchestrator.nodeTimeoutSeconds ?? "N/A"}s</Box>
+                                            </div>
+                                        </ColumnLayout>
+                                    </Box>
                                 </FormField>
                             )}
                         </SpaceBetween>
