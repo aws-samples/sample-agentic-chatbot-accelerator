@@ -84,6 +84,7 @@ export class AcaStack extends cdk.Stack {
             // AgentCore
             agentCoreContainer: agentCoreInfra.imageAsset,
             swarmAgentCoreContainer: agentCoreInfra.swarmImageAsset,
+            graphAgentCoreContainer: agentCoreInfra.graphImageAsset,
             agentCoreExecutionRole: agentCoreInfra.executionRole,
             agentCoreRuntimeTable: agentCoreInfra.agentCoreRuntimeTable,
             agentCoreSummaryTable: agentCoreInfra.agentCoreSummaryTable,

@@ -34,6 +34,7 @@ type DeleteSessionResult @aws_cognito_user_pools {
 enum ArchitectureType {
     SINGLE
     SWARM
+    GRAPH
 }
 
 enum ResponseStatus {

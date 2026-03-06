@@ -55,6 +55,7 @@ export interface AgentCoreRuntimeConfiguration {
     useMemory?: boolean;
     architectureType?: ArchitectureType;
     swarmConfig?: SwarmConfiguration;
+    graphConfig?: GraphConfiguration;
 }
 
 export enum SearchType {
@@ -63,7 +64,7 @@ export enum SearchType {
 }
 
 
-export type ArchitectureType = "SINGLE" | "SWARM";
+export type ArchitectureType = "SINGLE" | "SWARM" | "GRAPH";
 
 export interface SwarmAgentDefinition {
     name: string;
@@ -95,4 +96,32 @@ export interface SwarmConfiguration {
     entryAgent: string;
     orchestrator: SwarmOrchestratorConfig;
     conversationManager: "null" | "sliding_window" | "summarizing";
+}
+
+
+export interface GraphNodeDefinition {
+    id: string;
+    agentName: string;
+    endpointName: string;
+    label?: string;
+}
+
+export interface GraphEdgeDefinition {
+    source: string;
+    target: string;
+    condition?: string;
+}
+
+export interface GraphOrchestratorConfig {
+    maxIterations: number;
+    executionTimeoutSeconds: number;
+    nodeTimeoutSeconds: number;
+}
+
+export interface GraphConfiguration {
+    nodes: GraphNodeDefinition[];
+    edges: GraphEdgeDefinition[];
+    entryPoint: string;
+    stateSchema: Record<string, string>;
+    orchestrator: GraphOrchestratorConfig;
 }

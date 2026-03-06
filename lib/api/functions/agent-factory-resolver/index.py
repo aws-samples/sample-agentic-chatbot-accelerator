@@ -18,6 +18,7 @@ from botocore.exceptions import ClientError
 from genai_core.api_helper.types import (
     AgentConfiguration,
     ArchitectureType,
+    GraphConfiguration,
     SwarmConfiguration,
 )
 from pydantic import ValidationError
@@ -63,12 +64,13 @@ def create_agent_runtime(
 
     This function validates the provided agent configuration and initiates an asynchronous
     runtime creation process via AWS Step Functions. Based on the architectureType, it
-    validates against either AgentConfiguration (single) or SwarmConfiguration (swarm).
+    validates against AgentConfiguration (single), SwarmConfiguration (swarm), or
+    GraphConfiguration (graph).
 
     Args:
         agentName (str): The unique name identifier for the agent runtime to be created.
         configValue (str): A JSON string containing the agent configuration.
-        architectureType (Optional[str]): "SINGLE" or "SWARM". Defaults to "SINGLE".
+        architectureType (Optional[str]): "SINGLE", "SWARM", or "GRAPH". Defaults to "SINGLE".
 
     Returns:
         str: The agentName if the Step Function execution started successfully, or an empty
@@ -93,6 +95,27 @@ def create_agent_runtime(
     try:
         if resolved_architecture == ArchitectureType.SWARM.value:
             parsed_config = SwarmConfiguration.model_validate_json(configValue)
+        elif resolved_architecture == ArchitectureType.GRAPH.value:
+            parsed_config = GraphConfiguration.model_validate_json(configValue)
+            referenced_names = {node.agentName for node in parsed_config.nodes}
+            missing_agents = set()
+            try:
+                for agent_name in referenced_names:
+                    response = SUMMARY_TABLE.get_item(Key={"AgentName": agent_name})
+                    if "Item" not in response:
+                        missing_agents.add(agent_name)
+            except ClientError as err:
+                logger.error(
+                    "Failed to validate graph agent references",
+                    extra={"rawErrorMessage": str(err)},
+                )
+                return ""
+            if missing_agents:
+                logger.error(
+                    "Graph references non-existent agents",
+                    extra={"missingAgents": list(missing_agents)},
+                )
+                return ""
         elif resolved_architecture == ArchitectureType.SINGLE.value:
             parsed_config = AgentConfiguration.model_validate_json(configValue)
         else:
