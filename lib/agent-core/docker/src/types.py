@@ -5,9 +5,6 @@
 # ------------------------------------------------------------------------ #
 from __future__ import annotations
 
-from enum import Enum
-from typing import Optional
-
 from pydantic import BaseModel, model_validator
 
 # Re-export shared types for backwards compatibility
@@ -94,89 +91,6 @@ class AgentConfiguration(BaseModel):
         return self
 
 
-class TextOutput(BaseModel):
-    """Output format for generated answer
-
-    Attributes:
-        text (str): The generated text
-
-    Examples:
-        >>> output = Output(text="The capital of France is Paris.")
-    """
-
-    text: str
-
-
-class EGuardrailAction(Enum):
-    """Defines the possible guardrail actions taken during response generation.
-
-    Attributes:
-        INTERVENED: Indicates that guardrails were triggered and modified the response
-        NONE: Indicates that no guardrail actions were taken
-    """
-
-    INTERVENED = "INTERVENED"
-    NONE = "NONE"
-
-
-class GenerateResponse(BaseModel):
-    """Response from a non-streaming generate operation containing citations and output.
-
-    Attributes:
-        citations (List[Citation]): List of citations linking source references to generated response parts.
-            See Citation class for details on citation structure.
-        output (TextOutput): The generated text output.
-            See TextOutput class for details.
-        sessionId (str): Unique identifier for the session this response was generated in.
-        guardrailAction (Optional[EGuardrailAction]): Indicates if any guardrail actions were applied
-            to modify the response. See EGuardrailAction enum for possible values.
-
-    Examples:
-        >>> response = KnowledgeBaseGenerateResponse(
-        ...     citations=[Citation(...)],
-        ...     output=TextOutput(text="Generated answer"),
-        ...     sessionId="session-123",
-        ...     guardrailAction=EGuardrailAction.NONE
-        ... )
-    """
-
-    citations: list[Citation]
-    output: TextOutput
-    sessionId: str
-    guardrailAction: Optional[EGuardrailAction] = None
-
-
-class KnowledgeBaseGenerateResponse(GenerateResponse):
-    """Response from a knowledge base generate operation containing citations and output.
-
-    This class represents the complete response from a knowledge base query and generation operation,
-    including the generated output, citations to source references, session tracking, and any
-    guardrail actions that were applied.
-
-    Attributes:
-        citations (List[Citation]): List of citations linking source references to generated response parts.
-            See Citation class for details on citation structure.
-        output (TextOutput): The generated text output from the knowledge base.
-            See TextOutput class for details.
-        sessionId (str): Unique identifier for the session this response was generated in.
-        guardrailAction (Optional[EGuardrailAction]): Indicates if any guardrail actions were applied
-            to modify the response. See EGuardrailAction enum for possible values.
-
-    Examples:
-        >>> response = KnowledgeBaseGenerateResponse(
-        ...     citations=[Citation(...)],
-        ...     output=TextOutput(text="Generated answer"),
-        ...     sessionId="session-123",
-        ...     guardrailAction=EGuardrailAction.NONE
-        ... )
-    """
-
-    citations: list[Citation]
-    output: TextOutput
-    sessionId: str
-    guardrailAction: Optional[EGuardrailAction] = None
-
-
 # Re-export everything for backwards compatibility
 __all__ = [
     # Shared KB types
@@ -213,8 +127,4 @@ __all__ = [
     "Token",
     # Docker-specific types
     "AgentConfiguration",
-    "TextOutput",
-    "EGuardrailAction",
-    "GenerateResponse",
-    "KnowledgeBaseGenerateResponse",
 ]

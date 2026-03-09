@@ -132,7 +132,11 @@ async def invoke(payload, context: RequestContext):
                 final_content = messages
             elif isinstance(messages, list) and messages:
                 last_message = messages[-1]
-                final_content = str(last_message) if not isinstance(last_message, str) else last_message
+                final_content = (
+                    str(last_message)
+                    if not isinstance(last_message, str)
+                    else last_message
+                )
             else:
                 final_content = str(result)
         else:

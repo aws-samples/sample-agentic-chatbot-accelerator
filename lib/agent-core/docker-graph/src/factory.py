@@ -5,15 +5,14 @@
 # ------------------------------------------------------------------------ #
 from __future__ import annotations
 
-import codecs
 import json
 import os
-import re
 import uuid
-from typing import TYPE_CHECKING, Any, Tuple, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from langgraph.graph import END, StateGraph
 from shared.base_registry import get_agentcore_client, get_agentcore_control_client
+from shared.utils import parse_agent_runtime_response
 
 from .types import (
     TERMINAL_NODE,
@@ -59,38 +58,6 @@ def _fetch_agent_runtime_id(agent_name: str) -> str:
     raise RuntimeError(f"Agent runtime not found for agent name: {agent_name}")
 
 
-def _parse_events(stream: str) -> Tuple[list[dict], str]:
-    """Parse SSE events from a stream buffer and extract JSON events.
-
-    Uses regex to find ``data: {...}`` patterns in the buffer, returning
-    successfully parsed events and any remaining unparsed data that may
-    contain an incomplete event to be completed by the next chunk.
-
-    Args:
-        stream: Raw stream data (potentially containing multiple SSE events).
-
-    Returns:
-        A tuple of (parsed_events, remaining_unparsed_data).
-    """
-    parsed_events: list[dict] = []
-    unparsed_data = stream
-
-    while True:
-        event_match = re.search(r"data: ({.*?})\n", unparsed_data)
-        if not event_match:
-            break
-        try:
-            parsed_events.append(json.loads(event_match.group(1)))
-            unparsed_data = (
-                unparsed_data[: event_match.start()]
-                + unparsed_data[event_match.end() :]
-            )
-        except json.JSONDecodeError:
-            break
-
-    return parsed_events, unparsed_data
-
-
 def _invoke_agent(
     agent_name: str,
     endpoint_name: str,
@@ -101,9 +68,8 @@ def _invoke_agent(
 ) -> str:
     """Invoke a referenced AgentCore runtime and return its text response.
 
-    Uses an incremental UTF-8 decoder and regex-based SSE event parsing to
-    safely handle multi-byte characters that may be split across chunk
-    boundaries.
+    Delegates stream parsing to :func:`shared.utils.parse_agent_runtime_response`,
+    which handles incremental UTF-8 decoding and SSE event extraction.
     """
     ac_client = get_agentcore_client()
     runtime_id = _fetch_agent_runtime_id(agent_name)
@@ -127,132 +93,7 @@ def _invoke_agent(
         accountId=ACCOUNT_ID,
     )
 
-    response_stream = response.get("response")
-
-    # Use incremental decoder to handle UTF-8 characters split across chunk boundaries
-    utf8_decoder = codecs.getincrementaldecoder("utf-8")(errors="strict")
-    buffer = ""
-    final_content = None
-    token_values: list[str] = []
-    received_any_chunk = False
-
-    def _process_events(events: list[dict]) -> None:
-        """Process parsed SSE events, extracting final content or tokens."""
-        nonlocal final_content
-        for event in events:
-            action = event.get("action", "")
-            data = event.get("data", {})
-
-            if event.get("error"):
-                raise RuntimeError(
-                    f"Sub-agent '{agent_name}' returned error: {event['error']}"
-                )
-
-            if action == "final_response":
-                final_content = data.get("content", "")
-            elif action == "on_new_llm_token":
-                token = data.get("token", {})
-                if isinstance(token, dict) and "value" in token:
-                    token_values.append(token["value"])
-
-    try:
-        if hasattr(response_stream, "__iter__"):
-            for chunk in response_stream:
-                received_any_chunk = True
-                raw_bytes: bytes | None = None
-
-                if isinstance(chunk, dict):
-                    if "chunk" in chunk:
-                        chunk_data = chunk["chunk"]
-                        if isinstance(chunk_data, dict) and "bytes" in chunk_data:
-                            raw_bytes = chunk_data["bytes"]
-                        elif isinstance(chunk_data, bytes):
-                            raw_bytes = chunk_data
-                    elif "bytes" in chunk:
-                        raw_bytes = chunk["bytes"]
-                    elif "payload" in chunk:
-                        payload_data = chunk["payload"]
-                        raw_bytes = (
-                            payload_data
-                            if isinstance(payload_data, bytes)
-                            else str(payload_data).encode()
-                        )
-                    else:
-                        for val in chunk.values():
-                            if isinstance(val, bytes):
-                                raw_bytes = val
-                                break
-                            elif isinstance(val, str):
-                                raw_bytes = val.encode()
-                                break
-                elif isinstance(chunk, bytes):
-                    raw_bytes = chunk
-                else:
-                    raw_bytes = str(chunk).encode()
-
-                if raw_bytes is None:
-                    continue
-
-                # final=False allows incomplete UTF-8 sequences at end of chunk
-                decoded_text = utf8_decoder.decode(raw_bytes, final=False)
-                events, buffer = _parse_events(buffer + decoded_text)
-                _process_events(events)
-
-                # Short-circuit if we already have the final response
-                if final_content is not None:
-                    break
-
-        elif hasattr(response_stream, "read"):
-            raw = response_stream.read()
-            if raw:
-                received_any_chunk = True
-                raw_bytes = raw if isinstance(raw, bytes) else str(raw).encode()
-                decoded_text = utf8_decoder.decode(raw_bytes, final=False)
-                events, buffer = _parse_events(buffer + decoded_text)
-                _process_events(events)
-
-    except RuntimeError:
-        raise
-    except Exception as stream_err:
-        raise RuntimeError(
-            f"Failed to read response stream from agent '{agent_name}': {stream_err}"
-        ) from stream_err
-
-    # Flush any remaining bytes from the decoder
-    final_text = utf8_decoder.decode(b"", final=True)
-    if final_text:
-        events, buffer = _parse_events(buffer + final_text)
-        _process_events(events)
-
-    if not received_any_chunk:
-        raise RuntimeError(
-            f"Empty response from agent '{agent_name}' — the agent may still "
-            f"be initializing or the invocation timed out"
-        )
-
-    if final_content is not None:
-        return final_content
-
-    if token_values:
-        return "".join(token_values)
-
-    # Last resort: try parsing any remaining buffer as plain JSON (non-SSE response)
-    remaining = buffer.strip()
-    if remaining:
-        try:
-            parsed = json.loads(remaining)
-            if isinstance(parsed, dict):
-                if "error" in parsed:
-                    raise RuntimeError(
-                        f"Sub-agent '{agent_name}' returned error: {parsed['error']}"
-                    )
-                data = parsed.get("data", parsed)
-                return str(data.get("content", data))
-            return str(parsed)
-        except json.JSONDecodeError:
-            return remaining
-
-    return ""
+    return parse_agent_runtime_response(response.get("response"), agent_name=agent_name)
 
 
 def _build_state_type(state_schema: dict[str, str]) -> type:
@@ -297,7 +138,7 @@ def compile_graph(
             session_id=session_id,
             user_id=user_id,
         )
-        graph.add_node(node_def.id, node_func)
+        graph.add_node(node_def.id, node_func)  # type: ignore
 
     logger.info(
         "Added graph nodes",
@@ -332,7 +173,7 @@ def compile_graph(
             target = END if edge.target == TERMINAL_NODE else edge.target
             path_map[edge.target] = target
 
-        graph.add_conditional_edges(source, router, path_map)
+        graph.add_conditional_edges(source, router, path_map)  # type: ignore
 
     logger.info(
         "Added conditional edges",
