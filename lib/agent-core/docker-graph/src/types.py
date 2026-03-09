@@ -8,7 +8,6 @@ from __future__ import annotations
 from typing import Optional
 
 from pydantic import BaseModel, Field, model_validator
-
 from shared.kb_types import (
     BedrockRerankingConfiguration,
     Citation,
@@ -34,7 +33,6 @@ from shared.kb_types import (
     TextResponsePart,
     TextResponsePartElement,
 )
-
 from shared.stream_types import (
     ChatbotAction,
     EConversationManagerType,
@@ -119,7 +117,9 @@ class GraphConfiguration(BaseModel):
     def validate_edge_references(self):
         """Validate that all edge source/target values reference valid nodes."""
         node_ids = {n.id for n in self.nodes}
-        valid_targets = node_ids | {TERMINAL_NODE}  # __end__ is only valid as a target, not source
+        valid_targets = node_ids | {
+            TERMINAL_NODE
+        }  # __end__ is only valid as a target, not source
         for edge in self.edges:
             if edge.source not in node_ids:
                 raise ValueError(f"Edge source '{edge.source}' not in nodes")
