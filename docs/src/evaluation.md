@@ -211,6 +211,6 @@ For `InteractionsEvaluator`, use the `expected_interactions` field to define the
 
 ## Related Resources
 
-- [Strands Agents Evals SDK Documentation](https://strandsagents.com/latest/documentation/docs/user-guide/evals-sdk/)
+- [Strands Agents Evals SDK Documentation](https://strandsagents.com/latest/documentation/docs/user-guide/evals-sdk/quickstart/)
 - [Swarm Agents Guide](./swarm-agents.md)
 - [API Reference](./api.md)
