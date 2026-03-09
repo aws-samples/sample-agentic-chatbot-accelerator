@@ -243,6 +243,7 @@ class ArchitectureType(str, Enum):
     SINGLE = "SINGLE"
     SWARM = "SWARM"
     GRAPH = "GRAPH"
+    AGENTS_AS_TOOLS = "AGENTS_AS_TOOLS"
 
 
 # ============================================================================ #
@@ -506,4 +507,70 @@ class GraphConfiguration(BaseModel):
                 raise ValueError(
                     f"Node '{node_id}' has no outgoing edges and is not terminal."
                 )
+        return self
+
+
+# ============================================================================ #
+# Agents-as-Tools Types
+# ============================================================================ #
+
+
+class AgentAsToolReference(BaseModel):
+    """Reference to a sub-agent runtime exposed as a tool to the orchestrator.
+
+    Attributes:
+        runtimeId: Identifier of the AgentCore runtime to invoke.
+        endpoint: Name of the endpoint on the runtime.
+        role: Description of the role this sub-agent fulfils from the orchestrator's perspective.
+    """
+
+    runtimeId: str = Field(..., min_length=1)
+    endpoint: str = Field(..., min_length=1)
+    role: str = Field(..., min_length=1)
+
+
+class AgentsAsToolsConfiguration(BaseModel):
+    """Configuration for an agents-as-tools orchestrator.
+
+    An orchestrator agent that invokes other AgentCore runtimes as tools,
+    alongside optional MCP and custom tools.
+
+    Attributes:
+        agentsAsTools: List of sub-agent references exposed as tools (at least one required).
+        modelInferenceParameters: Model and inference settings for the orchestrator.
+        instructions: System prompt defining the orchestrator's role and behaviour.
+        tools: Optional list of additional tool names.
+        toolParameters: Optional parameters for additional tools.
+        mcpServers: Optional list of MCP server names.
+        conversationManager: How to manage conversation history.
+    """
+
+    agentsAsTools: list[AgentAsToolReference] = Field(..., min_length=1)
+    modelInferenceParameters: ModelConfiguration
+    instructions: str = Field(..., min_length=1)
+    tools: Optional[list[str]] = None
+    toolParameters: Optional[dict[str, dict]] = None
+    mcpServers: Optional[list[str]] = None
+    conversationManager: EConversationManagerType = (
+        EConversationManagerType.SLIDING_WINDOW
+    )
+
+    @model_validator(mode="after")
+    def validate_tool_parameters(self):
+        """Validates that tools and toolParameters are consistent.
+
+        Checks that:
+        - Both tools and toolParameters are provided, or neither is
+        - All toolParameters keys correspond to defined tools
+        """
+        if self.tools is None and self.toolParameters is None:
+            return self
+        if self.tools is None or self.toolParameters is None:
+            raise ValueError(
+                "tools and toolParameters must both be provided or both be omitted"
+            )
+        tool_names = set(self.tools)
+        invalid_keys = set(self.toolParameters.keys()) - tool_names
+        if invalid_keys:
+            raise ValueError(f"toolParameters keys {invalid_keys} not found in tools")
         return self

@@ -35,6 +35,7 @@ export class AcaAgentCoreContainer extends Construct {
     public readonly imageAsset: DockerImageAsset;
     public readonly swarmImageAsset: DockerImageAsset;
     public readonly graphImageAsset: DockerImageAsset;
+    public readonly agentsAsToolsImageAsset: DockerImageAsset;
     public readonly executionRole: Role;
     public readonly agentCoreRuntimeTable: dynamodb.Table;
     public readonly toolRegistry: dynamodb.Table;
@@ -250,6 +251,18 @@ export class AcaAgentCoreContainer extends Construct {
             platform: Platform.LINUX_ARM64,
         });
 
+        // Agents-as-Tools AgentCore runtime container
+        const agentsAsToolsImageAsset = new DockerImageAsset(
+            this,
+            "AgentsAsToolsAgentCoreRepository",
+            {
+                assetName: `${prefix}-agents-as-tools-agent-core`,
+                directory: __dirname,
+                file: "docker-agents-as-tools/Dockerfile",
+                platform: Platform.LINUX_ARM64,
+            },
+        );
+
         const statements = [
             new PolicyStatement({
                 sid: "ECRImageAccess",
@@ -258,6 +271,7 @@ export class AcaAgentCoreContainer extends Construct {
                     imageAsset.repository.repositoryArn,
                     swarmImageAsset.repository.repositoryArn,
                     graphImageAsset.repository.repositoryArn,
+                    agentsAsToolsImageAsset.repository.repositoryArn,
                 ],
             }),
             new PolicyStatement({
@@ -571,6 +585,7 @@ export class AcaAgentCoreContainer extends Construct {
         this.imageAsset = imageAsset;
         this.swarmImageAsset = swarmImageAsset;
         this.graphImageAsset = graphImageAsset;
+        this.agentsAsToolsImageAsset = agentsAsToolsImageAsset;
         this.executionRole = executionRole;
         this.agentToolsTopic = agentToolsTopic;
 

@@ -17,6 +17,7 @@ from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 from genai_core.api_helper.types import (
     AgentConfiguration,
+    AgentsAsToolsConfiguration,
     ArchitectureType,
     GraphConfiguration,
     SwarmConfiguration,
@@ -95,6 +96,8 @@ def create_agent_runtime(
     try:
         if resolved_architecture == ArchitectureType.SWARM.value:
             parsed_config = SwarmConfiguration.model_validate_json(configValue)
+        elif resolved_architecture == ArchitectureType.AGENTS_AS_TOOLS.value:
+            parsed_config = AgentsAsToolsConfiguration.model_validate_json(configValue)
         elif resolved_architecture == ArchitectureType.GRAPH.value:
             parsed_config = GraphConfiguration.model_validate_json(configValue)
             referenced_names = {node.agentName for node in parsed_config.nodes}

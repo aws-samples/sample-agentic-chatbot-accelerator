@@ -41,6 +41,7 @@ export enum ArchitectureType {
   SINGLE = "SINGLE",
   SWARM = "SWARM",
   GRAPH = "GRAPH",
+  AGENTS_AS_TOOLS = "AGENTS_AS_TOOLS",
 }
 
 

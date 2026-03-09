@@ -38,6 +38,7 @@ export interface ChatbotApiProps {
     readonly agentCoreContainer: DockerImageAsset;
     readonly swarmAgentCoreContainer: DockerImageAsset;
     readonly graphAgentCoreContainer: DockerImageAsset;
+    readonly agentsAsToolsAgentCoreContainer: DockerImageAsset;
     readonly agentCoreRuntimeTable: dynamodb.Table;
     readonly toolRegistryTable: dynamodb.Table;
     readonly mcpServerRegistryTable: dynamodb.Table;
@@ -159,7 +160,12 @@ export class ChatbotApi extends Construct {
             favoriteRuntimeTable: chatTables.favoriteRuntimeTable,
             experimentsTable: chatTables.experimentsTable,
             byUserIdIndex: chatTables.byUserIdIndex,
-            operationToExclude: [...agentCoreApis.operations, ...kbApis.operations, ...evaluationApi.operations, ...experimentOps.operations]
+            operationToExclude: [
+                ...agentCoreApis.operations,
+                ...kbApis.operations,
+                ...evaluationApi.operations,
+                ...experimentOps.operations,
+            ],
         });
 
         // CDK outputs

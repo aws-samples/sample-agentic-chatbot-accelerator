@@ -27,6 +27,7 @@ BAC_CLIENT = boto3.client("bedrock-agentcore-control")
 CONTAINER_URI = os.environ["CONTAINER_URI"]
 SWARM_CONTAINER_URI = os.environ.get("SWARM_CONTAINER_URI", "")
 GRAPH_CONTAINER_URI = os.environ.get("GRAPH_CONTAINER_URI", "")
+AGENTS_AS_TOOLS_CONTAINER_URI = os.environ.get("AGENTS_AS_TOOLS_CONTAINER_URI", "")
 AGENT_CORE_RUNTIME_ROLE_ARN = os.environ["AGENT_CORE_RUNTIME_ROLE_ARN"]
 AGENT_CORE_RUNTIME_TABLE = os.environ["AGENT_CORE_RUNTIME_TABLE"]
 TOOL_REGISTRY_TABLE = os.environ["TOOL_REGISTRY_TABLE"]
@@ -165,10 +166,15 @@ def handler(event: InputModel, _) -> dict:
     # Select container URI based on architecture type
     is_swarm = event.architectureType == ArchitectureType.SWARM.value
     is_graph = event.architectureType == ArchitectureType.GRAPH.value
+    is_agents_as_tools = (
+        event.architectureType == ArchitectureType.AGENTS_AS_TOOLS.value
+    )
     if is_swarm:
         container_uri = SWARM_CONTAINER_URI
     elif is_graph:
         container_uri = GRAPH_CONTAINER_URI
+    elif is_agents_as_tools:
+        container_uri = AGENTS_AS_TOOLS_CONTAINER_URI
     else:
         container_uri = CONTAINER_URI
 
@@ -179,6 +185,11 @@ def handler(event: InputModel, _) -> dict:
 
     if is_graph and not GRAPH_CONTAINER_URI:
         err_msg = f"GRAPH_CONTAINER_URI environment variable is not set but architectureType is {ArchitectureType.GRAPH.value}"
+        logger.error(err_msg)
+        raise AcaException(err_msg)
+
+    if is_agents_as_tools and not AGENTS_AS_TOOLS_CONTAINER_URI:
+        err_msg = f"AGENTS_AS_TOOLS_CONTAINER_URI environment variable is not set but architectureType is {ArchitectureType.AGENTS_AS_TOOLS.value}"
         logger.error(err_msg)
         raise AcaException(err_msg)
 
@@ -201,9 +212,9 @@ def handler(event: InputModel, _) -> dict:
         },
     }
 
-    if is_swarm or is_graph:
+    if is_swarm or is_graph or is_agents_as_tools:
         if not AGENTS_TABLE_NAME or not AGENTS_SUMMARY_TABLE_NAME:
-            arch_type = ArchitectureType.SWARM.value if is_swarm else ArchitectureType.GRAPH.value
+            arch_type = event.architectureType
             err_msg = f"AGENTS_TABLE_NAME and AGENTS_SUMMARY_TABLE_NAME environment variables must be set for {arch_type} architecture"
             logger.error(err_msg)
             raise ValueError(err_msg)
@@ -232,7 +243,7 @@ def handler(event: InputModel, _) -> dict:
             api_args["tags"]["Environment"] = ENVIRONMENT_TAG
 
     if (
-        hasattr(event.agentCfg, "useMemory")
+        isinstance(event.agentCfg, AgentConfiguration)
         and event.agentCfg.useMemory
         and event.memoryId
     ):

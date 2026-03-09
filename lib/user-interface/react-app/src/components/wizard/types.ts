@@ -56,6 +56,7 @@ export interface AgentCoreRuntimeConfiguration {
     architectureType?: ArchitectureType;
     swarmConfig?: SwarmConfiguration;
     graphConfig?: GraphConfiguration;
+    agentsAsToolsConfig?: AgentsAsToolsConfiguration;
 }
 
 export enum SearchType {
@@ -63,8 +64,7 @@ export enum SearchType {
     HYBRID = "HYBRID",
 }
 
-
-export type ArchitectureType = "SINGLE" | "SWARM" | "GRAPH";
+export type ArchitectureType = "SINGLE" | "SWARM" | "GRAPH" | "AGENTS_AS_TOOLS";
 
 export interface SwarmAgentDefinition {
     name: string;
@@ -98,7 +98,6 @@ export interface SwarmConfiguration {
     conversationManager: "null" | "sliding_window" | "summarizing";
 }
 
-
 export interface GraphNodeDefinition {
     id: string;
     agentName: string;
@@ -124,4 +123,23 @@ export interface GraphConfiguration {
     entryPoint: string;
     stateSchema: Record<string, string>;
     orchestrator: GraphOrchestratorConfig;
+}
+
+export interface AgentAsToolDefinition {
+    runtimeId: string;
+    endpoint: string;
+    role: string;
+}
+
+export interface AgentsAsToolsConfiguration {
+    agentsAsTools: AgentAsToolDefinition[];
+    modelInferenceParameters: {
+        modelId: string;
+        parameters: { temperature: number; maxTokens: number };
+    };
+    instructions: string;
+    tools?: string[];
+    toolParameters?: { [toolName: string]: any };
+    mcpServers?: string[];
+    conversationManager: "null" | "sliding_window" | "summarizing";
 }
