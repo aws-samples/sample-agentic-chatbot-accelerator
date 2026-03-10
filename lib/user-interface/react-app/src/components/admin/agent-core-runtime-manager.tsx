@@ -483,6 +483,12 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
             groupValuesLabel: "Runtime ID values",
             operators: [":", "!:", "=", "!="],
         },
+        {
+            key: "architectureType",
+            propertyLabel: "Architecture",
+            groupValuesLabel: "Architecture values",
+            operators: [":", "!:", "=", "!="],
+        },
     ];
 
     const {

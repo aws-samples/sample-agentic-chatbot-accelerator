@@ -14,12 +14,12 @@ import {
 import { generateClient } from "aws-amplify/api";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { ArchitectureType } from "../../API";
 import { CHATBOT_NAME } from "../../common/constants";
 import useOnFollow from "../../common/hooks/use-on-follow";
 import BaseAppLayout from "../../components/base-app-layout";
 import AgentCoreRuntimeCreatorWizard from "../../components/wizard/agent-core-runtime-wizard";
 import { AgentCoreRuntimeConfiguration } from "../../components/wizard/types";
-import { ArchitectureType } from "../../API";
 import { createAgentCoreRuntime as createAgentCoreRuntimeMut } from "../../graphql/mutations";
 import { getDefaultRuntimeConfiguration as getDefaultRuntimeConfigurationQuery } from "../../graphql/queries";
 
@@ -47,9 +47,7 @@ export default function AgentCoreWizardPage() {
                     query: getDefaultRuntimeConfigurationQuery,
                     variables: { agentName: fromAgentName },
                 });
-                const rawConfig = JSON.parse(
-                    result.data.getDefaultRuntimeConfiguration,
-                );
+                const rawConfig = JSON.parse(result.data.getDefaultRuntimeConfiguration);
 
                 // Detect if this is a swarm configuration
                 const isSwarm =
@@ -61,6 +59,12 @@ export default function AgentCoreWizardPage() {
                     rawConfig &&
                     Array.isArray(rawConfig.nodes) &&
                     typeof rawConfig.entryPoint === "string";
+
+                const isAgentsAsTools =
+                    rawConfig &&
+                    Array.isArray(rawConfig.agentsAsTools) &&
+                    rawConfig.modelInferenceParameters &&
+                    typeof rawConfig.instructions === "string";
 
                 if (isSwarm) {
                     setInitialData({
@@ -82,6 +86,21 @@ export default function AgentCoreWizardPage() {
                         agentName: fromAgentName,
                         architectureType: "GRAPH",
                         graphConfig: rawConfig,
+                        instructions: "",
+                        tools: [],
+                        toolParameters: {},
+                        mcpServers: [],
+                        conversationManager: "sliding_window",
+                        modelInferenceParameters: {
+                            modelId: "",
+                            parameters: { temperature: 0.2, maxTokens: 3000 },
+                        },
+                    });
+                } else if (isAgentsAsTools) {
+                    setInitialData({
+                        agentName: fromAgentName,
+                        architectureType: "AGENTS_AS_TOOLS",
+                        agentsAsToolsConfig: rawConfig,
                         instructions: "",
                         tools: [],
                         toolParameters: {},
@@ -115,13 +134,31 @@ export default function AgentCoreWizardPage() {
         setIsCreating(true);
         setError(null); // Clear previous errors
         try {
-            const { agentName, architectureType, swarmConfig, graphConfig, ...singleConfigValues } = config;
+            const {
+                agentName,
+                architectureType,
+                swarmConfig,
+                graphConfig,
+                agentsAsToolsConfig,
+                ...singleConfigValues
+            } = config;
 
             let configValue: string;
             if (architectureType === "SWARM" && swarmConfig) {
                 configValue = JSON.stringify(swarmConfig);
             } else if (architectureType === "GRAPH" && graphConfig) {
                 configValue = JSON.stringify(graphConfig);
+            } else if (architectureType === "AGENTS_AS_TOOLS" && agentsAsToolsConfig) {
+                // Clean the config: omit empty optional fields to match backend expectations
+                const cleanConfig: Record<string, any> = { ...agentsAsToolsConfig };
+                if (!cleanConfig.tools || cleanConfig.tools.length === 0) {
+                    delete cleanConfig.tools;
+                    delete cleanConfig.toolParameters;
+                }
+                if (!cleanConfig.mcpServers || cleanConfig.mcpServers.length === 0) {
+                    delete cleanConfig.mcpServers;
+                }
+                configValue = JSON.stringify(cleanConfig);
             } else {
                 configValue = JSON.stringify(singleConfigValues);
             }

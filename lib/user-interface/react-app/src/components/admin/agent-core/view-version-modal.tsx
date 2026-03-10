@@ -19,7 +19,12 @@ import { useContext, useEffect, useState } from "react";
 import { McpServer } from "../../../API";
 import { AppContext } from "../../../common/app-context";
 import { listAvailableMcpServers as listAvailableMcpServersQuery } from "../../../graphql/queries";
-import { AgentCoreRuntimeConfiguration, GraphConfiguration, SwarmConfiguration } from "../../wizard/types";
+import {
+    AgentCoreRuntimeConfiguration,
+    AgentsAsToolsConfiguration,
+    GraphConfiguration,
+    SwarmConfiguration,
+} from "../../wizard/types";
 
 const apiClient = generateClient();
 
@@ -32,13 +37,17 @@ const isSwarmConfig = (config: any): config is SwarmConfiguration => {
 };
 
 const isGraphConfig = (config: any): config is GraphConfiguration => {
-    return (
-        config &&
-        Array.isArray(config.nodes) &&
-        typeof config.entryPoint === "string"
-    );
+    return config && Array.isArray(config.nodes) && typeof config.entryPoint === "string";
 };
 
+const isAgentsAsToolsConfig = (config: any): config is AgentsAsToolsConfiguration => {
+    return (
+        config &&
+        Array.isArray(config.agentsAsTools) &&
+        config.modelInferenceParameters &&
+        typeof config.instructions === "string"
+    );
+};
 
 interface VersionInfo {
     version: string;
@@ -199,6 +208,11 @@ export default function ViewVersionModal({
     };
 
     const isSwarm = agentConfig && isSwarmConfig(agentConfig);
+    const isAgentsAsTools =
+        agentConfig &&
+        !isSwarm &&
+        !isGraphConfig(agentConfig) &&
+        isAgentsAsToolsConfig(agentConfig);
 
     const toolTableItems =
         !isSwarm && agentConfig?.tools
@@ -377,6 +391,112 @@ export default function ViewVersionModal({
                                 </FormField>
                             )}
                         </SpaceBetween>
+                    ) : isAgentsAsTools ? (
+                        <SpaceBetween direction="vertical" size="m">
+                            <FormField label="Model Configuration">
+                                <Box padding="m">
+                                    <ColumnLayout columns={3} variant="text-grid">
+                                        <div>
+                                            <Box variant="awsui-key-label">Model</Box>
+                                            <Box>
+                                                {getModelName(
+                                                    agentConfig.modelInferenceParameters?.modelId ||
+                                                        "",
+                                                )}
+                                            </Box>
+                                        </div>
+                                        <div>
+                                            <Box variant="awsui-key-label">Temperature</Box>
+                                            <Box>
+                                                {agentConfig.modelInferenceParameters?.parameters
+                                                    ?.temperature ?? "N/A"}
+                                            </Box>
+                                        </div>
+                                        <div>
+                                            <Box variant="awsui-key-label">Max Tokens</Box>
+                                            <Box>
+                                                {agentConfig.modelInferenceParameters?.parameters
+                                                    ?.maxTokens ?? "N/A"}
+                                            </Box>
+                                        </div>
+                                    </ColumnLayout>
+                                </Box>
+                            </FormField>
+
+                            <FormField label="Orchestrator Instructions">
+                                <Textarea
+                                    value={agentConfig.instructions || ""}
+                                    disabled
+                                    rows={6}
+                                />
+                            </FormField>
+
+                            {agentConfig.agentsAsTools && agentConfig.agentsAsTools.length > 0 && (
+                                <FormField label="Agents as Tools">
+                                    <Table
+                                        items={agentConfig.agentsAsTools}
+                                        columnDefinitions={[
+                                            {
+                                                id: "runtimeId",
+                                                header: "Runtime ID",
+                                                cell: (item: any) => item.runtimeId,
+                                                isRowHeader: true,
+                                            },
+                                            {
+                                                id: "endpoint",
+                                                header: "Endpoint",
+                                                cell: (item: any) => item.endpoint || "DEFAULT",
+                                            },
+                                            {
+                                                id: "role",
+                                                header: "Role",
+                                                cell: (item: any) => item.role || "-",
+                                            },
+                                        ]}
+                                    />
+                                </FormField>
+                            )}
+
+                            {agentConfig.tools && agentConfig.tools.length > 0 && (
+                                <FormField label="Additional Tools">
+                                    <Table
+                                        items={agentConfig.tools.map((toolName: string) => ({
+                                            name: toolName,
+                                            parameters:
+                                                agentConfig.toolParameters?.[toolName] || {},
+                                        }))}
+                                        columnDefinitions={[
+                                            {
+                                                id: "name",
+                                                header: "Tool Name",
+                                                cell: (item: any) => item.name,
+                                                isRowHeader: true,
+                                            },
+                                            {
+                                                id: "parameters",
+                                                header: "Parameters",
+                                                cell: (item: any) => {
+                                                    if (Object.keys(item.parameters).length === 0) {
+                                                        return (
+                                                            <Box color="text-status-inactive">
+                                                                None
+                                                            </Box>
+                                                        );
+                                                    }
+                                                    return renderValue(item.parameters);
+                                                },
+                                            },
+                                        ]}
+                                    />
+                                </FormField>
+                            )}
+
+                            {agentConfig.conversationManager && (
+                                <FormField label="Conversation Manager">
+                                    <Box padding="m">{agentConfig.conversationManager}</Box>
+                                </FormField>
+                            )}
+                        </SpaceBetween>
                     ) : isGraphConfig(agentConfig) ? (
                         <SpaceBetween direction="vertical" size="m">
                             <FormField label="Entry Point">
@@ -433,7 +553,8 @@ export default function ViewVersionModal({
                                             {
                                                 id: "condition",
                                                 header: "Condition",
-                                                cell: (item: any) => item.condition || "Unconditional",
+                                                cell: (item: any) =>
+                                                    item.condition || "Unconditional",
                                             },
                                         ]}
                                     />
@@ -446,15 +567,28 @@ export default function ViewVersionModal({
                                         <ColumnLayout columns={3} variant="text-grid">
                                             <div>
                                                 <Box variant="awsui-key-label">Max Iterations</Box>
-                                                <Box>{agentConfig.orchestrator.maxIterations ?? "N/A"}</Box>
+                                                <Box>
+                                                    {agentConfig.orchestrator.maxIterations ??
+                                                        "N/A"}
+                                                </Box>
                                             </div>
                                             <div>
-                                                <Box variant="awsui-key-label">Execution Timeout</Box>
-                                                <Box>{agentConfig.orchestrator.executionTimeoutSeconds ?? "N/A"}s</Box>
+                                                <Box variant="awsui-key-label">
+                                                    Execution Timeout
+                                                </Box>
+                                                <Box>
+                                                    {agentConfig.orchestrator
+                                                        .executionTimeoutSeconds ?? "N/A"}
+                                                    s
+                                                </Box>
                                             </div>
                                             <div>
                                                 <Box variant="awsui-key-label">Node Timeout</Box>
-                                                <Box>{agentConfig.orchestrator.nodeTimeoutSeconds ?? "N/A"}s</Box>
+                                                <Box>
+                                                    {agentConfig.orchestrator.nodeTimeoutSeconds ??
+                                                        "N/A"}
+                                                    s
+                                                </Box>
                                             </div>
                                         </ColumnLayout>
                                     </Box>
@@ -462,100 +596,102 @@ export default function ViewVersionModal({
                             )}
                         </SpaceBetween>
                     ) : (
-                    <SpaceBetween direction="vertical" size="m">
-                        <FormField label="Model Configuration">
-                            <Box padding="m">
-                                <ColumnLayout columns={3} variant="text-grid">
-                                    <div>
-                                        <Box variant="awsui-key-label">Model</Box>
-                                        <Box>
-                                            {getModelName(
-                                                agentConfig.modelInferenceParameters.modelId,
-                                            )}
-                                        </Box>
-                                    </div>
-                                    <div>
-                                        <Box variant="awsui-key-label">Temperature</Box>
-                                        <Box>
-                                            {agentConfig.modelInferenceParameters.parameters
-                                                .temperature ?? "N/A"}
-                                        </Box>
-                                    </div>
-                                    <div>
-                                        <Box variant="awsui-key-label">Max Tokens</Box>
-                                        <Box>
-                                            {agentConfig.modelInferenceParameters.parameters
-                                                .maxTokens ?? "N/A"}
-                                        </Box>
-                                    </div>
-                                </ColumnLayout>
-                            </Box>
-                        </FormField>
+                        <SpaceBetween direction="vertical" size="m">
+                            <FormField label="Model Configuration">
+                                <Box padding="m">
+                                    <ColumnLayout columns={3} variant="text-grid">
+                                        <div>
+                                            <Box variant="awsui-key-label">Model</Box>
+                                            <Box>
+                                                {getModelName(
+                                                    agentConfig.modelInferenceParameters.modelId,
+                                                )}
+                                            </Box>
+                                        </div>
+                                        <div>
+                                            <Box variant="awsui-key-label">Temperature</Box>
+                                            <Box>
+                                                {agentConfig.modelInferenceParameters.parameters
+                                                    .temperature ?? "N/A"}
+                                            </Box>
+                                        </div>
+                                        <div>
+                                            <Box variant="awsui-key-label">Max Tokens</Box>
+                                            <Box>
+                                                {agentConfig.modelInferenceParameters.parameters
+                                                    .maxTokens ?? "N/A"}
+                                            </Box>
+                                        </div>
+                                    </ColumnLayout>
+                                </Box>
+                            </FormField>
 
-                        <FormField label="Agent Instructions">
-                            <Textarea value={agentConfig.instructions} disabled rows={6} />
-                        </FormField>
+                            <FormField label="Agent Instructions">
+                                <Textarea value={agentConfig.instructions} disabled rows={6} />
+                            </FormField>
 
-                        {toolTableItems.length > 0 && (
-                            <FormField label="Tools and Parameters">
-                                <Table
-                                    items={toolTableItems}
-                                    columnDefinitions={[
-                                        {
-                                            id: "name",
-                                            header: "Tool Name",
-                                            cell: (item) => item.name,
-                                            isRowHeader: true,
-                                        },
-                                        {
-                                            id: "parameters",
-                                            header: "Parameters",
-                                            cell: (item) => {
-                                                if (Object.keys(item.parameters).length === 0) {
-                                                    return (
-                                                        <Box color="text-status-inactive">None</Box>
-                                                    );
-                                                }
-                                                return renderValue(item.parameters);
+                            {toolTableItems.length > 0 && (
+                                <FormField label="Tools and Parameters">
+                                    <Table
+                                        items={toolTableItems}
+                                        columnDefinitions={[
+                                            {
+                                                id: "name",
+                                                header: "Tool Name",
+                                                cell: (item) => item.name,
+                                                isRowHeader: true,
                                             },
-                                        },
-                                    ]}
-                                />
-                            </FormField>
-                        )}
-
-                        {mcpServerTableItems.length > 0 && (
-                            <FormField label="MCP Servers">
-                                <Table
-                                    items={mcpServerTableItems}
-                                    columnDefinitions={[
-                                        {
-                                            id: "name",
-                                            header: "Server Name",
-                                            cell: (item) => item.name,
-                                            isRowHeader: true,
-                                        },
-                                        {
-                                            id: "description",
-                                            header: "Description",
-                                            cell: (item) => (
-                                                <Box
-                                                    color={
-                                                        item.description ===
-                                                        "No description available"
-                                                            ? "text-status-inactive"
-                                                            : undefined
+                                            {
+                                                id: "parameters",
+                                                header: "Parameters",
+                                                cell: (item) => {
+                                                    if (Object.keys(item.parameters).length === 0) {
+                                                        return (
+                                                            <Box color="text-status-inactive">
+                                                                None
+                                                            </Box>
+                                                        );
                                                     }
-                                                >
-                                                    {item.description}
-                                                </Box>
-                                            ),
-                                        },
-                                    ]}
-                                />
-                            </FormField>
-                        )}
-                    </SpaceBetween>
+                                                    return renderValue(item.parameters);
+                                                },
+                                            },
+                                        ]}
+                                    />
+                                </FormField>
+                            )}
+
+                            {mcpServerTableItems.length > 0 && (
+                                <FormField label="MCP Servers">
+                                    <Table
+                                        items={mcpServerTableItems}
+                                        columnDefinitions={[
+                                            {
+                                                id: "name",
+                                                header: "Server Name",
+                                                cell: (item) => item.name,
+                                                isRowHeader: true,
+                                            },
+                                            {
+                                                id: "description",
+                                                header: "Description",
+                                                cell: (item) => (
+                                                    <Box
+                                                        color={
+                                                            item.description ===
+                                                            "No description available"
+                                                                ? "text-status-inactive"
+                                                                : undefined
+                                                        }
+                                                    >
+                                                        {item.description}
+                                                    </Box>
+                                                ),
+                                            },
+                                        ]}
+                                    />
+                                </FormField>
+                            )}
+                        </SpaceBetween>
                     )
                 ) : null}
             </SpaceBetween>

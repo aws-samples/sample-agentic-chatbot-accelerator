@@ -15,10 +15,10 @@ import {
     Header,
     Input,
     Modal,
-    RadioGroup,
     Select,
     SpaceBetween,
     Textarea,
+    Tiles,
     Wizard,
 } from "@cloudscape-design/components";
 import { KnowledgeBase, McpServer, RuntimeSummary, Tool } from "../../API";
@@ -30,11 +30,16 @@ import {
     listKnowledgeBases as listKnowledgeBasesQuery,
     listRuntimeAgents as listRuntimeAgentsQuery,
 } from "../../graphql/queries";
+import {
+    getAgentsAsToolsSteps,
+    isAgentsAsToolsStepValid,
+} from "./architectures/agents-as-tools-steps";
 import { getGraphAgentSteps, isGraphStepValid } from "./architectures/graph-agent-steps";
 import { getSingleAgentSteps, isSingleAgentStepValid } from "./architectures/single-agent-steps";
 import { getSwarmAgentSteps, isSwarmStepValid } from "./architectures/swarm-agent-steps";
 import {
     AgentCoreRuntimeConfiguration,
+    AgentsAsToolsConfiguration,
     ArchitectureType,
     GraphConfiguration,
     SearchType,
@@ -104,6 +109,17 @@ export default function AgentCoreRuntimeCreatorWizard({
             },
         },
     );
+    const [agentsAsToolsConfig, setAgentsAsToolsConfig] = useState<AgentsAsToolsConfiguration>(
+        initialData?.agentsAsToolsConfig || {
+            agentsAsTools: [],
+            modelInferenceParameters: {
+                modelId: "",
+                parameters: { temperature: 0.2, maxTokens: 3000 },
+            },
+            instructions: "",
+            conversationManager: "sliding_window",
+        },
+    );
 
     // When creating a new version, skip the architecture selector step
     const isNewVersion = !!initialData?.architectureType;
@@ -118,14 +134,12 @@ export default function AgentCoreRuntimeCreatorWizard({
                 if (toolName.startsWith("retrieve_from_kb_")) {
                     const toolParams = initialData.toolParameters![toolName];
                     if (
-                        toolParams?.retrieval_cfg?.vectorSearchConfiguration
-                            ?.rerankingConfiguration?.bedrockRerankingConfiguration?.numberOfResults
+                        toolParams?.retrieval_cfg?.vectorSearchConfiguration?.rerankingConfiguration
+                            ?.bedrockRerankingConfiguration?.numberOfResults
                     ) {
                         rerankingStates[toolName] = true;
                     }
-                    if (
-                        toolParams?.retrieval_cfg?.vectorSearchConfiguration?.overrideSearchType
-                    ) {
+                    if (toolParams?.retrieval_cfg?.vectorSearchConfiguration?.overrideSearchType) {
                         searchTypeStates[toolName] = true;
                     }
                 }
@@ -162,15 +176,14 @@ export default function AgentCoreRuntimeCreatorWizard({
         const fetchData = async () => {
             try {
                 const knowledgeBaseSupported = appConfig?.knowledgeBaseIsSupported ?? false;
-                const [kbResult, toolsResult, mcpServersResult, agentsResult] =
-                    await Promise.all([
-                        knowledgeBaseSupported
-                            ? apiClient.graphql({ query: listKnowledgeBasesQuery })
-                            : Promise.resolve({ data: { listKnowledgeBases: [] } }),
-                        apiClient.graphql({ query: listAvailableToolsQuery }),
-                        apiClient.graphql({ query: listAvailableMcpServersQuery }),
-                        apiClient.graphql({ query: listRuntimeAgentsQuery }),
-                    ]);
+                const [kbResult, toolsResult, mcpServersResult, agentsResult] = await Promise.all([
+                    knowledgeBaseSupported
+                        ? apiClient.graphql({ query: listKnowledgeBasesQuery })
+                        : Promise.resolve({ data: { listKnowledgeBases: [] } }),
+                    apiClient.graphql({ query: listAvailableToolsQuery }),
+                    apiClient.graphql({ query: listAvailableMcpServersQuery }),
+                    apiClient.graphql({ query: listRuntimeAgentsQuery }),
+                ]);
 
                 if (isCancelled) return;
                 setKnowledgeBases(kbResult.data!.listKnowledgeBases);
@@ -185,7 +198,9 @@ export default function AgentCoreRuntimeCreatorWizard({
             }
         };
         fetchData();
-        return () => { isCancelled = true; };
+        return () => {
+            isCancelled = true;
+        };
     }, [appConfig, apiClient]);
 
     useEffect(() => {
@@ -193,7 +208,10 @@ export default function AgentCoreRuntimeCreatorWizard({
             const models = Object.entries(appConfig.aws_bedrock_supported_models).map(
                 ([label, value]) => ({
                     label,
-                    value: value.replace("[REGION-PREFIX]", appConfig.aws_project_region.split("-")[0]),
+                    value: value.replace(
+                        "[REGION-PREFIX]",
+                        appConfig.aws_project_region.split("-")[0],
+                    ),
                 }),
             );
             setModelOptions(models);
@@ -397,7 +415,11 @@ export default function AgentCoreRuntimeCreatorWizard({
 
     const availableToolsOptions = availableTools
         .filter((tool) => !tool.invokesSubAgent && !config.tools.includes(tool.name))
-        .map((tool) => ({ label: tool.name, value: tool.name, description: tool.description || undefined }));
+        .map((tool) => ({
+            label: tool.name,
+            value: tool.name,
+            description: tool.description || undefined,
+        }));
 
     const availableSubAgents = availableAgents
         .filter(
@@ -424,7 +446,10 @@ export default function AgentCoreRuntimeCreatorWizard({
         .filter((t) => !t.startsWith("retrieve_from_kb_") && !t.startsWith("invoke_subagent_"))
         .map((toolName) => {
             const toolInfo = availableTools.find((t) => t.name === toolName);
-            return { name: toolName, description: toolInfo?.description || "No description available" };
+            return {
+                name: toolName,
+                description: toolInfo?.description || "No description available",
+            };
         });
 
     const selectedSubAgentsData = config.tools
@@ -468,17 +493,24 @@ export default function AgentCoreRuntimeCreatorWizard({
                             label="Architecture"
                             description="Choose the agent architecture for this runtime"
                         >
-                            <RadioGroup
+                            <Tiles
                                 value={architectureType}
                                 onChange={({ detail }) =>
                                     setArchitectureType(detail.value as ArchitectureType)
                                 }
+                                columns={2}
                                 items={[
                                     {
                                         value: "SINGLE",
-                                        label: "Single Agent / Agents as Tools",
+                                        label: "Single Agent",
                                         description:
-                                            "A single agent with tools, knowledge bases, MCP servers, and optional sub-agents invoked as tools",
+                                            "A single agent with tools, knowledge bases, and MCP servers",
+                                    },
+                                    {
+                                        value: "AGENTS_AS_TOOLS",
+                                        label: "Agents as Tools",
+                                        description:
+                                            "An orchestrator agent that delegates to existing agents exposed as tools, each with a defined role",
                                     },
                                     {
                                         value: "SWARM",
@@ -534,19 +566,33 @@ export default function AgentCoreRuntimeCreatorWizard({
                     availableAgents,
                     isCreating,
                 })
-              : getSwarmAgentSteps({
-                    config,
-                    setConfig,
-                    swarmConfig,
-                    setSwarmConfig,
-                    availableAgents,
-                    isCreating,
-                    architectureType,
-                    addAgentReference,
-                    removeAgentReference,
-                    updateAgentReferenceEndpoint,
-                    getSwarmAgentNames,
-                });
+              : architectureType === "AGENTS_AS_TOOLS"
+                ? getAgentsAsToolsSteps({
+                      config,
+                      setConfig,
+                      agentsAsToolsConfig,
+                      setAgentsAsToolsConfig,
+                      availableAgents,
+                      modelOptions,
+                      availableToolsOptions,
+                      availableMcpServersOptions,
+                      availableKnowledgeBases,
+                      knowledgeBaseIsSupported,
+                      isCreating,
+                  })
+                : getSwarmAgentSteps({
+                      config,
+                      setConfig,
+                      swarmConfig,
+                      setSwarmConfig,
+                      availableAgents,
+                      isCreating,
+                      architectureType,
+                      addAgentReference,
+                      removeAgentReference,
+                      updateAgentReferenceEndpoint,
+                      getSwarmAgentNames,
+                  });
 
     const steps = isNewVersion
         ? [...architectureSpecificSteps]
@@ -555,7 +601,10 @@ export default function AgentCoreRuntimeCreatorWizard({
     const isStepValid = (stepIndex: number) => {
         const getArchStepValidity = (archStepIndex: number) => {
             if (architectureType === "SINGLE") return isSingleAgentStepValid(archStepIndex, config);
-            if (architectureType === "GRAPH") return isGraphStepValid(archStepIndex, config, graphConfig);
+            if (architectureType === "GRAPH")
+                return isGraphStepValid(archStepIndex, config, graphConfig);
+            if (architectureType === "AGENTS_AS_TOOLS")
+                return isAgentsAsToolsStepValid(archStepIndex, config, agentsAsToolsConfig);
             return isSwarmStepValid(archStepIndex, config, swarmConfig);
         };
 
@@ -591,6 +640,7 @@ export default function AgentCoreRuntimeCreatorWizard({
                     architectureType,
                     ...(architectureType === "SWARM" ? { swarmConfig } : {}),
                     ...(architectureType === "GRAPH" ? { graphConfig } : {}),
+                    ...(architectureType === "AGENTS_AS_TOOLS" ? { agentsAsToolsConfig } : {}),
                 })
             }
             steps={steps.map((step) => ({
