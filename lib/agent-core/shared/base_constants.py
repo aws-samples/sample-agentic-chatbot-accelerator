@@ -10,9 +10,7 @@
 RETRIEVE_FROM_KB_PREFIX = "retrieve_from_kb"
 
 # Tool descriptions for common tools
-TOOL_DESCRIPTIONS = {
-    # INVOKE_SUBAGENT_PREFIX: "Invoke a sub-agent to handle specialized tasks or domain-specific queries that require dedicated processing",
-}
+TOOL_DESCRIPTIONS = {}
 
 # DynamoDB scan limit for registry loading
 DYNAMODB_SCAN_LIMIT = 100
