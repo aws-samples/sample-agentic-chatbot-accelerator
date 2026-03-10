@@ -20,7 +20,7 @@ import {
     Textarea,
 } from "@cloudscape-design/components";
 import ReactMarkdown from "react-markdown";
-import { KnowledgeBase, McpServer, RuntimeSummary, Tool } from "../../../API";
+import { KnowledgeBase, McpServer, Tool } from "../../../API";
 import { AgentCoreRuntimeConfiguration } from "../types";
 import { CONVERSATION_MANAGER_OPTIONS, STEP_MIN_HEIGHT } from "../wizard-utils";
 
@@ -30,7 +30,6 @@ interface SingleAgentStepsProps {
     modelOptions: { label: string; value: string }[];
     availableTools: Tool[];
     availableMcpServers: McpServer[];
-    availableAgents: RuntimeSummary[];
     knowledgeBases: KnowledgeBase[];
     knowledgeBaseIsSupported: boolean;
     isCreating: boolean;
@@ -43,14 +42,13 @@ export function getSingleAgentSteps({
     modelOptions,
     availableTools,
     availableMcpServers,
-    availableAgents,
     knowledgeBases,
     knowledgeBaseIsSupported,
     isCreating,
     openConfigureModal,
 }: SingleAgentStepsProps) {
     // -------------------------------------------------------------------
-    // Tool / KB / MCP / Sub-agent actions
+    // Tool / KB / MCP actions
     // -------------------------------------------------------------------
     const addTool = (toolName: string | undefined) => {
         if (!toolName || toolName === "retrieve_from_kb" || config.tools.includes(toolName)) return;
@@ -71,20 +69,6 @@ export function getSingleAgentSteps({
                 toolParameters: newToolParameters,
             };
         });
-    };
-
-    const addSubAgent = (agentName: string | undefined) => {
-        if (!agentName) return;
-        const toolName = `invoke_subagent_${agentName}`;
-        if (config.tools.includes(toolName)) return;
-        setConfig((prev) => ({
-            ...prev,
-            tools: [...prev.tools, toolName],
-            toolParameters: {
-                ...prev.toolParameters,
-                [toolName]: { agentName, qualifier: "DEFAULT", role: "" },
-            },
-        }));
     };
 
     const addMcpServer = (serverName: string | undefined) => {
@@ -127,14 +111,6 @@ export function getSingleAgentSteps({
             description: tool.description || undefined,
         }));
 
-    const availableSubAgentsOptions = availableAgents
-        .filter(
-            (agent) =>
-                agent.agentName !== config.agentName &&
-                !config.tools.includes(`invoke_subagent_${agent.agentName}`),
-        )
-        .map((agent) => ({ label: agent.agentName, value: agent.agentName }));
-
     const availableMcpServersOptions = availableMcpServers
         .filter((s) => !config.mcpServers.includes(s.name))
         .map((s) => ({ label: s.name, value: s.name, description: s.description || undefined }));
@@ -152,14 +128,6 @@ export function getSingleAgentSteps({
                 description: toolInfo?.description || "No description available",
             };
         });
-
-    const selectedSubAgentsData = config.tools
-        .filter((t) => t.startsWith("invoke_subagent_"))
-        .map((toolName) => ({
-            toolName,
-            agentName: toolName.replace("invoke_subagent_", ""),
-            params: config.toolParameters[toolName],
-        }));
 
     const selectedMcpServersData = config.mcpServers.map((serverName) => {
         const serverInfo = availableMcpServers.find((s) => s.name === serverName);
@@ -397,27 +365,6 @@ export function getSingleAgentSteps({
                                 />
                             </FormField>
 
-                            <FormField
-                                label="Available Sub-Agents"
-                                description="Sub-agents that this orchestrator can invoke as tools"
-                            >
-                                <Select
-                                    placeholder={
-                                        availableSubAgentsOptions.length === 0
-                                            ? "No additional sub-agents available"
-                                            : "Select a sub-agent to add as a tool"
-                                    }
-                                    options={availableSubAgentsOptions}
-                                    disabled={availableSubAgentsOptions.length === 0}
-                                    onChange={({ detail }) => {
-                                        if (detail.selectedOption) {
-                                            addSubAgent(detail.selectedOption.value);
-                                        }
-                                    }}
-                                    selectedOption={null}
-                                />
-                            </FormField>
-
                             <Container header={<Header variant="h3">Selected Tools</Header>}>
                                 {selectedToolsData.length === 0 ? (
                                     <Alert type="info">No tools selected</Alert>
@@ -473,69 +420,6 @@ export function getSingleAgentSteps({
                                                     color="inherit"
                                                 >
                                                     Select tools from the dropdown above.
-                                                </Box>
-                                            </Box>
-                                        }
-                                    />
-                                )}
-                            </Container>
-
-                            <Container
-                                header={<Header variant="h3">Selected Sub-Agents (Tools)</Header>}
-                            >
-                                {selectedSubAgentsData.length === 0 ? (
-                                    <Alert type="info">No sub-agents selected</Alert>
-                                ) : (
-                                    <Table
-                                        columnDefinitions={[
-                                            {
-                                                id: "name",
-                                                header: "Agent Name",
-                                                cell: (item) => item.agentName,
-                                            },
-                                            {
-                                                id: "parameters",
-                                                header: "Parameters",
-                                                cell: (item) => {
-                                                    const isConfigured =
-                                                        item.params?.qualifier && item.params?.role;
-                                                    return (
-                                                        <Button
-                                                            variant="normal"
-                                                            onClick={() =>
-                                                                openConfigureModal(item.toolName)
-                                                            }
-                                                        >
-                                                            {isConfigured
-                                                                ? "Configured"
-                                                                : "Configure"}
-                                                        </Button>
-                                                    );
-                                                },
-                                            },
-                                            {
-                                                id: "actions",
-                                                header: "Actions",
-                                                cell: (item) => (
-                                                    <Button
-                                                        variant="icon"
-                                                        iconName="close"
-                                                        onClick={() => removeTool(item.toolName)}
-                                                    />
-                                                ),
-                                            },
-                                        ]}
-                                        items={selectedSubAgentsData}
-                                        loadingText="Loading sub-agents"
-                                        empty={
-                                            <Box textAlign="center" color="inherit">
-                                                <b>No sub-agents selected</b>
-                                                <Box
-                                                    padding={{ bottom: "s" }}
-                                                    variant="p"
-                                                    color="inherit"
-                                                >
-                                                    Select sub-agents from the dropdown above.
                                                 </Box>
                                             </Box>
                                         }
@@ -791,12 +675,6 @@ export function isSingleAgentStepValid(
             config.agentName.trim() !== "" &&
             agentNamePattern.test(config.agentName)
         );
-    }
-    // Step 3 = Tools Config
-    if (stepIndex === 3) {
-        return !config.tools.some((tool) => {
-            return tool.startsWith("invoke_subagent_") && !config.toolParameters[tool]?.agentName;
-        });
     }
     return true;
 }

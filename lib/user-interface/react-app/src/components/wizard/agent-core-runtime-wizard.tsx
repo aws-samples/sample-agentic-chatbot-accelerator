@@ -424,7 +424,6 @@ export default function AgentCoreRuntimeCreatorWizard({
                   modelOptions,
                   availableTools,
                   availableMcpServers,
-                  availableAgents,
                   knowledgeBases,
                   knowledgeBaseIsSupported,
                   isCreating,
