@@ -20,6 +20,7 @@ import {
     Textarea,
 } from "@cloudscape-design/components";
 import ReactMarkdown from "react-markdown";
+import { KnowledgeBase, McpServer, RuntimeSummary, Tool } from "../../../API";
 import { AgentCoreRuntimeConfiguration } from "../types";
 import { CONVERSATION_MANAGER_OPTIONS, STEP_MIN_HEIGHT } from "../wizard-utils";
 
@@ -27,27 +28,12 @@ interface SingleAgentStepsProps {
     config: AgentCoreRuntimeConfiguration;
     setConfig: React.Dispatch<React.SetStateAction<AgentCoreRuntimeConfiguration>>;
     modelOptions: { label: string; value: string }[];
-    availableToolsOptions: { label: string; value: string; description?: string }[];
-    availableSubAgents: { label: string; value: string }[];
-    availableMcpServersOptions: { label: string; value: string; description?: string }[];
-    availableKnowledgeBases: { label: string; value: string }[];
-    selectedToolsData: { name: string; description: string }[];
-    selectedSubAgentsData: { toolName: string; agentName: string; params: any }[];
-    selectedMcpServersData: { name: string; description: string; mcpUrl: string }[];
-    selectedKnowledgeBasesData: {
-        toolName: string;
-        name: string;
-        description: string;
-        numberOfResults: string;
-    }[];
+    availableTools: Tool[];
+    availableMcpServers: McpServer[];
+    availableAgents: RuntimeSummary[];
+    knowledgeBases: KnowledgeBase[];
     knowledgeBaseIsSupported: boolean;
     isCreating: boolean;
-    addTool: (toolName: string | undefined) => void;
-    removeTool: (toolName: string) => void;
-    addSubAgent: (agentName: string | undefined) => void;
-    addMcpServer: (serverName: string | undefined) => void;
-    removeMcpServer: (serverName: string) => void;
-    addKnowledgeBase: (kbId: string | undefined) => void;
     openConfigureModal: (toolName: string) => void;
 }
 
@@ -55,24 +41,153 @@ export function getSingleAgentSteps({
     config,
     setConfig,
     modelOptions,
-    availableToolsOptions,
-    availableSubAgents,
-    availableMcpServersOptions,
-    availableKnowledgeBases,
-    selectedToolsData,
-    selectedSubAgentsData,
-    selectedMcpServersData,
-    selectedKnowledgeBasesData,
+    availableTools,
+    availableMcpServers,
+    availableAgents,
+    knowledgeBases,
     knowledgeBaseIsSupported,
     isCreating,
-    addTool,
-    removeTool,
-    addSubAgent,
-    addMcpServer,
-    removeMcpServer,
-    addKnowledgeBase,
     openConfigureModal,
 }: SingleAgentStepsProps) {
+    // -------------------------------------------------------------------
+    // Tool / KB / MCP / Sub-agent actions
+    // -------------------------------------------------------------------
+    const addTool = (toolName: string | undefined) => {
+        if (!toolName || toolName === "retrieve_from_kb" || config.tools.includes(toolName)) return;
+        setConfig((prev) => ({
+            ...prev,
+            tools: [...prev.tools, toolName],
+            toolParameters: { ...prev.toolParameters, [toolName]: {} },
+        }));
+    };
+
+    const removeTool = (toolName: string) => {
+        setConfig((prev) => {
+            const newToolParameters = { ...prev.toolParameters };
+            delete newToolParameters[toolName];
+            return {
+                ...prev,
+                tools: prev.tools.filter((t) => t !== toolName),
+                toolParameters: newToolParameters,
+            };
+        });
+    };
+
+    const addSubAgent = (agentName: string | undefined) => {
+        if (!agentName) return;
+        const toolName = `invoke_subagent_${agentName}`;
+        if (config.tools.includes(toolName)) return;
+        setConfig((prev) => ({
+            ...prev,
+            tools: [...prev.tools, toolName],
+            toolParameters: {
+                ...prev.toolParameters,
+                [toolName]: { agentName, qualifier: "DEFAULT", role: "" },
+            },
+        }));
+    };
+
+    const addMcpServer = (serverName: string | undefined) => {
+        if (!serverName || config.mcpServers.includes(serverName)) return;
+        setConfig((prev) => ({ ...prev, mcpServers: [...prev.mcpServers, serverName] }));
+    };
+
+    const removeMcpServer = (serverName: string) => {
+        setConfig((prev) => ({
+            ...prev,
+            mcpServers: prev.mcpServers.filter((s) => s !== serverName),
+        }));
+    };
+
+    const addKnowledgeBase = (kbId: string | undefined) => {
+        if (!kbId) return;
+        const toolName = `retrieve_from_kb_${kbId}`;
+        if (config.tools.includes(toolName)) return;
+        setConfig((prev) => ({
+            ...prev,
+            tools: [...prev.tools, toolName],
+            toolParameters: {
+                ...prev.toolParameters,
+                [toolName]: {
+                    retrieval_cfg: { vectorSearchConfiguration: { numberOfResults: "5" } },
+                    kb_id: kbId,
+                },
+            },
+        }));
+    };
+
+    // -------------------------------------------------------------------
+    // Derived display data
+    // -------------------------------------------------------------------
+    const availableToolsOptions = availableTools
+        .filter((tool) => !tool.invokesSubAgent && !config.tools.includes(tool.name))
+        .map((tool) => ({
+            label: tool.name,
+            value: tool.name,
+            description: tool.description || undefined,
+        }));
+
+    const availableSubAgentsOptions = availableAgents
+        .filter(
+            (agent) =>
+                agent.agentName !== config.agentName &&
+                !config.tools.includes(`invoke_subagent_${agent.agentName}`),
+        )
+        .map((agent) => ({ label: agent.agentName, value: agent.agentName }));
+
+    const availableMcpServersOptions = availableMcpServers
+        .filter((s) => !config.mcpServers.includes(s.name))
+        .map((s) => ({ label: s.name, value: s.name, description: s.description || undefined }));
+
+    const availableKnowledgeBasesOptions = knowledgeBases
+        .filter((kb) => !config.tools.some((tool) => tool === `retrieve_from_kb_${kb.id}`))
+        .map((kb) => ({ label: kb.description || kb.name, value: kb.id }));
+
+    const selectedToolsData = config.tools
+        .filter((t) => !t.startsWith("retrieve_from_kb_") && !t.startsWith("invoke_subagent_"))
+        .map((toolName) => {
+            const toolInfo = availableTools.find((t) => t.name === toolName);
+            return {
+                name: toolName,
+                description: toolInfo?.description || "No description available",
+            };
+        });
+
+    const selectedSubAgentsData = config.tools
+        .filter((t) => t.startsWith("invoke_subagent_"))
+        .map((toolName) => ({
+            toolName,
+            agentName: toolName.replace("invoke_subagent_", ""),
+            params: config.toolParameters[toolName],
+        }));
+
+    const selectedMcpServersData = config.mcpServers.map((serverName) => {
+        const serverInfo = availableMcpServers.find((s) => s.name === serverName);
+        return {
+            name: serverName,
+            description: serverInfo?.description || "No description available",
+            mcpUrl: serverInfo?.mcpUrl || "",
+        };
+    });
+
+    const selectedKnowledgeBasesData = config.tools
+        .filter((t) => t.startsWith("retrieve_from_kb_"))
+        .map((toolName) => {
+            const kbId = toolName.replace("retrieve_from_kb_", "");
+            const kb = knowledgeBases.find((k) => k.id === kbId);
+            const params = config.toolParameters[toolName];
+            return {
+                toolName,
+                name: kb?.name || kbId,
+                description: kb?.description || "No description available",
+                numberOfResults:
+                    params?.retrieval_cfg?.vectorSearchConfiguration?.numberOfResults || "5",
+            };
+        });
+
+    // -------------------------------------------------------------------
+    // Steps
+    // -------------------------------------------------------------------
     const steps = [
         {
             title: "Basic Configuration",
@@ -288,12 +403,12 @@ export function getSingleAgentSteps({
                             >
                                 <Select
                                     placeholder={
-                                        availableSubAgents.length === 0
+                                        availableSubAgentsOptions.length === 0
                                             ? "No additional sub-agents available"
                                             : "Select a sub-agent to add as a tool"
                                     }
-                                    options={availableSubAgents}
-                                    disabled={availableSubAgents.length === 0}
+                                    options={availableSubAgentsOptions}
+                                    disabled={availableSubAgentsOptions.length === 0}
                                     onChange={({ detail }) => {
                                         if (detail.selectedOption) {
                                             addSubAgent(detail.selectedOption.value);
@@ -533,19 +648,17 @@ export function getSingleAgentSteps({
             title: "Knowledge Bases",
             content: (
                 <div style={{ minHeight: STEP_MIN_HEIGHT }}>
-                    <Container
-                        header={<Header variant="h2">Configure Knowledge Bases</Header>}
-                    >
+                    <Container header={<Header variant="h2">Configure Knowledge Bases</Header>}>
                         <SpaceBetween direction="vertical" size="l">
                             <FormField label="Available Knowledge Bases">
                                 <Select
                                     placeholder={
-                                        availableKnowledgeBases.length === 0
+                                        availableKnowledgeBasesOptions.length === 0
                                             ? "No additional knowledge bases available"
                                             : "Select a knowledge base to add"
                                     }
-                                    options={availableKnowledgeBases}
-                                    disabled={availableKnowledgeBases.length === 0}
+                                    options={availableKnowledgeBasesOptions}
+                                    disabled={availableKnowledgeBasesOptions.length === 0}
                                     onChange={({ detail }) => {
                                         if (detail.selectedOption) {
                                             addKnowledgeBase(detail.selectedOption.value);
@@ -556,9 +669,7 @@ export function getSingleAgentSteps({
                             </FormField>
 
                             <Container
-                                header={
-                                    <Header variant="h3">Selected Knowledge Bases</Header>
-                                }
+                                header={<Header variant="h3">Selected Knowledge Bases</Header>}
                             >
                                 {selectedKnowledgeBasesData.length === 0 ? (
                                     <Alert type="info">No knowledge bases selected</Alert>
@@ -612,9 +723,7 @@ export function getSingleAgentSteps({
                                                     <Button
                                                         variant="icon"
                                                         iconName="close"
-                                                        onClick={() =>
-                                                            removeTool(item.toolName)
-                                                        }
+                                                        onClick={() => removeTool(item.toolName)}
                                                     />
                                                 ),
                                             },
@@ -629,8 +738,7 @@ export function getSingleAgentSteps({
                                                     variant="p"
                                                     color="inherit"
                                                 >
-                                                    Select knowledge bases from the dropdown
-                                                    above.
+                                                    Select knowledge bases from the dropdown above.
                                                 </Box>
                                             </Box>
                                         }
@@ -687,10 +795,7 @@ export function isSingleAgentStepValid(
     // Step 3 = Tools Config
     if (stepIndex === 3) {
         return !config.tools.some((tool) => {
-            return (
-                tool.startsWith("invoke_subagent_") &&
-                !config.toolParameters[tool]?.agentName
-            );
+            return tool.startsWith("invoke_subagent_") && !config.toolParameters[tool]?.agentName;
         });
     }
     return true;

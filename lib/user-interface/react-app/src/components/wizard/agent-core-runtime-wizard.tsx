@@ -244,73 +244,6 @@ export default function AgentCoreRuntimeCreatorWizard({
         }
     }, [appConfig, config.modelInferenceParameters.modelId]);
 
-    // ----------------------------------------------------------------
-    // Tool / KB / MCP / Sub-agent actions (used by single-agent steps)
-    // ----------------------------------------------------------------
-    const addTool = (toolName: string | undefined) => {
-        if (!toolName || toolName === "retrieve_from_kb" || config.tools.includes(toolName)) return;
-        setConfig((prev) => ({
-            ...prev,
-            tools: [...prev.tools, toolName],
-            toolParameters: { ...prev.toolParameters, [toolName]: {} },
-        }));
-    };
-
-    const removeTool = (toolName: string) => {
-        setConfig((prev) => {
-            const newToolParameters = { ...prev.toolParameters };
-            delete newToolParameters[toolName];
-            return {
-                ...prev,
-                tools: prev.tools.filter((t) => t !== toolName),
-                toolParameters: newToolParameters,
-            };
-        });
-    };
-
-    const addSubAgent = (agentName: string | undefined) => {
-        if (!agentName) return;
-        const toolName = `invoke_subagent_${agentName}`;
-        if (config.tools.includes(toolName)) return;
-        setConfig((prev) => ({
-            ...prev,
-            tools: [...prev.tools, toolName],
-            toolParameters: {
-                ...prev.toolParameters,
-                [toolName]: { agentName, qualifier: "DEFAULT", role: "" },
-            },
-        }));
-    };
-
-    const addMcpServer = (serverName: string | undefined) => {
-        if (!serverName || config.mcpServers.includes(serverName)) return;
-        setConfig((prev) => ({ ...prev, mcpServers: [...prev.mcpServers, serverName] }));
-    };
-
-    const removeMcpServer = (serverName: string) => {
-        setConfig((prev) => ({
-            ...prev,
-            mcpServers: prev.mcpServers.filter((s) => s !== serverName),
-        }));
-    };
-
-    const addKnowledgeBase = (kbId: string | undefined) => {
-        if (!kbId) return;
-        const toolName = `retrieve_from_kb_${kbId}`;
-        if (config.tools.includes(toolName)) return;
-        setConfig((prev) => ({
-            ...prev,
-            tools: [...prev.tools, toolName],
-            toolParameters: {
-                ...prev.toolParameters,
-                [toolName]: {
-                    retrieval_cfg: { vectorSearchConfiguration: { numberOfResults: "5" } },
-                    kb_id: kbId,
-                },
-            },
-        }));
-    };
-
     const updateToolParameter = (toolName: string, paramPath: string, value: any) => {
         setConfig((prev) => {
             if (DANGEROUS_KEYS.has(toolName)) {
@@ -405,13 +338,9 @@ export default function AgentCoreRuntimeCreatorWizard({
     };
 
     // ----------------------------------------------------------------
-    // Derived data for single-agent steps
+    // Derived data shared across architectures
     // ----------------------------------------------------------------
     const knowledgeBaseIsSupported = appConfig?.knowledgeBaseIsSupported ?? false;
-
-    const availableKnowledgeBases = knowledgeBases
-        .filter((kb) => !config.tools.some((tool) => tool === `retrieve_from_kb_${kb.id}`))
-        .map((kb) => ({ label: kb.description || kb.name, value: kb.id }));
 
     const availableToolsOptions = availableTools
         .filter((tool) => !tool.invokesSubAgent && !config.tools.includes(tool.name))
@@ -421,59 +350,13 @@ export default function AgentCoreRuntimeCreatorWizard({
             description: tool.description || undefined,
         }));
 
-    const availableSubAgents = availableAgents
-        .filter(
-            (agent) =>
-                agent.agentName !== config.agentName &&
-                !config.tools.includes(`invoke_subagent_${agent.agentName}`),
-        )
-        .map((agent) => ({ label: agent.agentName, value: agent.agentName }));
-
     const availableMcpServersOptions = availableMcpServers
         .filter((s) => !config.mcpServers.includes(s.name))
         .map((s) => ({ label: s.name, value: s.name, description: s.description || undefined }));
 
-    const selectedMcpServersData = config.mcpServers.map((serverName) => {
-        const serverInfo = availableMcpServers.find((s) => s.name === serverName);
-        return {
-            name: serverName,
-            description: serverInfo?.description || "No description available",
-            mcpUrl: serverInfo?.mcpUrl || "",
-        };
-    });
-
-    const selectedToolsData = config.tools
-        .filter((t) => !t.startsWith("retrieve_from_kb_") && !t.startsWith("invoke_subagent_"))
-        .map((toolName) => {
-            const toolInfo = availableTools.find((t) => t.name === toolName);
-            return {
-                name: toolName,
-                description: toolInfo?.description || "No description available",
-            };
-        });
-
-    const selectedSubAgentsData = config.tools
-        .filter((t) => t.startsWith("invoke_subagent_"))
-        .map((toolName) => ({
-            toolName,
-            agentName: toolName.replace("invoke_subagent_", ""),
-            params: config.toolParameters[toolName],
-        }));
-
-    const selectedKnowledgeBasesData = config.tools
-        .filter((t) => t.startsWith("retrieve_from_kb_"))
-        .map((toolName) => {
-            const kbId = toolName.replace("retrieve_from_kb_", "");
-            const kb = knowledgeBases.find((k) => k.id === kbId);
-            const params = config.toolParameters[toolName];
-            return {
-                toolName,
-                name: kb?.name || kbId,
-                description: kb?.description || "No description available",
-                numberOfResults:
-                    params?.retrieval_cfg?.vectorSearchConfiguration?.numberOfResults || "5",
-            };
-        });
+    const availableKnowledgeBases = knowledgeBases
+        .filter((kb) => !config.tools.some((tool) => tool === `retrieve_from_kb_${kb.id}`))
+        .map((kb) => ({ label: kb.description || kb.name, value: kb.id }));
 
     const currentKbParams = selectedKbForConfig ? config.toolParameters[selectedKbForConfig] : null;
     const currentToolParams = selectedToolForConfig
@@ -539,22 +422,12 @@ export default function AgentCoreRuntimeCreatorWizard({
                   config,
                   setConfig,
                   modelOptions,
-                  availableToolsOptions,
-                  availableSubAgents,
-                  availableMcpServersOptions,
-                  availableKnowledgeBases,
-                  selectedToolsData,
-                  selectedSubAgentsData,
-                  selectedMcpServersData,
-                  selectedKnowledgeBasesData,
+                  availableTools,
+                  availableMcpServers,
+                  availableAgents,
+                  knowledgeBases,
                   knowledgeBaseIsSupported,
                   isCreating,
-                  addTool,
-                  removeTool,
-                  addSubAgent,
-                  addMcpServer,
-                  removeMcpServer,
-                  addKnowledgeBase,
                   openConfigureModal,
               })
             : architectureType === "GRAPH"

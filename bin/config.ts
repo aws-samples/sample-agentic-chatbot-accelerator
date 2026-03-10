@@ -34,14 +34,7 @@ export function getConfig(): SystemConfig {
             "Nova 2 Lite": "[REGION-PREFIX].amazon.nova-2-lite-v1:0",
         },
 
-        toolRegistry: [
-            {
-                name: "invoke_subagent",
-                description:
-                    "Invoke a sub-agent to handle specialized tasks or domain-specific queries that require dedicated processing",
-                invokesSubAgent: true,
-            },
-        ],
+        toolRegistry: [],
 
         // See docs/src/expanding-ai-tools.md#Configuration for an example
         mcpServerRegistry: [],
@@ -62,9 +55,9 @@ export function getConfig(): SystemConfig {
         evaluatorConfig: {
             // Models available for LLM-based evaluations
             supportedModels: {
-            "Claude Haiku 4.5": "[REGION-PREFIX].anthropic.claude-haiku-4-5-20251001-v1:0",
-            "Claude Sonnet 4.5": "[REGION-PREFIX].anthropic.claude-sonnet-4-5-20250929-v1:0",
-            "Nova 2 Lite": "[REGION-PREFIX].amazon.nova-2-lite-v1:0",
+                "Claude Haiku 4.5": "[REGION-PREFIX].anthropic.claude-haiku-4-5-20251001-v1:0",
+                "Claude Sonnet 4.5": "[REGION-PREFIX].anthropic.claude-sonnet-4-5-20250929-v1:0",
+                "Nova 2 Lite": "[REGION-PREFIX].amazon.nova-2-lite-v1:0",
             },
             // Score threshold (0.0-1.0) above which a test case is considered passed
             passThreshold: 0.8,
