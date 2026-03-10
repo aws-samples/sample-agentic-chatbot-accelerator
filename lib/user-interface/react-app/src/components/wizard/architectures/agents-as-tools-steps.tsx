@@ -23,7 +23,7 @@ import {
     AgentsAsToolsConfiguration,
 } from "../types";
 import { AdditionalToolsSection, AgentConfigSection } from "../wizard-shared-components";
-import { STEP_MIN_HEIGHT } from "../wizard-utils";
+import { STEP_MIN_HEIGHT, getReasoningType } from "../wizard-utils";
 
 export interface AgentsAsToolsStepsProps {
     config: AgentCoreRuntimeConfiguration;
@@ -434,13 +434,23 @@ export function getAgentsAsToolsSteps({
                             modelOptions={modelOptions}
                             modelId={agentsAsToolsConfig.modelInferenceParameters.modelId}
                             onModelChange={(modelId) =>
-                                setAgentsAsToolsConfig((prev) => ({
-                                    ...prev,
-                                    modelInferenceParameters: {
-                                        ...prev.modelInferenceParameters,
-                                        modelId,
-                                    },
-                                }))
+                                setAgentsAsToolsConfig((prev) => {
+                                    const newReasoningType = getReasoningType(modelId);
+                                    const oldReasoningType = getReasoningType(
+                                        prev.modelInferenceParameters.modelId,
+                                    );
+                                    const keepBudget =
+                                        newReasoningType !== null &&
+                                        newReasoningType === oldReasoningType;
+                                    return {
+                                        ...prev,
+                                        modelInferenceParameters: {
+                                            ...prev.modelInferenceParameters,
+                                            modelId,
+                                            ...(keepBudget ? {} : { reasoningBudget: undefined }),
+                                        },
+                                    };
+                                })
                             }
                             temperature={
                                 agentsAsToolsConfig.modelInferenceParameters.parameters.temperature
@@ -487,6 +497,18 @@ export function getAgentsAsToolsSteps({
                             useMemory={config.useMemory || false}
                             onUseMemoryChange={(useMemory) =>
                                 setConfig((prev) => ({ ...prev, useMemory }))
+                            }
+                            reasoningBudget={
+                                agentsAsToolsConfig.modelInferenceParameters.reasoningBudget
+                            }
+                            onReasoningBudgetChange={(reasoningBudget) =>
+                                setAgentsAsToolsConfig((prev) => ({
+                                    ...prev,
+                                    modelInferenceParameters: {
+                                        ...prev.modelInferenceParameters,
+                                        reasoningBudget,
+                                    },
+                                }))
                             }
                         />
 
@@ -611,7 +633,21 @@ export function isAgentsAsToolsStepValid(
     if (stepIndex === 1) {
         const hasModel = agentsAsToolsConfig.modelInferenceParameters.modelId.trim() !== "";
         const hasInstructions = agentsAsToolsConfig.instructions.trim() !== "";
-        return hasModel && hasInstructions;
+        if (!hasModel || !hasInstructions) return false;
+
+        // Validate reasoning budget if enabled
+        const budget = agentsAsToolsConfig.modelInferenceParameters.reasoningBudget;
+        if (budget !== undefined) {
+            const rType = getReasoningType(agentsAsToolsConfig.modelInferenceParameters.modelId);
+            if (rType === "int") {
+                return typeof budget === "number" && budget >= 1024;
+            }
+            if (rType === "effort") {
+                return typeof budget === "string" && ["low", "medium", "high"].includes(budget);
+            }
+            return false;
+        }
+        return true;
     }
 
     // Step 2: Review — always valid

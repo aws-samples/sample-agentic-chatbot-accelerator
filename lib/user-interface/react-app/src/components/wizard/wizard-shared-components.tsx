@@ -17,7 +17,11 @@ import {
     Table,
     Textarea,
 } from "@cloudscape-design/components";
-import { CONVERSATION_MANAGER_OPTIONS } from "./wizard-utils";
+import {
+    CONVERSATION_MANAGER_OPTIONS,
+    REASONING_EFFORT_OPTIONS,
+    getReasoningType,
+} from "./wizard-utils";
 
 // -------------------------------------------------------------------
 // AgentConfigSection — Model, Instructions, Conversation Manager, Memory
@@ -40,6 +44,10 @@ export interface AgentConfigSectionProps {
     onConversationManagerChange: (value: "null" | "sliding_window" | "summarizing") => void;
     useMemory: boolean;
     onUseMemoryChange: (checked: boolean) => void;
+    /** Optional reasoning budget — integer (tokens) or string ("low"/"medium"/"high") */
+    reasoningBudget?: number | string;
+    /** Callback when reasoning budget changes; undefined means disabled */
+    onReasoningBudgetChange?: (value: number | string | undefined) => void;
 }
 
 export function AgentConfigSection({
@@ -58,28 +66,104 @@ export function AgentConfigSection({
     onConversationManagerChange,
     useMemory,
     onUseMemoryChange,
+    reasoningBudget,
+    onReasoningBudgetChange,
 }: AgentConfigSectionProps) {
+    const reasoningType = getReasoningType(modelId);
+    const reasoningEnabled = reasoningBudget != null;
+
     return (
         <SpaceBetween direction="vertical" size="l">
             <Container header={<Header variant="h2">Model &amp; Instructions</Header>}>
                 <SpaceBetween direction="vertical" size="l">
                     <ColumnLayout columns={2} variant="text-grid">
-                        <FormField
-                            label="Model"
-                            description={`Select the LLM model for the ${label.toLowerCase()}`}
-                        >
-                            <Select
-                                placeholder="Select a model..."
-                                options={modelOptions}
-                                selectedOption={
-                                    modelOptions.find((opt) => opt.value === modelId) || null
-                                }
-                                onChange={({ detail }) =>
-                                    onModelChange(detail.selectedOption?.value || "")
-                                }
-                                filteringType="auto"
-                            />
-                        </FormField>
+                        <SpaceBetween direction="vertical" size="s">
+                            <FormField
+                                label="Model"
+                                description={`Select the LLM model for the ${label.toLowerCase()}`}
+                            >
+                                <Select
+                                    placeholder="Select a model..."
+                                    options={modelOptions}
+                                    selectedOption={
+                                        modelOptions.find((opt) => opt.value === modelId) || null
+                                    }
+                                    onChange={({ detail }) =>
+                                        onModelChange(detail.selectedOption?.value || "")
+                                    }
+                                    filteringType="auto"
+                                />
+                            </FormField>
+
+                            {reasoningType && onReasoningBudgetChange && (
+                                <>
+                                    <Checkbox
+                                        checked={reasoningEnabled}
+                                        onChange={({ detail }) => {
+                                            if (detail.checked) {
+                                                onReasoningBudgetChange(
+                                                    reasoningType === "int" ? 1024 : "medium",
+                                                );
+                                            } else {
+                                                onReasoningBudgetChange(undefined);
+                                            }
+                                        }}
+                                    >
+                                        Enable extended thinking
+                                    </Checkbox>
+
+                                    {reasoningEnabled && reasoningType === "int" && (
+                                        <FormField
+                                            label="Reasoning Budget (tokens)"
+                                            description="Minimum 1024 tokens"
+                                            errorText={
+                                                typeof reasoningBudget === "number" &&
+                                                reasoningBudget < 1024
+                                                    ? "Budget must be at least 1024 tokens"
+                                                    : ""
+                                            }
+                                        >
+                                            <Input
+                                                type="number"
+                                                value={
+                                                    reasoningBudget != null
+                                                        ? reasoningBudget.toString()
+                                                        : ""
+                                                }
+                                                onChange={({ detail }) => {
+                                                    const val = parseInt(detail.value);
+                                                    if (!isNaN(val)) {
+                                                        onReasoningBudgetChange(val);
+                                                    }
+                                                }}
+                                                step={256}
+                                            />
+                                        </FormField>
+                                    )}
+
+                                    {reasoningEnabled && reasoningType === "effort" && (
+                                        <FormField
+                                            label="Reasoning Effort"
+                                            description="Select the reasoning effort level"
+                                        >
+                                            <Select
+                                                selectedOption={
+                                                    REASONING_EFFORT_OPTIONS.find(
+                                                        (opt) => opt.value === reasoningBudget,
+                                                    ) || null
+                                                }
+                                                onChange={({ detail }) =>
+                                                    onReasoningBudgetChange(
+                                                        detail.selectedOption?.value || "medium",
+                                                    )
+                                                }
+                                                options={REASONING_EFFORT_OPTIONS}
+                                            />
+                                        </FormField>
+                                    )}
+                                </>
+                            )}
+                        </SpaceBetween>
                         <SpaceBetween direction="vertical" size="s">
                             <FormField label="Temperature" description="Controls randomness (0-1)">
                                 <Input

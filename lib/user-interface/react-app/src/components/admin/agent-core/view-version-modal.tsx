@@ -11,6 +11,7 @@ import {
     Modal,
     Select,
     SpaceBetween,
+    StatusIndicator,
     Table,
     Textarea,
 } from "@cloudscape-design/components";
@@ -108,6 +109,43 @@ export default function ViewVersionModal({
         }
 
         return modelId; // fallback to showing the ID if no match found
+    };
+
+    const isThinkingEnabled = (reasoningBudget: number | string | null | undefined): boolean => {
+        return (
+            reasoningBudget !== undefined &&
+            reasoningBudget !== null &&
+            reasoningBudget !== "disabled" &&
+            reasoningBudget !== 0
+        );
+    };
+
+    const renderThinkingStatus = (reasoningBudget: number | string | null | undefined) => {
+        if (isThinkingEnabled(reasoningBudget)) {
+            const budgetLabel =
+                typeof reasoningBudget === "number"
+                    ? `${reasoningBudget} tokens`
+                    : String(reasoningBudget);
+            return (
+                <SpaceBetween direction="vertical" size="xxs">
+                    <StatusIndicator type="success">Enabled</StatusIndicator>
+                    <Box variant="awsui-key-label" display="inline">
+                        Budget:{" "}
+                        <Box display="inline" fontWeight="normal">
+                            {budgetLabel}
+                        </Box>
+                    </Box>
+                </SpaceBetween>
+            );
+        }
+        return <StatusIndicator type="stopped">Disabled</StatusIndicator>;
+    };
+
+    const renderMemoryStatus = (useMemory: boolean | undefined) => {
+        if (useMemory) {
+            return <StatusIndicator type="success">Attached</StatusIndicator>;
+        }
+        return <StatusIndicator type="stopped">Not attached</StatusIndicator>;
     };
 
     // Fetch available MCP servers when modal opens
@@ -290,6 +328,12 @@ export default function ViewVersionModal({
                                 <Box padding="m">{agentConfig.entryAgent}</Box>
                             </FormField>
 
+                            <FormField label="AgentCore Memory">
+                                <Box padding="m">
+                                    {renderMemoryStatus((agentConfig as any).useMemory)}
+                                </Box>
+                            </FormField>
+
                             {agentConfig.agents && agentConfig.agents.length > 0 && (
                                 <FormField label="Inline Agents">
                                     <Table
@@ -308,6 +352,15 @@ export default function ViewVersionModal({
                                                     getModelName(
                                                         item.modelInferenceParameters?.modelId ||
                                                             "",
+                                                    ),
+                                            },
+                                            {
+                                                id: "thinking",
+                                                header: "Thinking",
+                                                cell: (item: any) =>
+                                                    renderThinkingStatus(
+                                                        item.modelInferenceParameters
+                                                            ?.reasoningBudget,
                                                     ),
                                             },
                                             {
@@ -395,7 +448,7 @@ export default function ViewVersionModal({
                         <SpaceBetween direction="vertical" size="m">
                             <FormField label="Model Configuration">
                                 <Box padding="m">
-                                    <ColumnLayout columns={3} variant="text-grid">
+                                    <ColumnLayout columns={4} variant="text-grid">
                                         <div>
                                             <Box variant="awsui-key-label">Model</Box>
                                             <Box>
@@ -419,8 +472,21 @@ export default function ViewVersionModal({
                                                     ?.maxTokens ?? "N/A"}
                                             </Box>
                                         </div>
+                                        <div>
+                                            <Box variant="awsui-key-label">Thinking</Box>
+                                            <Box>
+                                                {renderThinkingStatus(
+                                                    agentConfig.modelInferenceParameters
+                                                        ?.reasoningBudget,
+                                                )}
+                                            </Box>
+                                        </div>
                                     </ColumnLayout>
                                 </Box>
+                            </FormField>
+
+                            <FormField label="AgentCore Memory">
+                                <Box padding="m">{renderMemoryStatus(agentConfig.useMemory)}</Box>
                             </FormField>
 
                             <FormField label="Orchestrator Instructions">
@@ -501,6 +567,12 @@ export default function ViewVersionModal({
                         <SpaceBetween direction="vertical" size="m">
                             <FormField label="Entry Point">
                                 <Box padding="m">{agentConfig.entryPoint}</Box>
+                            </FormField>
+
+                            <FormField label="AgentCore Memory">
+                                <Box padding="m">
+                                    {renderMemoryStatus((agentConfig as any).useMemory)}
+                                </Box>
                             </FormField>
 
                             {agentConfig.nodes && agentConfig.nodes.length > 0 && (
@@ -599,7 +671,7 @@ export default function ViewVersionModal({
                         <SpaceBetween direction="vertical" size="m">
                             <FormField label="Model Configuration">
                                 <Box padding="m">
-                                    <ColumnLayout columns={3} variant="text-grid">
+                                    <ColumnLayout columns={4} variant="text-grid">
                                         <div>
                                             <Box variant="awsui-key-label">Model</Box>
                                             <Box>
@@ -622,8 +694,21 @@ export default function ViewVersionModal({
                                                     .maxTokens ?? "N/A"}
                                             </Box>
                                         </div>
+                                        <div>
+                                            <Box variant="awsui-key-label">Thinking</Box>
+                                            <Box>
+                                                {renderThinkingStatus(
+                                                    agentConfig.modelInferenceParameters
+                                                        .reasoningBudget,
+                                                )}
+                                            </Box>
+                                        </div>
                                     </ColumnLayout>
                                 </Box>
+                            </FormField>
+
+                            <FormField label="AgentCore Memory">
+                                <Box padding="m">{renderMemoryStatus(agentConfig.useMemory)}</Box>
                             </FormField>
 
                             <FormField label="Agent Instructions">
@@ -689,6 +774,12 @@ export default function ViewVersionModal({
                                             },
                                         ]}
                                     />
+                                </FormField>
+                            )}
+
+                            {agentConfig.conversationManager && (
+                                <FormField label="Conversation Manager">
+                                    <Box padding="m">{agentConfig.conversationManager}</Box>
                                 </FormField>
                             )}
                         </SpaceBetween>

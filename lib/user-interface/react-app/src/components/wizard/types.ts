@@ -44,6 +44,7 @@ export interface AgentCoreRuntimeConfiguration {
             temperature: number;
             maxTokens: number;
         };
+        reasoningBudget?: number | string;
     };
     instructions: string;
     tools: string[];
@@ -72,6 +73,7 @@ export interface SwarmAgentDefinition {
     modelInferenceParameters: {
         modelId: string;
         parameters: { temperature: number; maxTokens: number };
+        reasoningBudget?: number | string;
     };
     tools: string[];
     toolParameters: { [toolName: string]: any };
@@ -136,6 +138,7 @@ export interface AgentsAsToolsConfiguration {
     modelInferenceParameters: {
         modelId: string;
         parameters: { temperature: number; maxTokens: number };
+        reasoningBudget?: number | string;
     };
     instructions: string;
     tools?: string[];

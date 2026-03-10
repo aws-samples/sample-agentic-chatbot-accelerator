@@ -15,7 +15,7 @@ import {
 import { KnowledgeBase, McpServer, Tool } from "../../../API";
 import { AgentCoreRuntimeConfiguration } from "../types";
 import { AdditionalToolsSection, AgentConfigSection } from "../wizard-shared-components";
-import { STEP_MIN_HEIGHT } from "../wizard-utils";
+import { STEP_MIN_HEIGHT, getReasoningType } from "../wizard-utils";
 
 interface SingleAgentStepsProps {
     config: AgentCoreRuntimeConfiguration;
@@ -170,13 +170,24 @@ export function getSingleAgentSteps({
                             modelOptions={modelOptions}
                             modelId={config.modelInferenceParameters.modelId}
                             onModelChange={(modelId) =>
-                                setConfig((prev) => ({
-                                    ...prev,
-                                    modelInferenceParameters: {
-                                        ...prev.modelInferenceParameters,
-                                        modelId,
-                                    },
-                                }))
+                                setConfig((prev) => {
+                                    const newReasoningType = getReasoningType(modelId);
+                                    const oldReasoningType = getReasoningType(
+                                        prev.modelInferenceParameters.modelId,
+                                    );
+                                    // Clear reasoning budget if model type changed
+                                    const keepBudget =
+                                        newReasoningType !== null &&
+                                        newReasoningType === oldReasoningType;
+                                    return {
+                                        ...prev,
+                                        modelInferenceParameters: {
+                                            ...prev.modelInferenceParameters,
+                                            modelId,
+                                            ...(keepBudget ? {} : { reasoningBudget: undefined }),
+                                        },
+                                    };
+                                })
                             }
                             temperature={config.modelInferenceParameters.parameters.temperature}
                             onTemperatureChange={(temperature) =>
@@ -215,6 +226,16 @@ export function getSingleAgentSteps({
                             useMemory={config.useMemory || false}
                             onUseMemoryChange={(useMemory) =>
                                 setConfig((prev) => ({ ...prev, useMemory }))
+                            }
+                            reasoningBudget={config.modelInferenceParameters.reasoningBudget}
+                            onReasoningBudgetChange={(reasoningBudget) =>
+                                setConfig((prev) => ({
+                                    ...prev,
+                                    modelInferenceParameters: {
+                                        ...prev.modelInferenceParameters,
+                                        reasoningBudget,
+                                    },
+                                }))
                             }
                         />
                     </SpaceBetween>
@@ -292,12 +313,27 @@ export function isSingleAgentStepValid(
     // Step 0: Agent Configuration
     if (stepIndex === 0) {
         const agentNamePattern = /^[a-zA-Z][a-zA-Z0-9_]{0,47}$/;
-        return (
+        const basicValid =
             config.agentName.trim() !== "" &&
             agentNamePattern.test(config.agentName) &&
             config.instructions.trim() !== "" &&
-            config.modelInferenceParameters.modelId.trim() !== ""
-        );
+            config.modelInferenceParameters.modelId.trim() !== "";
+        if (!basicValid) return false;
+
+        // Validate reasoning budget if enabled
+        const budget = config.modelInferenceParameters.reasoningBudget;
+        if (budget !== undefined) {
+            const rType = getReasoningType(config.modelInferenceParameters.modelId);
+            if (rType === "int") {
+                return typeof budget === "number" && budget >= 1024;
+            }
+            if (rType === "effort") {
+                return typeof budget === "string" && ["low", "medium", "high"].includes(budget);
+            }
+            // Model doesn't support reasoning but budget is set — invalid
+            return false;
+        }
+        return true;
     }
     // Step 1: Additional Tools — always valid (optional)
     // Step 2: Review — always valid

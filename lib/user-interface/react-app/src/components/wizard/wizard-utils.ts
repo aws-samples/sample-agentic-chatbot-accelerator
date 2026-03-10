@@ -60,3 +60,44 @@ export const CONVERSATION_MANAGER_OPTIONS = [
 ];
 
 export const STEP_MIN_HEIGHT = "62vh";
+
+// ---------------------------------------------------------------------------
+// Reasoning budget helpers — keep in sync with backend _INT_BUDGET_MODELS /
+// _EFFORT_BUDGET_MODELS in stream_types.py
+// ---------------------------------------------------------------------------
+
+/** Models that require an integer reasoning budget (minimum 1024 tokens) */
+export const INT_BUDGET_MODEL_FRAGMENTS = [
+    "claude-opus-4-5",
+    "claude-opus-4",
+    "claude-sonnet-4",
+    "claude-sonnet-4-5",
+    "claude-haiku-4-5",
+    "claude-3-7-sonnet",
+];
+
+/** Models that require a ReasoningEffort enum value (low / medium / high) */
+export const EFFORT_BUDGET_MODEL_FRAGMENTS = [
+    "nova-2-lite",
+    "claude-opus-4-6",
+    "claude-sonnet-4-6",
+];
+
+export const REASONING_EFFORT_OPTIONS = [
+    { label: "Low", value: "low" },
+    { label: "Medium", value: "medium" },
+    { label: "High", value: "high" },
+];
+
+/**
+ * Determine what kind of reasoning budget a model supports.
+ * Returns "int" for token-budget models, "effort" for low/medium/high models,
+ * or null if the model does not support reasoning.
+ */
+export function getReasoningType(modelId: string): "int" | "effort" | null {
+    // Check effort models FIRST — their fragments are more specific
+    // (e.g., "claude-opus-4-6" would otherwise match the broader "claude-opus-4")
+    if (EFFORT_BUDGET_MODEL_FRAGMENTS.some((frag) => modelId.includes(frag))) return "effort";
+    if (INT_BUDGET_MODEL_FRAGMENTS.some((frag) => modelId.includes(frag))) return "int";
+    return null;
+}
