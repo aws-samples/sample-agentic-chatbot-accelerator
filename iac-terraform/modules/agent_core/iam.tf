@@ -51,6 +51,7 @@ data "aws_iam_policy_document" "agentcore_execution" {
     resources = [
       aws_ecr_repository.agent_core.arn,
       aws_ecr_repository.swarm_agent_core.arn,
+      aws_ecr_repository.graph_agent_core.arn,
       aws_ecr_repository.agents_as_tools_agent_core.arn,
     ]
   }

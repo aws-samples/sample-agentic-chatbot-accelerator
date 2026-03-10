@@ -49,6 +49,7 @@ module "lambdas" {
   # Container
   container_uri                 = var.container_uri
   swarm_container_uri           = var.swarm_container_uri
+  graph_container_uri           = var.graph_container_uri
   agents_as_tools_container_uri = var.agents_as_tools_container_uri
 
   # DynamoDB tables

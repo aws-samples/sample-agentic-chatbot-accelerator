@@ -55,6 +55,11 @@ variable "swarm_container_uri" {
   type        = string
 }
 
+variable "graph_container_uri" {
+  description = "ECR image URI for graph agent core container"
+  type        = string
+}
+
 variable "agents_as_tools_container_uri" {
   description = "ECR image URI for agents-as-tools agent core container"
   type        = string

@@ -116,6 +116,22 @@ resource "aws_s3_object" "swarm_docker_context" {
   depends_on = [data.archive_file.swarm_docker_context]
 }
 
+data "archive_file" "graph_docker_context" {
+  type        = "zip"
+  source_dir  = local.agent_core_dir
+  output_path = "${path.module}/../../../iac-terraform/build/.graph-docker-context.zip"
+  excludes    = [".git", "__pycache__", "*.pyc", "functions"]
+}
+
+resource "aws_s3_object" "graph_docker_context" {
+  bucket = aws_s3_bucket.build_context.id
+  key    = "graph-agent-core/${local.graph_content_based_tag}.zip"
+  source = data.archive_file.graph_docker_context.output_path
+  etag   = data.archive_file.graph_docker_context.output_md5
+
+  depends_on = [data.archive_file.graph_docker_context]
+}
+
 data "archive_file" "agents_as_tools_docker_context" {
   type        = "zip"
   source_dir  = local.agent_core_dir
@@ -214,6 +230,7 @@ resource "aws_iam_role_policy" "codebuild" {
         Resource = [
           aws_ecr_repository.agent_core.arn,
           aws_ecr_repository.swarm_agent_core.arn,
+          aws_ecr_repository.graph_agent_core.arn,
           aws_ecr_repository.agents_as_tools_agent_core.arn
         ]
       },
@@ -445,6 +462,113 @@ resource "null_resource" "build_swarm_image" {
     aws_codebuild_project.swarm_image_builder,
     aws_s3_object.swarm_docker_context,
     aws_ecr_repository.swarm_agent_core
+  ]
+}
+
+# -----------------------------------------------------------------------------
+# CodeBuild Project — Graph Agent Image
+# -----------------------------------------------------------------------------
+
+resource "aws_codebuild_project" "graph_image_builder" {
+  # checkov:skip=CKV_AWS_316:Privileged mode required for Docker-in-Docker builds
+  name         = "${local.name_prefix}-graph-image-builder"
+  description  = "Builds and pushes the Graph AgentCore Docker image to ECR"
+  service_role = aws_iam_role.codebuild.arn
+
+  build_timeout = 30 # minutes
+
+  source {
+    type     = "S3"
+    location = "${aws_s3_bucket.build_context.id}/graph-agent-core/${local.graph_content_based_tag}.zip"
+
+    buildspec = templatefile("${path.module}/buildspec-image.yml.tpl", {
+      ecr_repo_url    = aws_ecr_repository.graph_agent_core.repository_url
+      aws_region      = data.aws_region.current.id
+      account_id      = data.aws_caller_identity.current.account_id
+      dockerfile_path = "docker-graph/Dockerfile"
+    })
+  }
+
+  artifacts {
+    type = "NO_ARTIFACTS"
+  }
+
+  environment {
+    compute_type    = var.shared.lambda_architecture == "arm64" ? "BUILD_GENERAL1_SMALL" : "BUILD_GENERAL1_SMALL"
+    image           = var.shared.lambda_architecture == "arm64" ? "aws/codebuild/amazonlinux-aarch64-standard:3.0" : "aws/codebuild/amazonlinux-x86_64-standard:5.0"
+    type            = var.shared.lambda_architecture == "arm64" ? "ARM_CONTAINER" : "LINUX_CONTAINER"
+    privileged_mode = true
+
+    environment_variable {
+      name  = "IMAGE_TAG"
+      value = local.graph_content_based_tag
+    }
+  }
+
+  logs_config {
+    cloudwatch_logs {
+      group_name = "/aws/codebuild/${local.name_prefix}-graph-image-builder"
+    }
+  }
+
+  tags = {
+    Name = "${local.name_prefix}-graph-image-builder"
+  }
+}
+
+# -----------------------------------------------------------------------------
+# Trigger: Build Graph Agent Image (only when source changes)
+# -----------------------------------------------------------------------------
+
+resource "null_resource" "build_graph_image" {
+  triggers = {
+    source_hash = local.graph_content_based_tag
+  }
+
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    command     = <<-EOT
+      set -euo pipefail
+
+      echo "Starting CodeBuild for graph agent image (tag: ${local.graph_content_based_tag})..."
+
+      BUILD_ID=$(aws codebuild start-build \
+        --project-name "${aws_codebuild_project.graph_image_builder.name}" \
+        --source-location-override "${aws_s3_bucket.build_context.id}/graph-agent-core/${local.graph_content_based_tag}.zip" \
+        --environment-variables-override "name=IMAGE_TAG,value=${local.graph_content_based_tag},type=PLAINTEXT" \
+        --query 'build.id' --output text)
+
+      echo "Build started: $BUILD_ID"
+      echo "Waiting for build to complete..."
+
+      while true; do
+        STATUS=$(aws codebuild batch-get-builds --ids "$BUILD_ID" \
+          --query 'builds[0].buildStatus' --output text)
+        case "$STATUS" in
+          SUCCEEDED)
+            echo "✅ Graph agent image build succeeded!"
+            break
+            ;;
+          FAILED|FAULT|STOPPED|TIMED_OUT)
+            echo "❌ Graph build failed with status: $STATUS"
+            LOG_URL=$(aws codebuild batch-get-builds --ids "$BUILD_ID" \
+              --query 'builds[0].logs.deepLink' --output text)
+            echo "Build logs: $LOG_URL"
+            exit 1
+            ;;
+          *)
+            echo "  Build status: $STATUS (waiting...)"
+            sleep 15
+            ;;
+        esac
+      done
+    EOT
+  }
+
+  depends_on = [
+    aws_codebuild_project.graph_image_builder,
+    aws_s3_object.graph_docker_context,
+    aws_ecr_repository.graph_agent_core
   ]
 }
 

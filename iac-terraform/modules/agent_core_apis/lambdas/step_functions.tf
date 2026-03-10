@@ -364,6 +364,7 @@ resource "aws_lambda_function" "create_runtime_version" {
       REGION_NAME                   = data.aws_region.current.id
       CONTAINER_URI                 = var.container_uri
       SWARM_CONTAINER_URI           = var.swarm_container_uri
+      GRAPH_CONTAINER_URI           = var.graph_container_uri
       AGENTS_AS_TOOLS_CONTAINER_URI = var.agents_as_tools_container_uri
       AGENT_CORE_RUNTIME_ROLE_ARN   = var.agent_core_execution_role_arn
       AGENT_CORE_RUNTIME_TABLE      = var.agent_core_runtime_table_name

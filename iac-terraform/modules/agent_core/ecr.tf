@@ -148,6 +148,75 @@ resource "aws_ecr_lifecycle_policy" "swarm_agent_core" {
 }
 
 # -----------------------------------------------------------------------------
+# ECR Repository for Graph Agent Runtime Container
+# -----------------------------------------------------------------------------
+
+resource "aws_ecr_repository" "graph_agent_core" {
+  # checkov:skip=CKV_AWS_51:Mutable tags required for iterative development with "latest" tag
+  name                 = "${local.name_prefix}-graph-agent-core"
+  image_tag_mutability = "MUTABLE"
+  force_delete         = true # Allow deletion even with images present
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  encryption_configuration {
+    encryption_type = "KMS"
+    kms_key         = var.kms_key_arn
+  }
+
+  tags = {
+    Name = "${local.name_prefix}-graph-agent-core"
+  }
+}
+
+# Repository policy to allow Bedrock AgentCore service to pull images
+resource "aws_ecr_repository_policy" "graph_agent_core" {
+  repository = aws_ecr_repository.graph_agent_core.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "AllowBedrockAgentCorePull"
+        Effect = "Allow"
+        Principal = {
+          Service = "bedrock-agentcore.amazonaws.com"
+        }
+        Action = [
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+          "ecr:BatchCheckLayerAvailability"
+        ]
+      }
+    ]
+  })
+}
+
+# Lifecycle policy to limit the number of untagged images
+resource "aws_ecr_lifecycle_policy" "graph_agent_core" {
+  repository = aws_ecr_repository.graph_agent_core.name
+
+  policy = jsonencode({
+    rules = [
+      {
+        rulePriority = 1
+        description  = "Keep last 10 images"
+        selection = {
+          tagStatus   = "any"
+          countType   = "imageCountMoreThan"
+          countNumber = 10
+        }
+        action = {
+          type = "expire"
+        }
+      }
+    ]
+  })
+}
+
+# -----------------------------------------------------------------------------
 # ECR Repository for Agents-as-Tools Agent Runtime Container
 # -----------------------------------------------------------------------------
 
@@ -227,6 +296,7 @@ locals {
 
   docker_dir                 = "${local.agent_core_dir}/docker"
   swarm_docker_dir           = "${local.agent_core_dir}/docker-swarm"
+  graph_docker_dir           = "${local.agent_core_dir}/docker-graph"
   agents_as_tools_docker_dir = "${local.agent_core_dir}/docker-agents-as-tools"
   shared_dir                 = "${local.agent_core_dir}/shared"
 
@@ -263,6 +333,19 @@ locals {
   swarm_content_based_tag = substr(local.swarm_docker_source_hash, 0, 12)
 
   swarm_container_uri = var.swarm_ecr_image_uri != null ? var.swarm_ecr_image_uri : "${aws_ecr_repository.swarm_agent_core.repository_url}:${local.swarm_content_based_tag}"
+
+  # --- Graph container ---
+  graph_docker_source_hash = sha256(join("", [
+    filesha256("${local.graph_docker_dir}/Dockerfile"),
+    filesha256("${local.graph_docker_dir}/requirements.txt"),
+    filesha256("${local.graph_docker_dir}/app.py"),
+    sha256(join("", [for f in sort(fileset("${local.graph_docker_dir}/src", "**")) : filesha256("${local.graph_docker_dir}/src/${f}")])),
+    local.shared_source_hash,
+  ]))
+
+  graph_content_based_tag = substr(local.graph_docker_source_hash, 0, 12)
+
+  graph_container_uri = var.graph_ecr_image_uri != null ? var.graph_ecr_image_uri : "${aws_ecr_repository.graph_agent_core.repository_url}:${local.graph_content_based_tag}"
 
   # --- Agents-as-Tools container ---
   agents_as_tools_docker_source_hash = sha256(join("", [
