@@ -54,6 +54,7 @@ def create_agent(
         max_tokens=configuration.modelInferenceParameters.parameters.maxTokens,
         temperature=configuration.modelInferenceParameters.parameters.temperature,
         stop_sequences=configuration.modelInferenceParameters.parameters.stopSequences,
+        reasoning_budget=configuration.modelInferenceParameters.reasoningBudget,
         enable_caching=True,
     )
 
