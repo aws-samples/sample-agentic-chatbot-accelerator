@@ -18,9 +18,31 @@ from strands.agent.conversation_manager import (
 from strands.models import BedrockModel
 
 from .base_constants import RETRIEVE_FROM_KB_PREFIX
+from .stream_types import ReasoningEffort
 
 if TYPE_CHECKING:
     from logging import Logger
+
+# Models that require an integer reasoning budget (minimum 1024 tokens)
+_INT_BUDGET_MODELS_ANTHROPIC = {
+    "claude-opus-4-5",
+    "claude-opus-4",
+    "claude-sonnet-4",
+    "claude-sonnet-4-5",
+    "claude-sonnet-4-6",
+    "claude-haiku-4-5",
+    "claude-3-7-sonnet",
+}
+
+# Models that require a ReasoningEffort enum value
+_EFFORT_BUDGET_MODELS_ANTHROPIC = {
+    "claude-sonnet-4-6",
+    "claude-opus-4-6",
+}
+
+_EFFORT_BUDGET_MODELS_NOVA = {
+    "nova-2-lite",
+}
 
 
 class BaseAgentFactory:
@@ -48,6 +70,8 @@ class BaseAgentFactory:
         "anthropic.claude-3-5-haiku-20241022-v1:0",
         "anthropic.claude-haiku-4-5-20251001-v1:0",
         "anthropic.claude-sonnet-4-5-20250929-v1:0",
+        "anthropic.claude-opus-4-6-v1",
+        "anthropic.claude-sonnet-4-6",
     )
 
     @staticmethod
@@ -57,6 +81,7 @@ class BaseAgentFactory:
         temperature: float,
         stop_sequences: list[str] | None = None,
         enable_caching: bool = True,
+        reasoning_budget: ReasoningEffort | int | None = None,
     ) -> BedrockModel:
         """Create a BedrockModel instance with optional prompt caching.
 
@@ -88,6 +113,37 @@ class BaseAgentFactory:
         ):
             model_args["cache_prompt"] = "default"
 
+        if reasoning_budget is not None:
+            reasoning_cfg: dict = {"type": "enabled"}
+            reasoning_val = (
+                reasoning_budget.value
+                if isinstance(reasoning_budget, ReasoningEffort)
+                else reasoning_budget
+            )
+
+            set_additional_args = True
+            temp_add_args = {}
+            if any(m in model_id for m in _EFFORT_BUDGET_MODELS_ANTHROPIC):
+                reasoning_key = "thinking"
+                reasoning_cfg["type"] = "adaptive"
+                temp_add_args["output_config"] = {"effort": reasoning_val}
+                del model_args["temperature"]
+                # If thinking is enabled with Anthropic models, temperature cannot be set
+            elif any(m in model_id for m in _INT_BUDGET_MODELS_ANTHROPIC):
+                reasoning_key = "thinking"
+                reasoning_cfg["budget_tokens"] = reasoning_val
+                # If thinking is enabled with Anthropic models, temperature cannot be set
+                del model_args["temperature"]
+            elif any(m in model_id for m in _EFFORT_BUDGET_MODELS_NOVA):
+                reasoning_key = "reasoningConfig"
+                reasoning_cfg["maxReasoningEffort"] = reasoning_val
+            else:
+                set_additional_args = False
+
+            if set_additional_args:
+                model_args["additional_request_fields"] = temp_add_args | {
+                    reasoning_key: reasoning_cfg
+                }
         return BedrockModel(**model_args)
 
     @staticmethod

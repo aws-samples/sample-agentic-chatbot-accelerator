@@ -10,7 +10,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 
 class EStreamEvent(Enum):
@@ -69,16 +69,70 @@ class InferenceConfig(BaseModel):
     stopSequences: Optional[list[str]] = None
 
 
+class ReasoningEffort(Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+# Models that require an integer reasoning budget (minimum 1024 tokens)
+_INT_BUDGET_MODELS = {
+    "claude-opus-4-5",
+    "claude-opus-4",
+    "claude-sonnet-4",
+    "claude-sonnet-4-5",
+    "claude-haiku-4-5",
+    "claude-3-7-sonnet",
+}
+
+# Models that require a ReasoningEffort enum value
+_EFFORT_BUDGET_MODELS = {
+    "nova-2-lite",
+    "claude-opus-4-6",
+    "claude-sonnet-4-6",
+}
+
+
 class ModelConfiguration(BaseModel):
     """Configuration class for model inference settings.
 
     Attributes:
         modelId (str): Identifier for the model to be used
         parameters (InferenceConfig): Configuration parameters for model inference
+        reasoningBudget (Optional[int | ReasoningEffort]): budget reserved for model reasoning,
+            default to None, that means no reasoning enabled
     """
 
     modelId: str
     parameters: InferenceConfig
+    reasoningBudget: Optional[int | ReasoningEffort] = None
+
+    @model_validator(mode="after")
+    def validate_reasoning_budget(self) -> "ModelConfiguration":
+        if self.reasoningBudget is None:
+            return self
+
+        # Check effort models FIRST — their fragments are more specific
+        # (e.g., "claude-opus-4-6" would otherwise match the broader "claude-opus-4")
+        uses_effort = any(m in self.modelId for m in _EFFORT_BUDGET_MODELS)
+        uses_int = any(m in self.modelId for m in _INT_BUDGET_MODELS)
+
+        if uses_effort:
+            if not isinstance(self.reasoningBudget, ReasoningEffort):
+                raise ValueError(
+                    f"reasoningBudget must be a ReasoningEffort value for model '{self.modelId}'"
+                )
+        elif uses_int:
+            if not isinstance(self.reasoningBudget, int) or self.reasoningBudget < 1024:
+                raise ValueError(
+                    f"reasoningBudget must be an integer >= 1024 for model '{self.modelId}'"
+                )
+        else:
+            raise ValueError(
+                f"reasoningBudget is not supported for model '{self.modelId}'"
+            )
+
+        return self
 
 
 class Token(BaseModel):

@@ -133,6 +133,7 @@ def _create_agent_from_definition(
         max_tokens=agent_def.modelInferenceParameters.parameters.maxTokens,
         temperature=agent_def.modelInferenceParameters.parameters.temperature,
         stop_sequences=agent_def.modelInferenceParameters.parameters.stopSequences,
+        reasoning_budget=agent_def.modelInferenceParameters.reasoningBudget,
         enable_caching=True,
     )
     tools = _initialize_tools(agent_def, mcp_client_manager, logger)
