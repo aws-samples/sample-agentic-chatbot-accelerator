@@ -74,11 +74,13 @@ class InvokeSubAgentTool(AbstractToolObject):
                 "IMPORTANT: You MUST include ALL relevant details, parameters, "
                 "and data from the user's request that the sub-agent needs to "
                 "fulfill its role. The sub-agent has NO access to the conversation "
-                "history — if you omit information, it will be lost."
+                "history — if you omit information, it will be lost. "
+                f"The sub-agent role is: {agent_role}"
             ),
             name=f"{self.__subagent_prefix__}_{agent_runtime}",
             schema=tool_schema,
             context=True,
+            is_async=True,
         )
 
     def _tool_implementation(self, query: str, tool_context: ToolContext) -> str:
