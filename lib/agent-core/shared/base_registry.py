@@ -14,6 +14,8 @@ This module provides:
 """
 from __future__ import annotations
 
+import asyncio
+import functools
 import json
 import os
 import uuid
@@ -188,6 +190,9 @@ class AbstractToolObject(ABC):
         name (str): The name identifier for the tool
         context (bool): Whether to include tool context in the implementation
         schema (Optional[JSONSchema]): Optional JSON schema for input validation
+        is_async (bool): If True, wraps the synchronous _tool_implementation in an
+            async function using asyncio.to_thread so that Strands can invoke
+            it concurrently alongside other async tools. Defaults to False.
 
     Attributes:
         _tool (DecoratedFunctionTool): The decorated tool implementation
@@ -199,10 +204,22 @@ class AbstractToolObject(ABC):
         name: str,
         context: bool = False,
         schema: Optional[JSONSchema] = None,
+        is_async: bool = False,
     ) -> None:
+        if is_async:
+            sync_impl = self._tool_implementation
+
+            @functools.wraps(sync_impl)
+            async def _async_wrapper(**kwargs):
+                return await asyncio.to_thread(sync_impl, **kwargs)
+
+            target = _async_wrapper
+        else:
+            target = self._tool_implementation
+
         self._tool = tool(
             name=name, description=description, context=context, inputSchema=schema
-        )(self._tool_implementation)
+        )(target)
 
     def get_tool_description(self) -> str:
         """Gets the description of the tool.

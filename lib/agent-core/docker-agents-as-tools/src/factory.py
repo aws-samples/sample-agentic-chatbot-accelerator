@@ -149,7 +149,7 @@ def _initialize_tools(
                 agent_runtime=sub_agent.runtimeId,
                 agent_role=sub_agent.role,
                 qualifier=sub_agent.endpoint,
-            )
+            ).tool
         )
 
     return tools
