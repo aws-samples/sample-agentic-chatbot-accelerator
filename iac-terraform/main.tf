@@ -295,6 +295,7 @@ module "agent_core_apis" {
   # Container (includes image tag like :latest)
   container_uri                 = module.agent_core.container_uri
   swarm_container_uri           = module.agent_core.swarm_container_uri
+  graph_container_uri           = module.agent_core.graph_container_uri
   agents_as_tools_container_uri = module.agent_core.agents_as_tools_container_uri
 
   # DynamoDB tables

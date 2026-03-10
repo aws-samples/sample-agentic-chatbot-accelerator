@@ -110,6 +110,30 @@ output "swarm_docker_image_tag" {
 }
 
 # -----------------------------------------------------------------------------
+# Graph ECR Repository Outputs
+# -----------------------------------------------------------------------------
+
+output "graph_ecr_repository_url" {
+  description = "URL of the ECR repository for graph agent runtime container images"
+  value       = aws_ecr_repository.graph_agent_core.repository_url
+}
+
+output "graph_ecr_repository_arn" {
+  description = "ARN of the graph ECR repository"
+  value       = aws_ecr_repository.graph_agent_core.arn
+}
+
+output "graph_container_uri" {
+  description = "Full container image URI for the graph agent runtime"
+  value       = local.graph_container_uri
+}
+
+output "graph_docker_image_tag" {
+  description = "Content-based Docker image tag for the graph container (derived from hash of Docker source files)"
+  value       = local.graph_content_based_tag
+}
+
+# -----------------------------------------------------------------------------
 # Agents-as-Tools ECR Repository Outputs
 # -----------------------------------------------------------------------------
 
