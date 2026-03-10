@@ -16,19 +16,16 @@ from __future__ import annotations
 
 import asyncio
 import functools
-import json
 import os
-import uuid
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
 import boto3
 from botocore.exceptions import ClientError
-from strands import ToolContext, tool
+from strands import tool
 
 from .base_constants import (
     DYNAMODB_SCAN_LIMIT,
-    INVOKE_SUBAGENT_PREFIX,
     RETRIEVE_FROM_KB_PREFIX,
 )
 from .kb_types import RetrievalConfiguration
@@ -420,105 +417,6 @@ class RetrieverTool(AbstractToolObject):
             return results[:top_k]
 
 
-class InvokeSubAgentTool(AbstractToolObject):
-    """A tool for invoking sub-agents to process specialized tasks.
-
-    This class enables delegation of specific queries to specialized sub-agents hosted on Amazon Bedrock AgentCore.
-
-    Args:
-        agent_name (str): The name identifier of the sub-agent
-        agent_role (str): Description of the sub-agent's role and capabilities
-        qualifier (str, optional): Agent version qualifier. Defaults to "DEFAULT"
-    """
-
-    def __init__(
-        self,
-        agent_name: str,
-        agent_role: str,
-        qualifier: str = "DEFAULT",
-    ) -> None:
-        self._agent_name = agent_name
-        self._agent_runtime_arn = self._fetch_agent_runtime()
-        if self._agent_runtime_arn is None:
-            raise RuntimeError(f"Agent runtime not found for agent name: {agent_name}")
-        self._qualifier = qualifier
-
-        super().__init__(
-            description=agent_role,
-            name=f"{INVOKE_SUBAGENT_PREFIX}_{agent_name}",
-            context=True,
-        )
-
-    def _fetch_agent_runtime(self) -> str | None:
-        """
-        Map agent name to runtime ARN.
-
-        Returns:
-            The agent runtime ID if found, None otherwise.
-        """
-        acc_client = get_agentcore_control_client()
-        next_token = None
-        agent_runtime_id = None
-        while True:
-            api_arguments = {"maxResults": 10}
-            if next_token:
-                api_arguments["nextToken"] = next_token
-            response = acc_client.list_agent_runtimes(**api_arguments)
-            next_token = response.get("nextToken")
-            for elem in response.get("agentRuntimes", []):
-                if elem["agentRuntimeName"] == self._agent_name:
-                    agent_runtime_id = elem["agentRuntimeId"]
-
-            if not next_token or agent_runtime_id:
-                break
-
-        return agent_runtime_id
-
-    def _tool_implementation(self, query: str, tool_context: ToolContext) -> str:
-        """Invokes a sub-agent to process the given query.
-
-        Args:
-            query (str): Stringified JSON that contains the payload specified in the tool description.
-            tool_context (ToolContext): Context containing user and session information.
-
-        Returns:
-            str: The response from the sub-agent, or an error message if the sub-agent fails.
-
-        Raises:
-            Exception: If the sub-agent encounters an error during processing.
-        """
-        ac_client = get_agentcore_client()
-        user_id = tool_context.invocation_state.get("userId", "default")
-        session_id = tool_context.invocation_state.get("sessionId", str(uuid.uuid4()))
-        session_id += f"-sa-{self._agent_name}"
-
-        try:
-            payload = json.dumps(
-                {
-                    "prompt": query,
-                    "userId": user_id,
-                }
-            ).encode()
-
-            response = ac_client.invoke_agent_runtime(
-                agentRuntimeArn=self._agent_runtime_arn,
-                runtimeSessionId=session_id,
-                runtimeUserId=user_id,
-                payload=payload,
-                qualifier=self._qualifier,
-                accountId=ACCOUNT_ID,
-            )
-            response_body = response["response"].read()
-            sub_agent_response = json.loads(response_body)
-        except ClientError as err:
-            sub_agent_response = (
-                f"Error in the sub-agent responsible for "
-                f"{self.get_tool_description()}: {str(err)}"
-            )
-
-        return sub_agent_response
-
-
 ## Tool Factory ##
 
 
@@ -557,32 +455,10 @@ class ToolFactory:
     #     """
     #     return get_weather_forecast
 
-    @staticmethod
-    def create_invoke_subagent_tool(
-        agentName: str, qualifier: str, role: str
-    ) -> Callable:
-        """Creates a tool instance for invoking a sub-agent.
-
-        Args:
-            agentName (str): Name of the sub-agent to invoke.
-            qualifier (int): The version of the Bedrock AgentCore Runtime endpoint.
-            role (str): Role assigned to the sub-agent, used for tool description
-
-        Returns:
-            Callable: A callable tool instance that can invoke the specified sub-agent.
-        """
-        tool_instance = InvokeSubAgentTool(
-            agent_name=agentName,
-            agent_role=role,
-            qualifier=qualifier,
-        )
-        return tool_instance.tool
-
 
 # Tool name to factory mapping
 TOOL_FACTORY_MAP = {
     # "get_weather_forecast": ToolFactory.create_get_weather_forecast,
-    "invoke_subagent": ToolFactory.create_invoke_subagent_tool,
 }
 
 
