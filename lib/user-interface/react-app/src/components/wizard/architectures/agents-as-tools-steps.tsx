@@ -573,6 +573,7 @@ export function getAgentsAsToolsSteps({
                                     {JSON.stringify(
                                         {
                                             agentName: config.agentName,
+                                            ...(config.useMemory ? { useMemory: true } : {}),
                                             architectureType: "AGENTS_AS_TOOLS",
                                             agentsAsToolsConfig: buildPreviewConfig(),
                                         },

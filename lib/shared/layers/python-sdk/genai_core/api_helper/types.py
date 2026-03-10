@@ -543,6 +543,7 @@ class AgentsAsToolsConfiguration(BaseModel):
         toolParameters: Optional parameters for additional tools.
         mcpServers: Optional list of MCP server names.
         conversationManager: How to manage conversation history.
+        useMemory: Whether to create and attach AgentCore Memory to the runtime.
     """
 
     agentsAsTools: list[AgentAsToolReference] = Field(..., min_length=1)
@@ -554,6 +555,7 @@ class AgentsAsToolsConfiguration(BaseModel):
     conversationManager: EConversationManagerType = (
         EConversationManagerType.SLIDING_WINDOW
     )
+    useMemory: bool = False
 
     @model_validator(mode="after")
     def validate_tool_parameters(self):

@@ -78,7 +78,8 @@ resource "aws_bedrockagentcore_agent_runtime" "default" {
 
   depends_on = [
     aws_iam_role_policy.execution,
-    aws_bedrockagentcore_memory.default
+    aws_bedrockagentcore_memory.default,
+    null_resource.build_agent_image
   ]
 }
 

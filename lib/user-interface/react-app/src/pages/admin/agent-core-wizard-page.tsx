@@ -101,6 +101,7 @@ export default function AgentCoreWizardPage() {
                         agentName: fromAgentName,
                         architectureType: "AGENTS_AS_TOOLS",
                         agentsAsToolsConfig: rawConfig,
+                        useMemory: rawConfig.useMemory || false,
                         instructions: "",
                         tools: [],
                         toolParameters: {},
@@ -151,6 +152,10 @@ export default function AgentCoreWizardPage() {
             } else if (architectureType === "AGENTS_AS_TOOLS" && agentsAsToolsConfig) {
                 // Clean the config: omit empty optional fields to match backend expectations
                 const cleanConfig: Record<string, any> = { ...agentsAsToolsConfig };
+                // Include useMemory from top-level config (it lives on config, not agentsAsToolsConfig)
+                if (config.useMemory) {
+                    cleanConfig.useMemory = true;
+                }
                 if (!cleanConfig.tools || cleanConfig.tools.length === 0) {
                     delete cleanConfig.tools;
                     delete cleanConfig.toolParameters;
