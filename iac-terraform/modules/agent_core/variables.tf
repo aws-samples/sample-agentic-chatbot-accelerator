@@ -123,6 +123,12 @@ variable "swarm_ecr_image_uri" {
   default     = null
 }
 
+variable "agents_as_tools_ecr_image_uri" {
+  description = "Full ECR image URI for the agents-as-tools agent runtime container. If not provided, a new ECR repository will be created."
+  type        = string
+  default     = null
+}
+
 # -----------------------------------------------------------------------------
 # Tagging Configuration
 # Used for IAM policy scoping

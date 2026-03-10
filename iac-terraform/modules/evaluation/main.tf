@@ -91,6 +91,7 @@ resource "aws_s3_bucket_policy" "evaluations_logging" {
 
 resource "aws_s3_bucket" "evaluations" {
   # checkov:skip=CKV_AWS_144:Cross-region replication not needed
+  force_destroy = true # Allow deletion even with objects present (Lambda code, evaluation results)
   # checkov:skip=CKV_AWS_145:S3 managed encryption sufficient
   # checkov:skip=CKV2_AWS_62:Event notifications not needed
   # checkov:skip=CKV2_AWS_61:Lifecycle configuration not needed

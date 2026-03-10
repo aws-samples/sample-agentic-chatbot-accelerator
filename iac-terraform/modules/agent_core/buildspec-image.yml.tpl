@@ -23,7 +23,7 @@ phases:
   build:
     commands:
       - 'echo "Building Docker image..."'
-      - 'docker build -t "$ECR_REPO_URL:$IMAGE_TAG" .'
+      - 'docker build -f "${dockerfile_path}" -t "$ECR_REPO_URL:$IMAGE_TAG" .'
       - 'echo "Build complete."'
 
   post_build:

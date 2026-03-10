@@ -359,21 +359,22 @@ resource "aws_lambda_function" "create_runtime_version" {
 
   environment {
     variables = {
-      POWERTOOLS_SERVICE_NAME     = "startRuntimeCreation"
-      POWERTOOLS_LOG_LEVEL        = "INFO"
-      REGION_NAME                 = data.aws_region.current.id
-      CONTAINER_URI               = var.container_uri
-      SWARM_CONTAINER_URI         = var.swarm_container_uri
-      AGENT_CORE_RUNTIME_ROLE_ARN = var.agent_core_execution_role_arn
-      AGENT_CORE_RUNTIME_TABLE    = var.agent_core_runtime_table_name
-      TOOL_REGISTRY_TABLE         = var.tool_registry_table_name
-      MCP_SERVER_REGISTRY_TABLE   = var.mcp_server_registry_table_name
-      ACCOUNT_ID                  = data.aws_caller_identity.current.account_id
-      ENVIRONMENT_TAG             = var.environment_tag
-      STACK_TAG                   = var.stack_tag
-      AGENT_TOOLS_TOPIC_ARN       = var.agent_tools_topic_arn
-      AGENTS_TABLE_NAME           = var.agent_core_runtime_table_name
-      AGENTS_SUMMARY_TABLE_NAME   = var.agent_core_summary_table_name
+      POWERTOOLS_SERVICE_NAME       = "startRuntimeCreation"
+      POWERTOOLS_LOG_LEVEL          = "INFO"
+      REGION_NAME                   = data.aws_region.current.id
+      CONTAINER_URI                 = var.container_uri
+      SWARM_CONTAINER_URI           = var.swarm_container_uri
+      AGENTS_AS_TOOLS_CONTAINER_URI = var.agents_as_tools_container_uri
+      AGENT_CORE_RUNTIME_ROLE_ARN   = var.agent_core_execution_role_arn
+      AGENT_CORE_RUNTIME_TABLE      = var.agent_core_runtime_table_name
+      TOOL_REGISTRY_TABLE           = var.tool_registry_table_name
+      MCP_SERVER_REGISTRY_TABLE     = var.mcp_server_registry_table_name
+      ACCOUNT_ID                    = data.aws_caller_identity.current.account_id
+      ENVIRONMENT_TAG               = var.environment_tag
+      STACK_TAG                     = var.stack_tag
+      AGENT_TOOLS_TOPIC_ARN         = var.agent_tools_topic_arn
+      AGENTS_TABLE_NAME             = var.agent_core_runtime_table_name
+      AGENTS_SUMMARY_TABLE_NAME     = var.agent_core_summary_table_name
     }
   }
 

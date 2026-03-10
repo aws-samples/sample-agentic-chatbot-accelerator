@@ -110,6 +110,30 @@ output "swarm_docker_image_tag" {
 }
 
 # -----------------------------------------------------------------------------
+# Agents-as-Tools ECR Repository Outputs
+# -----------------------------------------------------------------------------
+
+output "agents_as_tools_ecr_repository_url" {
+  description = "URL of the ECR repository for agents-as-tools agent runtime container images"
+  value       = aws_ecr_repository.agents_as_tools_agent_core.repository_url
+}
+
+output "agents_as_tools_ecr_repository_arn" {
+  description = "ARN of the agents-as-tools ECR repository"
+  value       = aws_ecr_repository.agents_as_tools_agent_core.arn
+}
+
+output "agents_as_tools_container_uri" {
+  description = "Full container image URI for the agents-as-tools agent runtime"
+  value       = local.agents_as_tools_container_uri
+}
+
+output "agents_as_tools_docker_image_tag" {
+  description = "Content-based Docker image tag for the agents-as-tools container (derived from hash of Docker source files)"
+  value       = local.agents_as_tools_content_based_tag
+}
+
+# -----------------------------------------------------------------------------
 # IAM Role Outputs
 # -----------------------------------------------------------------------------
 
