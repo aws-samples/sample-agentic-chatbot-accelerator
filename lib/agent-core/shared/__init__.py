@@ -8,7 +8,6 @@
 from .agentcore_memory import create_session_manager
 from .base_callbacks import FormatCitations
 from .base_constants import (
-    INVOKE_SUBAGENT_PREFIX,
     RETRIEVE_FROM_KB_PREFIX,
     TOOL_DESCRIPTIONS,
 )
@@ -59,7 +58,6 @@ __all__ = [
     # Base callbacks
     "FormatCitations",
     # Base constants
-    "INVOKE_SUBAGENT_PREFIX",
     "RETRIEVE_FROM_KB_PREFIX",
     "TOOL_DESCRIPTIONS",
     # Bedrock Knowledge Base Types

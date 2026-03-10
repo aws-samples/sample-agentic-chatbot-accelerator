@@ -17,7 +17,7 @@ from strands.agent.conversation_manager import (
 )
 from strands.models import BedrockModel
 
-from .base_constants import INVOKE_SUBAGENT_PREFIX, RETRIEVE_FROM_KB_PREFIX
+from .base_constants import RETRIEVE_FROM_KB_PREFIX
 
 if TYPE_CHECKING:
     from logging import Logger
@@ -119,7 +119,6 @@ class BaseAgentFactory:
 
     @staticmethod
     def initialize_kb_tool(
-        tool_name: str,
         params: dict,
         available_tools: dict,
         logger: Logger,
@@ -128,7 +127,6 @@ class BaseAgentFactory:
         """Initialize a Knowledge Base retrieval tool.
 
         Args:
-            tool_name (str): Name of the KB tool
             params (dict): Tool parameters containing kb_id and retrieval_cfg
             available_tools (dict): Registry of available tools
             logger (Logger): Logger instance
@@ -169,11 +167,8 @@ class BaseAgentFactory:
         Returns:
             Any: Initialized tool instance
         """
-        record = (
-            available_tools[tool_name]
-            if tool_name in available_tools
-            else available_tools[INVOKE_SUBAGENT_PREFIX]
-        )
+        record = available_tools[tool_name]
+
         tool_factory = record["factory"]
 
         context_msg = f" for {context_name}" if context_name else ""
@@ -236,18 +231,9 @@ class BaseAgentFactory:
                     params["retrieval_cfg"]
                 )
                 tool = BaseAgentFactory.initialize_kb_tool(
-                    tool_name, params, available_tools, logger, context_name
+                    params, available_tools, logger, context_name
                 )
                 initialized_tools.append(tool)
-
-            elif tool_name in available_tools or tool_name.startswith(
-                INVOKE_SUBAGENT_PREFIX
-            ):
-                tool = BaseAgentFactory.initialize_standard_tool(
-                    tool_name, params, available_tools, logger, context_name
-                )
-                initialized_tools.append(tool)
-
             else:
                 warning_msg = f"Unknown tool '{tool_name}'"
                 if context_name:
