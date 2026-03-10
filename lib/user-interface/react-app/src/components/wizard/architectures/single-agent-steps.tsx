@@ -6,23 +6,16 @@
 import {
     Alert,
     Box,
-    Button,
-    Checkbox,
     Container,
     FormField,
     Header,
-    Icon,
     Input,
-    Popover,
-    Select,
     SpaceBetween,
-    Table,
-    Textarea,
 } from "@cloudscape-design/components";
-import ReactMarkdown from "react-markdown";
 import { KnowledgeBase, McpServer, Tool } from "../../../API";
 import { AgentCoreRuntimeConfiguration } from "../types";
-import { CONVERSATION_MANAGER_OPTIONS, STEP_MIN_HEIGHT } from "../wizard-utils";
+import { AdditionalToolsSection, AgentConfigSection } from "../wizard-shared-components";
+import { STEP_MIN_HEIGHT } from "../wizard-utils";
 
 interface SingleAgentStepsProps {
     config: AgentCoreRuntimeConfiguration;
@@ -103,6 +96,9 @@ export function getSingleAgentSteps({
     // -------------------------------------------------------------------
     // Derived display data
     // -------------------------------------------------------------------
+    const hasCustomTools = availableTools.filter((t) => !t.invokesSubAgent).length > 0;
+    const hasMcpServers = availableMcpServers.length > 0;
+
     const availableToolsOptions = availableTools
         .filter((tool) => !tool.invokesSubAgent && !config.tools.includes(tool.name))
         .map((tool) => ({
@@ -121,48 +117,29 @@ export function getSingleAgentSteps({
 
     const selectedToolsData = config.tools
         .filter((t) => !t.startsWith("retrieve_from_kb_") && !t.startsWith("invoke_subagent_"))
-        .map((toolName) => {
-            const toolInfo = availableTools.find((t) => t.name === toolName);
-            return {
-                name: toolName,
-                description: toolInfo?.description || "No description available",
-            };
-        });
-
-    const selectedMcpServersData = config.mcpServers.map((serverName) => {
-        const serverInfo = availableMcpServers.find((s) => s.name === serverName);
-        return {
-            name: serverName,
-            description: serverInfo?.description || "No description available",
-            mcpUrl: serverInfo?.mcpUrl || "",
-        };
-    });
+        .map((toolName) => ({ name: toolName }));
 
     const selectedKnowledgeBasesData = config.tools
         .filter((t) => t.startsWith("retrieve_from_kb_"))
         .map((toolName) => {
             const kbId = toolName.replace("retrieve_from_kb_", "");
             const kb = knowledgeBases.find((k) => k.id === kbId);
-            const params = config.toolParameters[toolName];
-            return {
-                toolName,
-                name: kb?.name || kbId,
-                description: kb?.description || "No description available",
-                numberOfResults:
-                    params?.retrieval_cfg?.vectorSearchConfiguration?.numberOfResults || "5",
-            };
+            return { toolName, name: kb?.name || kbId };
         });
 
     // -------------------------------------------------------------------
     // Steps
     // -------------------------------------------------------------------
+    const hasToolsStep = hasCustomTools || hasMcpServers || knowledgeBaseIsSupported;
+
     const steps = [
+        // Step 1: Agent Configuration
         {
-            title: "Basic Configuration",
+            title: "Agent Configuration",
             content: (
                 <div style={{ minHeight: STEP_MIN_HEIGHT }}>
-                    <Container header={<Header variant="h2">Agent Instructions</Header>}>
-                        <SpaceBetween direction="vertical" size="l">
+                    <SpaceBetween direction="vertical" size="l">
+                        <Container header={<Header variant="h2">Agent Name</Header>}>
                             <FormField
                                 label="Agent Name"
                                 description="Enter a unique name for your agent"
@@ -177,487 +154,132 @@ export function getSingleAgentSteps({
                                 <Input
                                     value={config.agentName}
                                     onChange={({ detail }) =>
-                                        setConfig((prev) => ({ ...prev, agentName: detail.value }))
+                                        setConfig((prev) => ({
+                                            ...prev,
+                                            agentName: detail.value,
+                                        }))
                                     }
                                     placeholder="Enter agent name..."
                                     invalid={config.agentName.trim() === ""}
                                 />
                             </FormField>
-                            <FormField
-                                label="Instructions"
-                                description="Provide detailed instructions for your agent"
-                                errorText={
-                                    config.instructions.trim() === ""
-                                        ? "Instructions are required"
-                                        : ""
-                                }
-                            >
-                                <Textarea
-                                    value={config.instructions}
-                                    onChange={({ detail }) =>
-                                        setConfig((prev) => ({
-                                            ...prev,
-                                            instructions: detail.value,
-                                        }))
-                                    }
-                                    placeholder="Enter agent instructions..."
-                                    rows={8}
-                                    invalid={config.instructions.trim() === ""}
-                                />
-                            </FormField>
-                            <FormField label="Conversation Manager">
-                                <Select
-                                    selectedOption={
-                                        CONVERSATION_MANAGER_OPTIONS.find(
-                                            (opt) => opt.value === config.conversationManager,
-                                        ) || null
-                                    }
-                                    onChange={({ detail }) =>
-                                        setConfig((prev) => ({
-                                            ...prev,
-                                            conversationManager: (detail.selectedOption?.value ||
-                                                "sliding_window") as
-                                                | "null"
-                                                | "sliding_window"
-                                                | "summarizing",
-                                        }))
-                                    }
-                                    options={CONVERSATION_MANAGER_OPTIONS}
-                                />
-                            </FormField>
-                        </SpaceBetween>
-                    </Container>
+                        </Container>
+
+                        <AgentConfigSection
+                            label="Agent"
+                            modelOptions={modelOptions}
+                            modelId={config.modelInferenceParameters.modelId}
+                            onModelChange={(modelId) =>
+                                setConfig((prev) => ({
+                                    ...prev,
+                                    modelInferenceParameters: {
+                                        ...prev.modelInferenceParameters,
+                                        modelId,
+                                    },
+                                }))
+                            }
+                            temperature={config.modelInferenceParameters.parameters.temperature}
+                            onTemperatureChange={(temperature) =>
+                                setConfig((prev) => ({
+                                    ...prev,
+                                    modelInferenceParameters: {
+                                        ...prev.modelInferenceParameters,
+                                        parameters: {
+                                            ...prev.modelInferenceParameters.parameters,
+                                            temperature,
+                                        },
+                                    },
+                                }))
+                            }
+                            maxTokens={config.modelInferenceParameters.parameters.maxTokens}
+                            onMaxTokensChange={(maxTokens) =>
+                                setConfig((prev) => ({
+                                    ...prev,
+                                    modelInferenceParameters: {
+                                        ...prev.modelInferenceParameters,
+                                        parameters: {
+                                            ...prev.modelInferenceParameters.parameters,
+                                            maxTokens,
+                                        },
+                                    },
+                                }))
+                            }
+                            instructions={config.instructions}
+                            onInstructionsChange={(instructions) =>
+                                setConfig((prev) => ({ ...prev, instructions }))
+                            }
+                            conversationManager={config.conversationManager}
+                            onConversationManagerChange={(conversationManager) =>
+                                setConfig((prev) => ({ ...prev, conversationManager }))
+                            }
+                            useMemory={config.useMemory || false}
+                            onUseMemoryChange={(useMemory) =>
+                                setConfig((prev) => ({ ...prev, useMemory }))
+                            }
+                        />
+                    </SpaceBetween>
                 </div>
             ),
         },
+        // Step 2: Review (Tools step is conditionally inserted below)
         {
-            title: "Model Configuration",
+            title: "Review",
             content: (
                 <div style={{ minHeight: STEP_MIN_HEIGHT }}>
-                    <Container header={<Header variant="h2">Model & Parameters</Header>}>
-                        <SpaceBetween direction="vertical" size="l">
-                            <FormField label="Model">
-                                <Select
-                                    selectedOption={
-                                        modelOptions.find(
-                                            (opt) =>
-                                                opt.value ===
-                                                config.modelInferenceParameters.modelId,
-                                        ) || null
-                                    }
-                                    onChange={({ detail }) =>
-                                        setConfig((prev) => ({
-                                            ...prev,
-                                            modelInferenceParameters: {
-                                                ...prev.modelInferenceParameters,
-                                                modelId: detail.selectedOption?.value || "",
-                                            },
-                                        }))
-                                    }
-                                    options={modelOptions}
-                                />
-                            </FormField>
-                            <FormField label="Temperature" description="Value between 0 and 1">
-                                <Input
-                                    value={config.modelInferenceParameters.parameters.temperature.toString()}
-                                    onChange={({ detail }) => {
-                                        const value = parseFloat(detail.value) || 0;
-                                        if (value >= 0 && value <= 1) {
-                                            setConfig((prev) => ({
-                                                ...prev,
-                                                modelInferenceParameters: {
-                                                    ...prev.modelInferenceParameters,
-                                                    parameters: {
-                                                        ...prev.modelInferenceParameters.parameters,
-                                                        temperature: value,
-                                                    },
-                                                },
-                                            }));
-                                        }
-                                    }}
-                                    type="number"
-                                    step={0.05}
-                                />
-                            </FormField>
-                            <FormField label="Max Tokens" description="Value between 100 and 4000">
-                                <Input
-                                    value={config.modelInferenceParameters.parameters.maxTokens.toString()}
-                                    onChange={({ detail }) => {
-                                        const value = parseInt(detail.value) || 100;
-                                        if (value >= 100 && value <= 4000) {
-                                            setConfig((prev) => ({
-                                                ...prev,
-                                                modelInferenceParameters: {
-                                                    ...prev.modelInferenceParameters,
-                                                    parameters: {
-                                                        ...prev.modelInferenceParameters.parameters,
-                                                        maxTokens: value,
-                                                    },
-                                                },
-                                            }));
-                                        }
-                                    }}
-                                    type="number"
-                                    step={100}
-                                />
-                            </FormField>
-                        </SpaceBetween>
-                    </Container>
-                </div>
-            ),
-        },
-        {
-            title: "Memory Configuration",
-            content: (
-                <div style={{ minHeight: STEP_MIN_HEIGHT }}>
-                    <Container header={<Header variant="h2">Memory Settings</Header>}>
-                        <SpaceBetween direction="vertical" size="l">
-                            <FormField
-                                label="AgentCore Memory"
-                                description="Create an AgentCore Memory and attach it to your agent Runtime."
-                            >
-                                <Checkbox
-                                    checked={config.useMemory || false}
-                                    onChange={({ detail }) =>
-                                        setConfig((prev) => ({
-                                            ...prev,
-                                            useMemory: detail.checked,
-                                        }))
-                                    }
-                                >
-                                    Enable AgentCore Memory
-                                </Checkbox>
-                            </FormField>
-                            {config.useMemory && (
-                                <Alert type="info" header="AgentCore Memory Enabled">
-                                    AgentCore Memory will be created and attached to your agent
-                                    Runtime. This allows the agent to maintain conversation context
-                                    even when sessions are terminated (due to inactivity or reaching
-                                    max duration).
-                                </Alert>
-                            )}
-                        </SpaceBetween>
-                    </Container>
-                </div>
-            ),
-        },
-        {
-            title: "Tools Configuration",
-            content: (
-                <div style={{ minHeight: STEP_MIN_HEIGHT }}>
-                    <Container header={<Header variant="h2">Configure Tools</Header>}>
-                        <SpaceBetween direction="vertical" size="l">
-                            <FormField label="Available Tools">
-                                <Select
-                                    placeholder={
-                                        availableToolsOptions.length === 0
-                                            ? "No additional tools available"
-                                            : "Select a tool to add"
-                                    }
-                                    options={availableToolsOptions}
-                                    disabled={availableToolsOptions.length === 0}
-                                    onChange={({ detail }) => {
-                                        if (detail.selectedOption) {
-                                            addTool(detail.selectedOption.value);
-                                        }
-                                    }}
-                                    selectedOption={null}
-                                />
-                            </FormField>
-
-                            <Container header={<Header variant="h3">Selected Tools</Header>}>
-                                {selectedToolsData.length === 0 ? (
-                                    <Alert type="info">No tools selected</Alert>
-                                ) : (
-                                    <Table
-                                        columnDefinitions={[
-                                            {
-                                                id: "name",
-                                                header: "Tool Name",
-                                                cell: (item) => item.name,
-                                            },
-                                            {
-                                                id: "description",
-                                                header: "Description",
-                                                cell: (item) => (
-                                                    <Popover
-                                                        dismissButton={false}
-                                                        position="top"
-                                                        size="medium"
-                                                        triggerType="custom"
-                                                        content={
-                                                            <Box padding="xs">
-                                                                <ReactMarkdown>
-                                                                    {item.description}
-                                                                </ReactMarkdown>
-                                                            </Box>
-                                                        }
-                                                    >
-                                                        <Icon name="status-info" />
-                                                    </Popover>
-                                                ),
-                                            },
-                                            {
-                                                id: "actions",
-                                                header: "Actions",
-                                                cell: (item) => (
-                                                    <Button
-                                                        variant="icon"
-                                                        iconName="close"
-                                                        onClick={() => removeTool(item.name)}
-                                                    />
-                                                ),
-                                            },
-                                        ]}
-                                        items={selectedToolsData}
-                                        loadingText="Loading tools"
-                                        empty={
-                                            <Box textAlign="center" color="inherit">
-                                                <b>No tools selected</b>
-                                                <Box
-                                                    padding={{ bottom: "s" }}
-                                                    variant="p"
-                                                    color="inherit"
-                                                >
-                                                    Select tools from the dropdown above.
-                                                </Box>
-                                            </Box>
-                                        }
-                                    />
-                                )}
-                            </Container>
-                        </SpaceBetween>
-                    </Container>
-                </div>
-            ),
-        },
-        {
-            title: "MCP Servers Configuration",
-            content: (
-                <div style={{ minHeight: STEP_MIN_HEIGHT }}>
-                    <Container header={<Header variant="h2">Configure MCP Servers</Header>}>
-                        <SpaceBetween direction="vertical" size="l">
-                            <FormField
-                                label="Available MCP Servers"
-                                description="Model Context Protocol servers provide additional capabilities to your agent"
-                            >
-                                <Select
-                                    placeholder={
-                                        availableMcpServersOptions.length === 0
-                                            ? "No MCP servers available"
-                                            : "Select an MCP server to add"
-                                    }
-                                    options={availableMcpServersOptions}
-                                    disabled={availableMcpServersOptions.length === 0}
-                                    onChange={({ detail }) => {
-                                        if (detail.selectedOption) {
-                                            addMcpServer(detail.selectedOption.value);
-                                        }
-                                    }}
-                                    selectedOption={null}
-                                />
-                            </FormField>
-
-                            <Container header={<Header variant="h3">Selected MCP Servers</Header>}>
-                                {selectedMcpServersData.length === 0 ? (
-                                    <Alert type="info">No MCP servers selected</Alert>
-                                ) : (
-                                    <Table
-                                        columnDefinitions={[
-                                            {
-                                                id: "name",
-                                                header: "Server Name",
-                                                cell: (item) => item.name,
-                                            },
-                                            {
-                                                id: "description",
-                                                header: "Description",
-                                                cell: (item) => (
-                                                    <Popover
-                                                        dismissButton={false}
-                                                        position="top"
-                                                        size="medium"
-                                                        triggerType="custom"
-                                                        content={
-                                                            <Box padding="xs">
-                                                                <ReactMarkdown>
-                                                                    {item.description}
-                                                                </ReactMarkdown>
-                                                            </Box>
-                                                        }
-                                                    >
-                                                        <Icon name="status-info" />
-                                                    </Popover>
-                                                ),
-                                            },
-                                            {
-                                                id: "actions",
-                                                header: "Actions",
-                                                cell: (item) => (
-                                                    <Button
-                                                        variant="icon"
-                                                        iconName="close"
-                                                        onClick={() => removeMcpServer(item.name)}
-                                                    />
-                                                ),
-                                            },
-                                        ]}
-                                        items={selectedMcpServersData}
-                                        loadingText="Loading MCP servers"
-                                        empty={
-                                            <Box textAlign="center" color="inherit">
-                                                <b>No MCP servers selected</b>
-                                                <Box
-                                                    padding={{ bottom: "s" }}
-                                                    variant="p"
-                                                    color="inherit"
-                                                >
-                                                    Select MCP servers from the dropdown above.
-                                                </Box>
-                                            </Box>
-                                        }
-                                    />
-                                )}
-                            </Container>
-                        </SpaceBetween>
-                    </Container>
-                </div>
-            ),
-        },
-    ];
-
-    // Conditionally add Knowledge Bases step
-    if (knowledgeBaseIsSupported) {
-        steps.push({
-            title: "Knowledge Bases",
-            content: (
-                <div style={{ minHeight: STEP_MIN_HEIGHT }}>
-                    <Container header={<Header variant="h2">Configure Knowledge Bases</Header>}>
-                        <SpaceBetween direction="vertical" size="l">
-                            <FormField label="Available Knowledge Bases">
-                                <Select
-                                    placeholder={
-                                        availableKnowledgeBasesOptions.length === 0
-                                            ? "No additional knowledge bases available"
-                                            : "Select a knowledge base to add"
-                                    }
-                                    options={availableKnowledgeBasesOptions}
-                                    disabled={availableKnowledgeBasesOptions.length === 0}
-                                    onChange={({ detail }) => {
-                                        if (detail.selectedOption) {
-                                            addKnowledgeBase(detail.selectedOption.value);
-                                        }
-                                    }}
-                                    selectedOption={null}
-                                />
-                            </FormField>
-
-                            <Container
-                                header={<Header variant="h3">Selected Knowledge Bases</Header>}
-                            >
-                                {selectedKnowledgeBasesData.length === 0 ? (
-                                    <Alert type="info">No knowledge bases selected</Alert>
-                                ) : (
-                                    <Table
-                                        columnDefinitions={[
-                                            {
-                                                id: "name",
-                                                header: "Knowledge Base",
-                                                cell: (item) => item.name,
-                                            },
-                                            {
-                                                id: "description",
-                                                header: "Description",
-                                                cell: (item) => (
-                                                    <Popover
-                                                        dismissButton={false}
-                                                        position="top"
-                                                        size="medium"
-                                                        triggerType="custom"
-                                                        content={
-                                                            <Box padding="xs">
-                                                                <ReactMarkdown>
-                                                                    {item.description}
-                                                                </ReactMarkdown>
-                                                            </Box>
-                                                        }
-                                                    >
-                                                        <Icon name="status-info" />
-                                                    </Popover>
-                                                ),
-                                            },
-                                            {
-                                                id: "parameters",
-                                                header: "Parameters",
-                                                cell: (item) => (
-                                                    <Button
-                                                        variant="normal"
-                                                        onClick={() =>
-                                                            openConfigureModal(item.toolName)
-                                                        }
-                                                    >
-                                                        Configure
-                                                    </Button>
-                                                ),
-                                            },
-                                            {
-                                                id: "actions",
-                                                header: "Actions",
-                                                cell: (item) => (
-                                                    <Button
-                                                        variant="icon"
-                                                        iconName="close"
-                                                        onClick={() => removeTool(item.toolName)}
-                                                    />
-                                                ),
-                                            },
-                                        ]}
-                                        items={selectedKnowledgeBasesData}
-                                        loadingText="Loading knowledge bases"
-                                        empty={
-                                            <Box textAlign="center" color="inherit">
-                                                <b>No knowledge bases selected</b>
-                                                <Box
-                                                    padding={{ bottom: "s" }}
-                                                    variant="p"
-                                                    color="inherit"
-                                                >
-                                                    Select knowledge bases from the dropdown above.
-                                                </Box>
-                                            </Box>
-                                        }
-                                    />
-                                )}
-                            </Container>
-                        </SpaceBetween>
-                    </Container>
-                </div>
-            ),
-        });
-    }
-
-    // Review step
-    steps.push({
-        title: "Review",
-        content: (
-            <div style={{ minHeight: STEP_MIN_HEIGHT }}>
-                <Container header={<Header variant="h2">Review Configuration</Header>}>
-                    <SpaceBetween direction="vertical" size="m">
+                    <SpaceBetween direction="vertical" size="l">
                         {!isCreating && (
                             <Alert type="info" header="Configuration Summary">
                                 Review your agent configuration before creating.
                             </Alert>
                         )}
-                        <Box padding="m" variant="code">
-                            <pre style={{ margin: 0, overflow: "auto" }}>
-                                {JSON.stringify(config, null, 2)}
-                            </pre>
-                        </Box>
+                        <Container header={<Header variant="h2">Configuration JSON</Header>}>
+                            <Box padding="m" variant="code">
+                                <pre
+                                    style={{
+                                        margin: 0,
+                                        overflow: "auto",
+                                        maxHeight: "400px",
+                                    }}
+                                >
+                                    {JSON.stringify(config, null, 2)}
+                                </pre>
+                            </Box>
+                        </Container>
                     </SpaceBetween>
-                </Container>
-            </div>
-        ),
-    });
+                </div>
+            ),
+        },
+    ];
+
+    // Conditionally insert the Tools step before Review
+    if (hasToolsStep) {
+        steps.splice(steps.length - 1, 0, {
+            title: "Tools",
+            content: (
+                <div style={{ minHeight: STEP_MIN_HEIGHT }}>
+                    <AdditionalToolsSection
+                        title="Tools"
+                        description="Add tools, knowledge bases, and MCP servers to extend your agent's capabilities"
+                        hasCustomTools={hasCustomTools}
+                        hasMcpServers={hasMcpServers}
+                        knowledgeBaseIsSupported={knowledgeBaseIsSupported}
+                        availableToolsOptions={availableToolsOptions}
+                        availableKnowledgeBasesOptions={availableKnowledgeBasesOptions}
+                        availableMcpServersOptions={availableMcpServersOptions}
+                        selectedTools={selectedToolsData}
+                        selectedKnowledgeBases={selectedKnowledgeBasesData}
+                        selectedMcpServers={config.mcpServers.map((s) => ({ name: s }))}
+                        onAddTool={addTool}
+                        onRemoveTool={removeTool}
+                        onAddKnowledgeBase={addKnowledgeBase}
+                        onAddMcpServer={addMcpServer}
+                        onRemoveMcpServer={removeMcpServer}
+                        onConfigureKnowledgeBase={openConfigureModal}
+                    />
+                </div>
+            ),
+        });
+    }
 
     return steps;
 }
@@ -667,14 +289,17 @@ export function isSingleAgentStepValid(
     stepIndex: number,
     config: AgentCoreRuntimeConfiguration,
 ): boolean {
-    // stepIndex is relative to the architecture-specific steps (0 = Basic Config, etc.)
+    // Step 0: Agent Configuration
     if (stepIndex === 0) {
         const agentNamePattern = /^[a-zA-Z][a-zA-Z0-9_]{0,47}$/;
         return (
-            config.instructions.trim() !== "" &&
             config.agentName.trim() !== "" &&
-            agentNamePattern.test(config.agentName)
+            agentNamePattern.test(config.agentName) &&
+            config.instructions.trim() !== "" &&
+            config.modelInferenceParameters.modelId.trim() !== ""
         );
     }
+    // Step 1: Additional Tools — always valid (optional)
+    // Step 2: Review — always valid
     return true;
 }

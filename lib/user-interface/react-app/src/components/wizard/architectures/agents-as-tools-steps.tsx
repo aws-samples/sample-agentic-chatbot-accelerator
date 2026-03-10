@@ -7,7 +7,6 @@ import {
     Alert,
     Box,
     Button,
-    ColumnLayout,
     Container,
     FormField,
     Header,
@@ -23,7 +22,8 @@ import {
     AgentCoreRuntimeConfiguration,
     AgentsAsToolsConfiguration,
 } from "../types";
-import { CONVERSATION_MANAGER_OPTIONS, STEP_MIN_HEIGHT } from "../wizard-utils";
+import { AdditionalToolsSection, AgentConfigSection } from "../wizard-shared-components";
+import { STEP_MIN_HEIGHT } from "../wizard-utils";
 
 export interface AgentsAsToolsStepsProps {
     config: AgentCoreRuntimeConfiguration;
@@ -83,7 +83,6 @@ export function getAgentsAsToolsSteps({
     const addAgentAsTool = (agentName: string) => {
         const agent = availableAgents.find((a) => a.agentName === agentName);
         if (!agent) return;
-        // Prevent duplicates
         if (agentsAsToolsConfig.agentsAsTools.some((a) => a.runtimeId === agent.agentRuntimeId))
             return;
 
@@ -122,7 +121,6 @@ export function getAgentsAsToolsSteps({
         });
     };
 
-    /** Resolve runtimeId back to agentName for display */
     const getAgentNameByRuntimeId = (runtimeId: string): string => {
         const agent = availableAgents.find((a) => a.agentRuntimeId === runtimeId);
         return agent?.agentName || runtimeId;
@@ -189,7 +187,7 @@ export function getAgentsAsToolsSteps({
         }));
     };
 
-    // Derive filtered tool options (exclude already-selected tools and KB tools)
+    // Derive filtered options
     const orchestratorTools = agentsAsToolsConfig.tools || [];
     const filteredToolOptions = availableToolsOptions.filter(
         (t) => !orchestratorTools.includes(t.value),
@@ -204,7 +202,22 @@ export function getAgentsAsToolsSteps({
         (s) => !orchestratorMcpServers.includes(s.value),
     );
 
-    // Build the serialization preview (clean version matching backend expectations)
+    const hasCustomTools = availableToolsOptions.length > 0;
+    const hasMcpServers = availableMcpServersOptions.length > 0;
+
+    const selectedToolsData = orchestratorTools
+        .filter((t) => !t.startsWith("retrieve_from_kb_"))
+        .map((t) => ({ name: t }));
+
+    const selectedKnowledgeBasesData = orchestratorTools
+        .filter((t) => t.startsWith("retrieve_from_kb_"))
+        .map((toolName) => {
+            const kbId = toolName.replace("retrieve_from_kb_", "");
+            const kb = availableKnowledgeBases.find((k) => k.value === kbId);
+            return { toolName, name: kb?.label || kbId };
+        });
+
+    // Build the serialization preview
     const buildPreviewConfig = () => {
         const preview: Record<string, any> = {
             agentsAsTools: agentsAsToolsConfig.agentsAsTools,
@@ -416,245 +429,89 @@ export function getAgentsAsToolsSteps({
             content: (
                 <div style={{ minHeight: STEP_MIN_HEIGHT }}>
                     <SpaceBetween direction="vertical" size="l">
-                        <Container header={<Header variant="h2">Model &amp; Instructions</Header>}>
-                            <SpaceBetween direction="vertical" size="l">
-                                <ColumnLayout columns={2} variant="text-grid">
-                                    <FormField
-                                        label="Model"
-                                        description="Select the LLM model for the orchestrator"
-                                    >
-                                        <Select
-                                            placeholder="Select a model..."
-                                            options={modelOptions}
-                                            selectedOption={
-                                                modelOptions.find(
-                                                    (m) =>
-                                                        m.value ===
-                                                        agentsAsToolsConfig.modelInferenceParameters
-                                                            .modelId,
-                                                ) || null
-                                            }
-                                            onChange={({ detail }) =>
-                                                setAgentsAsToolsConfig((prev) => ({
-                                                    ...prev,
-                                                    modelInferenceParameters: {
-                                                        ...prev.modelInferenceParameters,
-                                                        modelId: detail.selectedOption?.value || "",
-                                                    },
-                                                }))
-                                            }
-                                            filteringType="auto"
-                                        />
-                                    </FormField>
-                                    <SpaceBetween direction="vertical" size="s">
-                                        <FormField
-                                            label="Temperature"
-                                            description="Controls randomness"
-                                        >
-                                            <Input
-                                                type="number"
-                                                value={agentsAsToolsConfig.modelInferenceParameters.parameters.temperature.toString()}
-                                                onChange={({ detail }) =>
-                                                    setAgentsAsToolsConfig((prev) => ({
-                                                        ...prev,
-                                                        modelInferenceParameters: {
-                                                            ...prev.modelInferenceParameters,
-                                                            parameters: {
-                                                                ...prev.modelInferenceParameters
-                                                                    .parameters,
-                                                                temperature:
-                                                                    parseFloat(detail.value) || 0.2,
-                                                            },
-                                                        },
-                                                    }))
-                                                }
-                                            />
-                                        </FormField>
-                                        <FormField
-                                            label="Max Tokens"
-                                            description="Maximum output tokens"
-                                        >
-                                            <Input
-                                                type="number"
-                                                value={agentsAsToolsConfig.modelInferenceParameters.parameters.maxTokens.toString()}
-                                                onChange={({ detail }) =>
-                                                    setAgentsAsToolsConfig((prev) => ({
-                                                        ...prev,
-                                                        modelInferenceParameters: {
-                                                            ...prev.modelInferenceParameters,
-                                                            parameters: {
-                                                                ...prev.modelInferenceParameters
-                                                                    .parameters,
-                                                                maxTokens:
-                                                                    parseInt(detail.value) || 3000,
-                                                            },
-                                                        },
-                                                    }))
-                                                }
-                                            />
-                                        </FormField>
-                                    </SpaceBetween>
-                                </ColumnLayout>
-
-                                <FormField
-                                    label="Orchestrator Instructions"
-                                    description="System prompt that defines how the orchestrator delegates to its sub-agent tools"
-                                >
-                                    <Textarea
-                                        value={agentsAsToolsConfig.instructions}
-                                        onChange={({ detail }) =>
-                                            setAgentsAsToolsConfig((prev) => ({
-                                                ...prev,
-                                                instructions: detail.value,
-                                            }))
-                                        }
-                                        placeholder="You are an orchestrator agent. You have access to the following sub-agents as tools..."
-                                        rows={6}
-                                    />
-                                </FormField>
-
-                                <FormField label="Conversation Manager">
-                                    <Select
-                                        selectedOption={
-                                            CONVERSATION_MANAGER_OPTIONS.find(
-                                                (opt) =>
-                                                    opt.value ===
-                                                    agentsAsToolsConfig.conversationManager,
-                                            ) || null
-                                        }
-                                        onChange={({ detail }) =>
-                                            setAgentsAsToolsConfig((prev) => ({
-                                                ...prev,
-                                                conversationManager: (detail.selectedOption
-                                                    ?.value || "sliding_window") as
-                                                    | "null"
-                                                    | "sliding_window"
-                                                    | "summarizing",
-                                            }))
-                                        }
-                                        options={CONVERSATION_MANAGER_OPTIONS}
-                                    />
-                                </FormField>
-                            </SpaceBetween>
-                        </Container>
-
-                        <Container
-                            header={
-                                <Header
-                                    variant="h2"
-                                    description="Optionally add tools, knowledge bases, and MCP servers available to the orchestrator (in addition to the sub-agent tools)"
-                                >
-                                    Additional Tools (Optional)
-                                </Header>
+                        <AgentConfigSection
+                            label="Orchestrator"
+                            modelOptions={modelOptions}
+                            modelId={agentsAsToolsConfig.modelInferenceParameters.modelId}
+                            onModelChange={(modelId) =>
+                                setAgentsAsToolsConfig((prev) => ({
+                                    ...prev,
+                                    modelInferenceParameters: {
+                                        ...prev.modelInferenceParameters,
+                                        modelId,
+                                    },
+                                }))
                             }
-                        >
-                            <SpaceBetween direction="vertical" size="m">
-                                <ColumnLayout columns={knowledgeBaseIsSupported ? 3 : 2}>
-                                    <FormField label="Add Tool">
-                                        <Select
-                                            placeholder="Select a tool..."
-                                            options={filteredToolOptions}
-                                            onChange={({ detail }) =>
-                                                addOrchestratorTool(detail.selectedOption?.value)
-                                            }
-                                            selectedOption={null}
-                                            filteringType="auto"
-                                        />
-                                    </FormField>
-                                    {knowledgeBaseIsSupported && (
-                                        <FormField label="Add Knowledge Base">
-                                            <Select
-                                                placeholder="Select a KB..."
-                                                options={filteredKbOptions}
-                                                onChange={({ detail }) =>
-                                                    addOrchestratorKnowledgeBase(
-                                                        detail.selectedOption?.value,
-                                                    )
-                                                }
-                                                selectedOption={null}
-                                                filteringType="auto"
-                                            />
-                                        </FormField>
-                                    )}
-                                    <FormField label="Add MCP Server">
-                                        <Select
-                                            placeholder="Select MCP server..."
-                                            options={filteredMcpOptions}
-                                            onChange={({ detail }) =>
-                                                addOrchestratorMcpServer(
-                                                    detail.selectedOption?.value,
-                                                )
-                                            }
-                                            selectedOption={null}
-                                            filteringType="auto"
-                                        />
-                                    </FormField>
-                                </ColumnLayout>
+                            temperature={
+                                agentsAsToolsConfig.modelInferenceParameters.parameters.temperature
+                            }
+                            onTemperatureChange={(temperature) =>
+                                setAgentsAsToolsConfig((prev) => ({
+                                    ...prev,
+                                    modelInferenceParameters: {
+                                        ...prev.modelInferenceParameters,
+                                        parameters: {
+                                            ...prev.modelInferenceParameters.parameters,
+                                            temperature,
+                                        },
+                                    },
+                                }))
+                            }
+                            maxTokens={
+                                agentsAsToolsConfig.modelInferenceParameters.parameters.maxTokens
+                            }
+                            onMaxTokensChange={(maxTokens) =>
+                                setAgentsAsToolsConfig((prev) => ({
+                                    ...prev,
+                                    modelInferenceParameters: {
+                                        ...prev.modelInferenceParameters,
+                                        parameters: {
+                                            ...prev.modelInferenceParameters.parameters,
+                                            maxTokens,
+                                        },
+                                    },
+                                }))
+                            }
+                            instructions={agentsAsToolsConfig.instructions}
+                            onInstructionsChange={(instructions) =>
+                                setAgentsAsToolsConfig((prev) => ({ ...prev, instructions }))
+                            }
+                            instructionsPlaceholder="You are an orchestrator agent. You have access to the following sub-agents as tools..."
+                            conversationManager={agentsAsToolsConfig.conversationManager}
+                            onConversationManagerChange={(conversationManager) =>
+                                setAgentsAsToolsConfig((prev) => ({
+                                    ...prev,
+                                    conversationManager,
+                                }))
+                            }
+                            useMemory={config.useMemory || false}
+                            onUseMemoryChange={(useMemory) =>
+                                setConfig((prev) => ({ ...prev, useMemory }))
+                            }
+                        />
 
-                                {orchestratorTools.length > 0 && (
-                                    <Table
-                                        items={orchestratorTools.map((t) => ({ name: t }))}
-                                        columnDefinitions={[
-                                            {
-                                                id: "name",
-                                                header: "Tool Name",
-                                                cell: (item) => item.name,
-                                                isRowHeader: true,
-                                            },
-                                            {
-                                                id: "actions",
-                                                header: "Actions",
-                                                cell: (item) => (
-                                                    <Button
-                                                        variant="icon"
-                                                        iconName="close"
-                                                        onClick={() =>
-                                                            removeOrchestratorTool(item.name)
-                                                        }
-                                                    />
-                                                ),
-                                            },
-                                        ]}
-                                    />
-                                )}
-
-                                {orchestratorMcpServers.length > 0 && (
-                                    <Table
-                                        items={orchestratorMcpServers.map((s) => ({ name: s }))}
-                                        columnDefinitions={[
-                                            {
-                                                id: "name",
-                                                header: "MCP Server",
-                                                cell: (item) => item.name,
-                                                isRowHeader: true,
-                                            },
-                                            {
-                                                id: "actions",
-                                                header: "Actions",
-                                                cell: (item) => (
-                                                    <Button
-                                                        variant="icon"
-                                                        iconName="close"
-                                                        onClick={() =>
-                                                            removeOrchestratorMcpServer(item.name)
-                                                        }
-                                                    />
-                                                ),
-                                            },
-                                        ]}
-                                    />
-                                )}
-
-                                {orchestratorTools.length === 0 &&
-                                    orchestratorMcpServers.length === 0 && (
-                                        <Alert type="info">
-                                            No additional tools or MCP servers configured. The
-                                            orchestrator will only use the sub-agent tools defined
-                                            in the previous step.
-                                        </Alert>
-                                    )}
-                            </SpaceBetween>
-                        </Container>
+                        {(hasCustomTools || hasMcpServers || knowledgeBaseIsSupported) && (
+                            <AdditionalToolsSection
+                                hasCustomTools={hasCustomTools}
+                                hasMcpServers={hasMcpServers}
+                                knowledgeBaseIsSupported={knowledgeBaseIsSupported}
+                                availableToolsOptions={filteredToolOptions}
+                                availableKnowledgeBasesOptions={filteredKbOptions}
+                                availableMcpServersOptions={filteredMcpOptions}
+                                selectedTools={selectedToolsData}
+                                selectedKnowledgeBases={selectedKnowledgeBasesData}
+                                selectedMcpServers={orchestratorMcpServers.map((s) => ({
+                                    name: s,
+                                }))}
+                                onAddTool={addOrchestratorTool}
+                                onRemoveTool={removeOrchestratorTool}
+                                onAddKnowledgeBase={addOrchestratorKnowledgeBase}
+                                onAddMcpServer={addOrchestratorMcpServer}
+                                onRemoveMcpServer={removeOrchestratorMcpServer}
+                                description="Optionally add tools, knowledge bases, and MCP servers available to the orchestrator (in addition to the sub-agent tools)"
+                                emptyMessage="No additional tools or MCP servers configured. The orchestrator will only use the sub-agent tools defined in the previous step."
+                            />
+                        )}
                     </SpaceBetween>
                 </div>
             ),
