@@ -87,7 +87,7 @@ export class HttpApiBackend extends Construct {
         props.favoriteRuntimeTable.grantReadWriteData(lambdaResolver);
         props.experimentsTable.grantReadWriteData(lambdaResolver);
         props.toolRegistryTable.grantReadData(lambdaResolver);
-        props.mcpServerRegistryTable.grantReadData(lambdaResolver);
+        props.mcpServerRegistryTable.grantReadWriteData(lambdaResolver);
 
         const schema = parse(readFileSync("lib/api/schema/schema.graphql", "utf8"));
 
