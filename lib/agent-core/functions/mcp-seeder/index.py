@@ -38,11 +38,15 @@ def compose_mcp_url(server: dict) -> str:
     """Compose the MCP URL for a server at runtime with resolved region/account.
 
     Args:
-        server: Server config dict with name, description, and either runtimeId or gatewayId
+        server: Server config dict with name, description, and either runtimeId, gatewayId, or url
 
     Returns:
         The composed MCP URL endpoint
     """
+    # Direct URL — for external/public Streamable HTTP servers
+    if "url" in server and server["url"]:
+        return server["url"]
+
     qualifier = server.get("qualifier", "DEFAULT")
 
     if "runtimeId" in server and server["runtimeId"]:
@@ -75,6 +79,7 @@ def transform_server_for_db(server: dict) -> dict:
             "McpServerName": server["McpServerName"],
             "McpUrl": server.get("McpUrl", ""),
             "Description": server.get("Description", ""),
+            "AuthType": server.get("AuthType", "SIGV4"),
         }
 
     # New format - need to compose URL
@@ -82,6 +87,7 @@ def transform_server_for_db(server: dict) -> dict:
         "McpServerName": server["name"],
         "McpUrl": compose_mcp_url(server),
         "Description": server.get("description", ""),
+        "AuthType": server.get("authType", "SIGV4"),
     }
 
 
@@ -288,6 +294,10 @@ def _validate_server(raw_server: dict) -> bool:
     Returns:
         True if the resource exists, False otherwise
     """
+    # Direct URL — no AgentCore validation needed for external servers
+    if "url" in raw_server and raw_server["url"]:
+        return True
+
     qualifier = raw_server.get("qualifier", "DEFAULT")
 
     if "runtimeId" in raw_server and raw_server["runtimeId"]:
@@ -301,7 +311,7 @@ def _validate_server(raw_server: dict) -> bool:
         return True
 
     logger.warning(
-        "Server config missing both runtimeId and gatewayId",
+        "Server config missing runtimeId, gatewayId, and url",
         extra={"server": raw_server},
     )
     return False

@@ -173,6 +173,8 @@ export class AcaAgentCoreContainer extends Construct {
                         ...("runtimeId" in server && { runtimeId: server.runtimeId }),
                         ...("gatewayId" in server && { gatewayId: server.gatewayId }),
                         ...("qualifier" in server && { qualifier: server.qualifier }),
+                        ...("url" in server && { url: server.url }),
+                        ...("authType" in server && { authType: server.authType }),
                     })),
                 ),
                 configHash: mcpConfigHash, // Forces update when config changes
