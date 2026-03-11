@@ -377,6 +377,44 @@ export const publishEvaluationUpdate = /* GraphQL */ `mutation PublishEvaluation
   APITypes.PublishEvaluationUpdateMutationVariables,
   APITypes.PublishEvaluationUpdateMutation
 >;
+export const registerMcpServer = /* GraphQL */ `mutation RegisterMcpServer(
+  $name: String!
+  $authType: McpAuthType!
+  $runtimeId: String
+  $gatewayId: String
+  $qualifier: String
+  $mcpUrl: String
+  $description: String
+) {
+  registerMcpServer(
+    name: $name
+    authType: $authType
+    runtimeId: $runtimeId
+    gatewayId: $gatewayId
+    qualifier: $qualifier
+    mcpUrl: $mcpUrl
+    description: $description
+  ) {
+    id
+    status
+    __typename
+  }
+}
+` as GeneratedMutation<
+  APITypes.RegisterMcpServerMutationVariables,
+  APITypes.RegisterMcpServerMutation
+>;
+export const deleteMcpServer = /* GraphQL */ `mutation DeleteMcpServer($name: String!) {
+  deleteMcpServer(name: $name) {
+    id
+    status
+    __typename
+  }
+}
+` as GeneratedMutation<
+  APITypes.DeleteMcpServerMutationVariables,
+  APITypes.DeleteMcpServerMutation
+>;
 export const createExperiment = /* GraphQL */ `mutation CreateExperiment(
   $name: String!
   $description: String

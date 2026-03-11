@@ -88,6 +88,7 @@ def transform_server_for_db(server: dict) -> dict:
         "McpUrl": compose_mcp_url(server),
         "Description": server.get("description", ""),
         "AuthType": server.get("authType", "SIGV4"),
+        "Source": "CDK",
     }
 
 

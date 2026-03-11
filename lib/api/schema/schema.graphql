@@ -96,6 +96,7 @@ type McpServer @aws_cognito_user_pools {
     mcpUrl: String!
     description: String!
     authType: McpAuthType!
+    source: String!
 }
 
 type RuntimeSummary @aws_cognito_user_pools {
@@ -239,7 +240,7 @@ type Mutation {
     runEvaluation(evaluatorId: ID!): Evaluator @aws_cognito_user_pools
     publishEvaluationUpdate(evaluatorId: String!, status: String!): EvaluationNotification @aws_iam
     # MCP Server Registry
-    registerMcpServer(name: String!, mcpUrl: String!, authType: McpAuthType!, description: String): AdminOpsResult @aws_cognito_user_pools
+    registerMcpServer(name: String!, authType: McpAuthType!, runtimeId: String, gatewayId: String, qualifier: String, mcpUrl: String, description: String): AdminOpsResult @aws_cognito_user_pools
     deleteMcpServer(name: String!): AdminOpsResult @aws_cognito_user_pools
     # Experiments
     createExperiment(name: String!, description: String, generationConfig: String!, modelId: String!): String! @aws_cognito_user_pools

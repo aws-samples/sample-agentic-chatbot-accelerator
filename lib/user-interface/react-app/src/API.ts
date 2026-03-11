@@ -105,6 +105,12 @@ export type EvaluationNotification = {
   status?: string | null,
 };
 
+export enum McpAuthType {
+  SIGV4 = "SIGV4",
+  NONE = "NONE",
+}
+
+
 export enum ExperimentStatus {
   DRAFT = "DRAFT",
   RUNNING = "RUNNING",
@@ -201,6 +207,8 @@ export type McpServer = {
   name: string,
   mcpUrl: string,
   description: string,
+  authType: McpAuthType,
+  source: string,
 };
 
 export type RuntimeSummary = {
@@ -578,6 +586,36 @@ export type PublishEvaluationUpdateMutation = {
   } | null,
 };
 
+export type RegisterMcpServerMutationVariables = {
+  name: string,
+  authType: McpAuthType,
+  runtimeId?: string | null,
+  gatewayId?: string | null,
+  qualifier?: string | null,
+  mcpUrl?: string | null,
+  description?: string | null,
+};
+
+export type RegisterMcpServerMutation = {
+  registerMcpServer?:  {
+    __typename: "AdminOpsResult",
+    id?: string | null,
+    status: ResponseStatus,
+  } | null,
+};
+
+export type DeleteMcpServerMutationVariables = {
+  name: string,
+};
+
+export type DeleteMcpServerMutation = {
+  deleteMcpServer?:  {
+    __typename: "AdminOpsResult",
+    id?: string | null,
+    status: ResponseStatus,
+  } | null,
+};
+
 export type CreateExperimentMutationVariables = {
   name: string,
   description?: string | null,
@@ -815,6 +853,8 @@ export type ListAvailableMcpServersQuery = {
     name: string,
     mcpUrl: string,
     description: string,
+    authType: McpAuthType,
+    source: string,
   } > | null,
 };
 
