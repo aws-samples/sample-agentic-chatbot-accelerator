@@ -35,11 +35,6 @@ from .kb_types import (
     TextResponsePart,
     TextResponsePartElement,
 )
-from .mcp_auth import (
-    SigV4HTTPXAuth,
-    StreamableHTTPTransportWithSigV4,
-    streamablehttp_client_with_sigv4,
-)
 from .mcp_client import MCPClientManager
 from .stream_types import (
     ChatbotAction,
@@ -83,10 +78,6 @@ __all__ = [
     "RetrievedReference",
     "TextResponsePart",
     "TextResponsePartElement",
-    # MCP authentication
-    "SigV4HTTPXAuth",
-    "StreamableHTTPTransportWithSigV4",
-    "streamablehttp_client_with_sigv4",
     # MCP client
     "MCPClientManager",
     # Chatbot related types

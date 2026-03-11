@@ -1,6 +1,7 @@
 strands-agents==1.19.0
 strands-agents-evals==0.1.2
 bedrock-agentcore==1.0.4
+mcp-proxy-for-aws==1.1.6
 pydantic==2.12.3
-boto3==1.40.57
+boto3==1.42.26
 aws-opentelemetry-distro==0.10.1

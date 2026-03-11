@@ -267,7 +267,7 @@ def _validate_gateway_exists(gateway_id: str) -> bool:
         True if the gateway exists, False otherwise
     """
     try:
-        BEDROCK_AGENTCORE.get_gateway(gatewayId=gateway_id)
+        BEDROCK_AGENTCORE.get_gateway(gatewayIdentifier=gateway_id)
         return True
     except ClientError as err:
         if err.response["Error"]["Code"] == "ResourceNotFoundException":

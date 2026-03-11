@@ -9,13 +9,8 @@ import os
 from logging import Logger
 from typing import Any
 
-from boto3 import Session
+from mcp_proxy_for_aws.client import aws_iam_streamablehttp_client
 from strands.tools.mcp.mcp_client import MCPClient
-
-from .mcp_auth import streamablehttp_client_with_sigv4
-
-# Boto3 session for AWS credential management
-SESSION = Session()
 
 
 class MCPClientManager:
@@ -58,15 +53,6 @@ class MCPClientManager:
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Context manager exit - ensures connections are cleaned up."""
         self.cleanup_connections()
-
-    def _get_credentials(self):
-        """
-        Get fresh AWS credentials from the session.
-
-        This method fetches credentials on each call to handle credential
-        refresh for long-running processes where credentials may expire.
-        """
-        return SESSION.get_credentials()
 
     def _get_mcp_registry(self) -> dict[str, dict[str, Any]]:
         """
@@ -129,14 +115,13 @@ class MCPClientManager:
                     "AWS_REGION environment variable is required for MCP client authentication"
                 )
 
-            # Capture mcp_url and region in closure; credentials fetched fresh on each connection
-            # to handle credential refresh for long-running processes
+            # Use mcp-proxy-for-aws for AWS IAM authentication
+            # Credentials are automatically refreshed for long-running processes
             mcp_client = MCPClient(
-                lambda url=mcp_url, rgn=region: streamablehttp_client_with_sigv4(
-                    url=url,
-                    credentials=self._get_credentials(),
-                    service="bedrock-agentcore",
-                    region=rgn,
+                lambda url=mcp_url, rgn=region: aws_iam_streamablehttp_client(
+                    endpoint=url,
+                    aws_region=rgn,
+                    aws_service="bedrock-agentcore",
                 ),
                 prefix=mcp_server_name,
             )
