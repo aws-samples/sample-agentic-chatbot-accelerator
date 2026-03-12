@@ -545,12 +545,20 @@ def load_mcps_from_dynamodb(
             mcp_server_name = item.get("McpServerName", "")
             mcp_url = item.get("McpUrl", "")
 
-            # Optionally filter by region
-            if filter_by_region:
+            auth_type = item.get("AuthType", "SIGV4")
+
+            # Optionally filter by region (skip for external servers with no auth)
+            if filter_by_region and auth_type != "NONE":
                 if REGION_NAME and REGION_NAME in mcp_url:
-                    mcp_servers[mcp_server_name] = {"McpUrl": mcp_url}
+                    mcp_servers[mcp_server_name] = {
+                        "McpUrl": mcp_url,
+                        "AuthType": auth_type,
+                    }
             else:
-                mcp_servers[mcp_server_name] = {"McpUrl": mcp_url}
+                mcp_servers[mcp_server_name] = {
+                    "McpUrl": mcp_url,
+                    "AuthType": auth_type,
+                }
 
         # Check if there are more items to scan
         if "LastEvaluatedKey" not in response:

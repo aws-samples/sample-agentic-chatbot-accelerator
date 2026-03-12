@@ -190,11 +190,26 @@ interface McpServerGateway extends McpServerBase {
 }
 
 /**
+ * MCP server configuration for direct URL-based servers (e.g. public Streamable HTTP endpoints).
+ * @property url - The direct Streamable HTTP endpoint URL
+ * @property authType - Authentication type: "SIGV4" for IAM auth, "NONE" for unauthenticated
+ */
+interface McpServerUrl extends McpServerBase {
+    url: string;
+    authType: "SIGV4" | "NONE";
+    runtimeId?: never;
+    gatewayId?: never;
+}
+
+/**
  * Union type for MCP server configuration.
  * MCP servers provide external capabilities and resources to agents.
- * Must specify exactly one of runtimeId (for AgentCore Runtime) or gatewayId (for AgentCore Gateway).
+ * Must specify exactly one of:
+ * - runtimeId (for AgentCore Runtime)
+ * - gatewayId (for AgentCore Gateway)
+ * - url (for direct Streamable HTTP endpoint)
  */
-export type McpServer = McpServerRuntime | McpServerGateway;
+export type McpServer = McpServerRuntime | McpServerGateway | McpServerUrl;
 
 /**
  * Interface defining configuration properties for the ingestion Lambda function.

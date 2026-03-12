@@ -90,7 +90,125 @@ The system automatically constructs the full MCP URL during CDK deployment:
 - **Gateway**: `https://{gatewayId}.gateway.bedrock-agentcore.{region}.amazonaws.com/mcp`
 
 
+#### Registering MCP Servers via the UI
+
+In addition to the `config.yaml` approach above, you can register MCP servers directly from the UI. You can either use the **MCP Server Registry** page (accessible from the AgentCore Manager via the "Manage MCPs" button) or click **"Register new MCP server"** in the Additional Tools section of the Agent Factory wizard.
+
+Every server requires:
+- **Name** — unique identifier (alphanumeric, hyphens, underscores, max 64 chars)
+- **Auth Type** — how the agent runtime authenticates to the server
+
+**Authentication types:**
+
+| Auth Type | Description | Use When |
+|-----------|-------------|----------|
+| **SigV4** | AWS IAM Signature V4 authentication | Server is hosted on AWS (AgentCore Runtime or Gateway) — **recommended** |
+| **None**  | No authentication — requests sent without credentials | Server is a trusted, public, read-only endpoint |
+
+**Fields by auth type:**
+
+| Field | SigV4 | None |
+|-------|-------|------|
+| **Name** | ✅ Required | ✅ Required |
+| **Hosting type** (Runtime / Gateway) | ✅ Required | — |
+| **Runtime ID** | ✅ Required (if Runtime) | — |
+| **Qualifier** | Optional, defaults to `DEFAULT` (if Runtime) | — |
+| **Gateway ID** | ✅ Required (if Gateway) | — |
+| **Endpoint URL** | Auto-constructed from IDs | ✅ Required (`https://` prefix) |
+| **Description** | Optional | Optional |
+
+> **Note:** When using SigV4 authentication, you do **not** provide a URL directly. Instead, you provide the Runtime ID or Gateway ID and the system automatically constructs the full MCP endpoint URL (same as the `config.yaml` approach).
+
+**Example — AgentCore Runtime MCP Server (AuthType: SigV4):**
+
+- **Name:** `my-runtime-mcp`
+- **Auth Type:** SigV4
+- **Hosting type:** AgentCore Runtime
+- **Runtime ID:** `mcp_server_iam-abcd9876`
+- **Qualifier:** `DEFAULT` *(optional)*
+- **Description:** Custom MCP server deployed on AgentCore Runtime
+
+**Example — AgentCore Gateway MCP Server (AuthType: SigV4):**
+
+- **Name:** `my-gateway-mcp`
+- **Auth Type:** SigV4
+- **Hosting type:** AgentCore Gateway
+- **Gateway ID:** `test-xywz1234`
+- **Description:** Custom MCP server deployed on AgentCore Gateway
+
+**Example — AWS Knowledge MCP Server (AuthType: NONE):**
+
+The [AWS Knowledge MCP Server](https://github.com/awslabs/mcp/tree/main/src/aws-knowledge-mcp-server) is a read-only MCP server that provides access to AWS documentation, regional availability data, and content recommendations. Since it only exposes read-only public data, it can be registered with `AuthType: NONE`:
+
+- **Name:** `aws-knowledge`
+- **URL:** `https://knowledge-mcp.global.api.aws`
+- **Auth Type:** NONE
+- **Description:** AWS documentation search, regional availability, and content recommendations
+
+> **⚠️ Security considerations for AuthType: NONE**
+>
+> Registering a server with no authentication means the agent runtime will send requests **without any credentials**. Only use `NONE` for servers that:
+>
+> - Expose **read-only** data you trust (documentation, public datasets, weather, exchange rates)
+> - Do **not** have write access to databases, cloud resources, or internal APIs
+> - Are endpoints you **control** or **explicitly trust**
+>
+> Misconfigured MCP servers exposed without authentication have been [found in the wild](https://www.trendmicro.com/en_us/research/25/d/mcp-security.html) with write access to sensitive resources. **Always prefer SigV4 authentication when the server supports it.**
+
+
+#### Sample Agent Instructions for AWS Knowledge MCP
+
+Once the AWS Knowledge MCP server is registered (see example above), create a **single agent** in the Agent Factory with the following instructions to test it end-to-end.
+
+**Recommended settings:**
+- **Model:** Nova 2 Lite (or Sonnet 4.6 for more detailed answers)
+- **Temperature:** 0.2
+- **Max Tokens:** 3000
+- **MCP Servers:** select `aws-knowledge` in the Additional Tools step
+
+**Agent instructions (paste into the Instructions field):**
+
+```
+You are an AWS Solutions Architect assistant with access to the official AWS documentation through the AWS Knowledge MCP server.
+
+When a user asks about AWS services, features, configurations, or best practices:
+
+1. ALWAYS use the aws___search_documentation tool first to find relevant, up-to-date information. Choose the appropriate topic(s):
+   - "general" for architecture, best practices, tutorials
+   - "reference_documentation" for API/SDK/CLI details
+   - "troubleshooting" for errors and debugging
+   - "current_awareness" for new features and announcements
+   - "cdk_docs" or "cdk_constructs" for CDK questions
+   - "cloudformation" for CloudFormation templates
+
+2. If the search results reference a specific documentation page, use aws___read_documentation to fetch the full content for detailed answers.
+
+3. Use aws___recommend to suggest related documentation the user might find helpful.
+
+4. For region-specific questions, use aws___get_regional_availability to check service availability.
+
+Your responses should:
+- Cite the documentation URL for every claim
+- Include code examples when available from the docs
+- Be concise but thorough
+- Clearly distinguish between what the docs say vs. your general knowledge
+- If the docs don't cover something, say so explicitly
+
+Never make up AWS service limits, pricing, or feature availability — always verify via the tools.
+```
+
+**Test prompts to try:**
+- *"What are the best practices for S3 bucket security?"*
+- *"How do I set up a Lambda function with a DynamoDB trigger using CDK in TypeScript?"*
+- *"Is Amazon Bedrock available in eu-west-1?"*
+- *"What's new with Amazon ECS in 2025?"*
+- *"I'm getting an AccessDenied error on S3 GetObject, how do I fix it?"*
+
+
 ### Function-Based Tools
+
+> **ℹ️ Note:** The recommended way to add tools to agents is through **MCP servers** (see above). Function-based and object-based tools are a legacy approach kept for quick prototyping. For production workloads, prefer MCP-based tools.
+
 Simple tools implemented as decorated Python functions:
 
 ```python

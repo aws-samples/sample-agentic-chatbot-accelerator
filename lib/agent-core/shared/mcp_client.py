@@ -9,6 +9,7 @@ import os
 from logging import Logger
 from typing import Any
 
+from mcp.client.streamable_http import streamablehttp_client
 from mcp_proxy_for_aws.client import aws_iam_streamablehttp_client
 from strands.tools.mcp.mcp_client import MCPClient
 
@@ -104,31 +105,40 @@ class MCPClientManager:
             )
 
         try:
-            mcp_url = available_mcps[mcp_server_name]["McpUrl"]
+            config = available_mcps[mcp_server_name]
+            mcp_url = config["McpUrl"]
+            auth_type = config.get("AuthType", "SIGV4")
+
             self.logger.info(
-                f"Initializing {mcp_server_name} MCP server with URL: {mcp_url}"
+                f"Initializing {mcp_server_name} MCP server with URL: {mcp_url}, AuthType: {auth_type}"
             )
 
-            region = os.environ.get("AWS_REGION")
-            if not region:
-                raise ValueError(
-                    "AWS_REGION environment variable is required for MCP client authentication"
+            if auth_type == "NONE":
+                # Plain Streamable HTTP — for public/external servers (no SigV4)
+                mcp_client = MCPClient(
+                    lambda url=mcp_url: streamablehttp_client(url=url),
+                    prefix=mcp_server_name,
                 )
+            else:
+                # IAM auth via mcp-proxy-for-aws for AgentCore-hosted servers
+                region = os.environ.get("AWS_REGION")
+                if not region:
+                    raise ValueError(
+                        "AWS_REGION environment variable is required for MCP client authentication"
+                    )
 
-            # Use mcp-proxy-for-aws for AWS IAM authentication
-            # Credentials are automatically refreshed for long-running processes
-            mcp_client = MCPClient(
-                lambda url=mcp_url, rgn=region: aws_iam_streamablehttp_client(
-                    endpoint=url,
-                    aws_region=rgn,
-                    aws_service="bedrock-agentcore",
-                ),
-                prefix=mcp_server_name,
-            )
+                mcp_client = MCPClient(
+                    lambda url=mcp_url, rgn=region: aws_iam_streamablehttp_client(
+                        endpoint=url,
+                        aws_region=rgn,
+                        aws_service="bedrock-agentcore",
+                    ),
+                    prefix=mcp_server_name,
+                )
 
             self.logger.info(
                 f"Initialized the MCP Server named [{mcp_server_name}]",
-                extra={"mcpUrl": mcp_url},
+                extra={"mcpUrl": mcp_url, "authType": auth_type},
             )
             return mcp_client
         except Exception as e:

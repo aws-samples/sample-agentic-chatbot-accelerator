@@ -169,6 +169,8 @@ export const listAvailableMcpServers = /* GraphQL */ `query ListAvailableMcpServ
     name
     mcpUrl
     description
+    authType
+    source
     __typename
   }
 }

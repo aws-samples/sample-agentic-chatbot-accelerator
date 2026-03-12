@@ -8,6 +8,7 @@ import * as cdk from "aws-cdk-lib";
 import * as appsync from "aws-cdk-lib/aws-appsync";
 import * as cognito from "aws-cdk-lib/aws-cognito";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
+import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as logs from "aws-cdk-lib/aws-logs";
 import { NagSuppressions } from "cdk-nag";
@@ -65,6 +66,7 @@ export class HttpApiBackend extends Construct {
             TOOL_REGISTRY_TABLE: props.toolRegistryTable.tableName,
             MCP_SERVER_REGISTRY_TABLE: props.mcpServerRegistryTable.tableName,
             REGION_NAME: cdk.Aws.REGION,
+            AWS_ACCOUNT_ID: cdk.Aws.ACCOUNT_ID,
         };
 
         const lambdaResolver = new lambda.Function(this, "HttpApiResolver", {
@@ -87,7 +89,26 @@ export class HttpApiBackend extends Construct {
         props.favoriteRuntimeTable.grantReadWriteData(lambdaResolver);
         props.experimentsTable.grantReadWriteData(lambdaResolver);
         props.toolRegistryTable.grantReadData(lambdaResolver);
-        props.mcpServerRegistryTable.grantReadData(lambdaResolver);
+        props.mcpServerRegistryTable.grantReadWriteData(lambdaResolver);
+
+        // Allow Lambda to validate AgentCore runtime endpoints and gateways
+        // when registering SigV4 MCP servers via the UI
+        lambdaResolver.addToRolePolicy(
+            new iam.PolicyStatement({
+                actions: ["bedrock-agentcore:GetAgentRuntimeEndpoint"],
+                resources: [
+                    `arn:aws:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:runtime/*`,
+                ],
+            }),
+        );
+        lambdaResolver.addToRolePolicy(
+            new iam.PolicyStatement({
+                actions: ["bedrock-agentcore:GetGateway"],
+                resources: [
+                    `arn:aws:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:gateway/*`,
+                ],
+            }),
+        );
 
         const schema = parse(readFileSync("lib/api/schema/schema.graphql", "utf8"));
 

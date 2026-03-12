@@ -86,10 +86,17 @@ type Tool @aws_cognito_user_pools {
     invokesSubAgent: Boolean!
 }
 
+enum McpAuthType {
+    SIGV4
+    NONE
+}
+
 type McpServer @aws_cognito_user_pools {
     name: String!
     mcpUrl: String!
     description: String!
+    authType: McpAuthType!
+    source: String!
 }
 
 type RuntimeSummary @aws_cognito_user_pools {
@@ -232,6 +239,9 @@ type Mutation {
     deleteEvaluator(evaluatorId: ID!): Boolean @aws_cognito_user_pools
     runEvaluation(evaluatorId: ID!): Evaluator @aws_cognito_user_pools
     publishEvaluationUpdate(evaluatorId: String!, status: String!): EvaluationNotification @aws_iam
+    # MCP Server Registry
+    registerMcpServer(name: String!, authType: McpAuthType!, runtimeId: String, gatewayId: String, qualifier: String, mcpUrl: String, description: String): AdminOpsResult @aws_cognito_user_pools
+    deleteMcpServer(name: String!): AdminOpsResult @aws_cognito_user_pools
     # Experiments
     createExperiment(name: String!, description: String, generationConfig: String!, modelId: String!): String! @aws_cognito_user_pools
     updateExperiment(experimentId: String!, name: String, description: String, status: ExperimentStatus): Boolean @aws_cognito_user_pools

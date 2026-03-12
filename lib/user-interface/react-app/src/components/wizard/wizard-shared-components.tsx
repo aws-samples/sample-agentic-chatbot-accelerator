@@ -309,7 +309,7 @@ export function AdditionalToolsSection({
     onRemoveMcpServer,
     onConfigureKnowledgeBase,
     title = "Additional Tools (Optional)",
-    description = "Optionally add tools, knowledge bases, and MCP servers to extend capabilities",
+    description = "Optionally add tools, knowledge bases, and MCP servers to extend capabilities. Use 'Manage MCPs' on the AgentCore Manager page to register or delete MCP servers.",
     emptyMessage = "No tools configured yet. Use the dropdowns above to add tools, knowledge bases, or MCP servers.",
 }: AdditionalToolsSectionProps) {
     const columnCount = [hasCustomTools, knowledgeBaseIsSupported, hasMcpServers].filter(
@@ -451,6 +451,7 @@ export function AdditionalToolsSection({
                                         variant="icon"
                                         iconName="close"
                                         onClick={() => onRemoveMcpServer(item.name)}
+                                        ariaLabel="Remove from agent"
                                     />
                                 ),
                             },

@@ -583,6 +583,13 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
                                         Refresh
                                     </Button>
                                     <Button
+                                        iconName="settings"
+                                        variant="inline-link"
+                                        onClick={() => navigate("/agent-core/mcp-servers")}
+                                    >
+                                        Manage MCPs
+                                    </Button>
+                                    <Button
                                         disabled={
                                             selectedItems.length !== 1 ||
                                             selectedItems[0].status.toLowerCase() !== "ready"

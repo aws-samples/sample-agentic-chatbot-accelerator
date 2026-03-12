@@ -18,6 +18,7 @@ import EvaluationsManagerPage from "./pages/admin/evaluations-manager";
 import EvaluationsWizardPage from "./pages/admin/evaluations-wizard-page";
 import ExperimentsManagerPage from "./pages/admin/experiments-manager";
 import KnowledgeBaseManagerPage from "./pages/admin/kb-manager";
+import McpServerManagerPage from "./pages/admin/mcp-server-manager-page";
 import SessionPage from "./pages/chatbot/sessions";
 
 function App() {
@@ -37,6 +38,7 @@ function App() {
                         <Route path="/knowledgebase" element={<KnowledgeBaseManagerPage />} />
                         <Route path="/agent-core" element={<AgentCoreManagerPage />} />
                         <Route path="/agent-core/create" element={<AgentCoreWizardPage />} />
+                        <Route path="/agent-core/mcp-servers" element={<McpServerManagerPage />} />
                         <Route path="/evaluations" element={<EvaluationsManagerPage />} />
                         <Route path="/evaluations/create" element={<EvaluationsWizardPage />} />
                         <Route path="/experiments" element={<ExperimentsManagerPage />} />
