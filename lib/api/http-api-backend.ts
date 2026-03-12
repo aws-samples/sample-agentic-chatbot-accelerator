@@ -95,11 +95,18 @@ export class HttpApiBackend extends Construct {
         // when registering SigV4 MCP servers via the UI
         lambdaResolver.addToRolePolicy(
             new iam.PolicyStatement({
-                actions: [
-                    "bedrock-agentcore:GetAgentRuntimeEndpoint",
-                    "bedrock-agentcore:GetGateway",
+                actions: ["bedrock-agentcore:GetAgentRuntimeEndpoint"],
+                resources: [
+                    `arn:aws:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:runtime/*`,
                 ],
-                resources: ["*"],
+            }),
+        );
+        lambdaResolver.addToRolePolicy(
+            new iam.PolicyStatement({
+                actions: ["bedrock-agentcore:GetGateway"],
+                resources: [
+                    `arn:aws:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:gateway/*`,
+                ],
             }),
         );
 
