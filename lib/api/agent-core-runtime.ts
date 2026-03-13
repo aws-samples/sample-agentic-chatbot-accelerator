@@ -355,9 +355,21 @@ export class AgentCoreApis extends Construct {
         startDeleteRuntime.addToRolePolicy(
             new iam.PolicyStatement({
                 effect: iam.Effect.ALLOW,
-                actions: ["bedrock-agentcore:DeleteAgentRuntime"],
+                actions: [
+                    "bedrock-agentcore:DeleteAgentRuntime",
+                    "bedrock-agentcore:DeleteAgentRuntimeEndpoint",
+                ],
                 resources: [
                     `arn:aws:bedrock-agentcore:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:runtime/*`,
+                ],
+            }),
+        );
+        startDeleteRuntime.addToRolePolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: ["bedrock-agentcore:DeleteWorkloadIdentity"],
+                resources: [
+                    `arn:aws:bedrock-agentcore:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:workload-identity-directory/*`,
                 ],
             }),
         );
