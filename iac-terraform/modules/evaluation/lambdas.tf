@@ -93,85 +93,10 @@ resource "aws_cloudwatch_log_group" "evaluation_executor" {
   })
 }
 
-# Build the executor package with strands-agents-evals bundled
-# Uses Docker to avoid requiring local Python/pip and to compile packages for Linux (Lambda runtime)
-resource "null_resource" "evaluation_executor_deps" {
-  triggers = {
-    requirements = filemd5("${local.functions_dir}/evaluation-executor/evaluator.py")
-    index        = filemd5("${local.functions_dir}/evaluation-executor/index.py")
-  }
-
-  provisioner "local-exec" {
-    interpreter = ["/bin/bash", "-c"]
-    command     = <<-EOF
-      set -e
-
-      # Get absolute paths (required for Docker volume mounts)
-      MODULE_DIR="$(cd "${path.module}" && pwd)"
-      SOURCE_DIR="$(cd "${local.functions_dir}/evaluation-executor" && pwd)"
-      BUILD_DIR="$(cd "${path.module}/../../.." && pwd)/iac-terraform/build/evaluation-executor-package"
-
-      echo "Building evaluation executor Lambda package with Docker..."
-      echo "Source: $SOURCE_DIR"
-      echo "Build:  $BUILD_DIR"
-
-      # Clean and create build directory
-      rm -rf "$BUILD_DIR"
-      mkdir -p "$BUILD_DIR"
-
-      # Map Lambda architecture to Docker platform
-      LAMBDA_ARCH="${var.lambda_architecture}"
-      if [ "$LAMBDA_ARCH" = "arm64" ]; then
-        DOCKER_PLATFORM="linux/arm64"
-      else
-        DOCKER_PLATFORM="linux/amd64"
-      fi
-
-      # Build using Docker (consistent with knowledge_base module approach)
-      # Strips tests and __pycache__ to reduce package size (dist-info kept for entry_points discovery)
-      # Uses --platform to compile native extensions (.so) for the correct Lambda architecture
-      # Extract Python minor version from runtime (e.g., "python3.14" -> "3.14")
-      PYTHON_VERSION=$(echo "${var.python_runtime}" | sed 's/python//')
-
-      docker run --rm \
-        --platform "$DOCKER_PLATFORM" \
-        --entrypoint /bin/bash \
-        -v "$SOURCE_DIR":/source:ro \
-        -v "$BUILD_DIR":/output \
-        "public.ecr.aws/docker/library/python:$PYTHON_VERSION-slim" \
-        -c "
-          pip install strands-agents-evals -t /output --quiet --upgrade && \
-          cp /source/*.py /output/ && \
-          find /output -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null; \
-          find /output -type d -name 'tests' -exec rm -rf {} + 2>/dev/null; \
-          find /output -type d -name 'test' -exec rm -rf {} + 2>/dev/null; \
-          find /output -type f -name '*.pyc' -delete 2>/dev/null; \
-          true
-        "
-
-      echo "Evaluation executor package built: $BUILD_DIR"
-    EOF
-  }
-}
-
-data "archive_file" "evaluation_executor" {
-  type        = "zip"
-  source_dir  = "${path.module}/../../../iac-terraform/build/evaluation-executor-package"
-  output_path = "${path.module}/../../../iac-terraform/build/evaluation-executor.zip"
-  excludes    = ["__pycache__", "*.pyc", ".pytest_cache"]
-
-  depends_on = [null_resource.evaluation_executor_deps]
-}
-
-# Upload to S3 first — the bundled zip (~80MB) exceeds Lambda's direct upload limit (67MB)
-resource "aws_s3_object" "evaluation_executor_code" {
-  bucket      = aws_s3_bucket.evaluations.id
-  key         = "lambda-code/evaluation-executor.zip"
-  source      = data.archive_file.evaluation_executor.output_path
-  source_hash = data.archive_file.evaluation_executor.output_md5
-
-  depends_on = [data.archive_file.evaluation_executor]
-}
+# The evaluation executor package (with strands-agents-evals) is built by
+# CodeBuild in codebuild.tf — no local Docker required.
+# CodeBuild uploads the zip artifact directly to:
+#   s3://<evaluations-bucket>/lambda-code/evaluation-executor.zip
 
 resource "aws_lambda_function" "evaluation_executor" {
   # checkov:skip=CKV_AWS_116:DLQ handled by SQS redrive policy
@@ -182,9 +107,9 @@ resource "aws_lambda_function" "evaluation_executor" {
   function_name = "${local.name_prefix}-evaluation-executor"
   description   = "Processes individual evaluation test cases from SQS"
 
-  s3_bucket        = aws_s3_object.evaluation_executor_code.bucket
-  s3_key           = aws_s3_object.evaluation_executor_code.key
-  source_code_hash = data.archive_file.evaluation_executor.output_base64sha256
+  s3_bucket        = aws_s3_bucket.evaluations.id
+  s3_key           = local.executor_artifact_s3_key
+  source_code_hash = local.executor_source_hash
   handler          = "index.handler"
   runtime          = var.python_runtime
   architectures    = [var.lambda_architecture]
@@ -215,7 +140,10 @@ resource "aws_lambda_function" "evaluation_executor" {
     mode = "Active"
   }
 
-  depends_on = [aws_cloudwatch_log_group.evaluation_executor]
+  depends_on = [
+    aws_cloudwatch_log_group.evaluation_executor,
+    null_resource.build_evaluation_executor
+  ]
 
   tags = merge(var.tags, {
     Name = "${local.name_prefix}-evaluation-executor"
