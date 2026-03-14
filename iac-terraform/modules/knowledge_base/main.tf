@@ -316,67 +316,10 @@ resource "aws_opensearchserverless_access_policy" "data" {
 
 # -----------------------------------------------------------------------------
 # Lambda Function Package (with dependencies)
+# Built by CodeBuild in codebuild.tf — no local Docker required.
+# CodeBuild uploads the zip artifact to:
+#   s3://<kb-build-bucket>/artifacts/create-vector-index.zip
 # -----------------------------------------------------------------------------
-
-resource "null_resource" "build_vector_index_lambda" {
-  count = var.enabled ? 1 : 0
-
-  triggers = {
-    source_hash       = filesha256("${path.module}/lambdas/create-vector-index/index.py")
-    requirements_hash = filesha256("${path.module}/lambdas/create-vector-index/requirements.txt")
-  }
-
-  provisioner "local-exec" {
-    interpreter = ["/bin/bash", "-c"]
-    command     = <<-EOF
-      set -e
-
-      # Get absolute paths (required for Docker volume mounts)
-      MODULE_DIR="$(cd "${path.module}" && pwd)"
-      SOURCE_DIR="$MODULE_DIR/lambdas/create-vector-index"
-      BUILD_DIR="$MODULE_DIR/build/create-vector-index-package"
-      OUTPUT_ZIP="$MODULE_DIR/build/create-vector-index.zip"
-
-      echo "Building Lambda package with dependencies using Docker..."
-      echo "Source: $SOURCE_DIR"
-      echo "Build: $BUILD_DIR"
-
-      # Clean and create build directory
-      rm -rf "$BUILD_DIR"
-      mkdir -p "$BUILD_DIR"
-      mkdir -p "$MODULE_DIR/build"
-
-      # Build using Docker (no local Python required)
-      # Use standard Python image with --entrypoint override
-      docker run --rm \
-        --entrypoint /bin/bash \
-        -v "$SOURCE_DIR":/source:ro \
-        -v "$BUILD_DIR":/output \
-        public.ecr.aws/docker/library/python:3.12-slim \
-        -c "
-          pip install -r /source/requirements.txt -t /output --quiet --upgrade && \
-          cp /source/index.py /output/
-        "
-
-      # Create zip
-      cd "$BUILD_DIR"
-      rm -f "$OUTPUT_ZIP"
-      zip -r "$OUTPUT_ZIP" . -q
-
-      echo "Lambda package built: $OUTPUT_ZIP"
-    EOF
-  }
-}
-
-data "archive_file" "vector_index_lambda" {
-  count = var.enabled ? 1 : 0
-
-  type        = "zip"
-  source_dir  = "${path.module}/build/create-vector-index-package"
-  output_path = "${path.module}/build/create-vector-index.zip"
-
-  depends_on = [null_resource.build_vector_index_lambda]
-}
 
 # -----------------------------------------------------------------------------
 # Lambda Function to Create Vector Index
@@ -398,8 +341,9 @@ resource "aws_lambda_function" "create_vector_index" {
   timeout       = 900 # 15 minutes for retries
   memory_size   = 256
 
-  filename         = data.archive_file.vector_index_lambda[0].output_path
-  source_code_hash = data.archive_file.vector_index_lambda[0].output_base64sha256
+  s3_bucket        = aws_s3_bucket.kb_build[0].id
+  s3_key           = local.vector_index_artifact_s3_key
+  source_code_hash = local.vector_index_source_hash
 
   layers = [
     var.powertools_layer_arn,
@@ -420,7 +364,8 @@ resource "aws_lambda_function" "create_vector_index" {
 
   depends_on = [
     aws_iam_role_policy.vector_index_lambda_policy,
-    aws_opensearchserverless_access_policy.data
+    aws_opensearchserverless_access_policy.data,
+    null_resource.build_vector_index_lambda
   ]
 
   tags = var.tags
