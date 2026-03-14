@@ -13,8 +13,8 @@ Creates:
 
 locals {
   name_prefix         = lower(var.prefix)
-  lambda_function_dir = "${path.module}/../../../lib/api/functions/outgoing-message-handler"
-  resolvers_dir       = "${path.module}/../../../lib/api/functions/resolvers"
+  lambda_function_dir = "${path.module}/../../../src/api/functions/outgoing-message-handler"
+  resolvers_dir       = "${path.module}/../../../src/api/functions/resolvers"
 }
 
 # Get current region and account

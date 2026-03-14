@@ -12,7 +12,7 @@ Creates:
 
 locals {
   name_prefix   = lower(var.prefix)
-  resolvers_dir = "${path.module}/../../../../lib/api/functions/resolvers"
+  resolvers_dir = "${path.module}/../../../../src/api/functions/resolvers"
 
   # Lambda-backed resolver operations (main agentCoreResolver)
   lambda_operations = [

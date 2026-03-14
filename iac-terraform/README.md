@@ -130,6 +130,6 @@ See [`terraform.tfvars.example`](./terraform.tfvars.example) for all available c
 ## Differences from CDK
 
 - Terraform uses **native resources** instead of CDK constructs
-- Lambda code is shared with CDK (`lib/*/functions/`)
+- Lambda code is shared with CDK (`src/*/functions/`)
 - All builds happen in **CodeBuild** rather than locally (Docker/esbuild)
 - Some features may lag behind CDK implementation

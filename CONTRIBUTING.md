@@ -148,7 +148,13 @@ agentic-chatbot-accelerator/
 │   ├── config.ts          # Default TypeScript configuration
 │   ├── config.yaml        # YAML configuration override (not Git versioned)
 │   └── aca.ts             # CDK app entry point
-├── lib/                    # CDK constructs and infrastructure code
+├── src/                    # Shared runtime code (Lambda functions, Docker, React app)
+│   ├── agent-core/         # Agent Docker containers and Lambda functions
+│   ├── api/                # API Lambda functions, resolvers, schemas
+│   ├── shared/             # Shared layers and Python SDK
+│   └── user-interface/     # React frontend application
+├── iac-cdk/                # CDK infrastructure-as-code
+├── iac-terraform/          # Terraform infrastructure-as-code
 │   ├── api/               # GraphQL API and Lambda functions
 │   ├── agent-core/        # AgentCore runtime infrastructure
 │   ├── user-interface/    # React frontend application
@@ -225,7 +231,7 @@ make precommit-run
 
 2. **Frontend Testing**:
    ```bash
-   cd lib/user-interface/react-app
+   cd src/user-interface/react-app
    npm run lint
    npm run build:dev
    ```
@@ -242,17 +248,17 @@ make precommit-run
 
 5. **Local Frontend Development**:
    - Deploy the stack first to get the CloudFront URL
-   - Copy `<cloudfront-url>/aws-exports.json` to `lib/user-interface/react-app/public/aws-exports.json`
+   - Copy `<cloudfront-url>/aws-exports.json` to `src/user-interface/react-app/public/aws-exports.json`
    - Run `npm run dev` from the react-app folder
 
 ## Contribution Types
 
 ### Code Contributions
 
-- **Infrastructure (CDK)**: Modifications to `lib/` directory constructs
-- **Lambda Functions**: Python handlers in `lib/*/functions/`
+- **Infrastructure (CDK)**: Modifications to `iac-cdk/lib/` directory constructs
+- **Lambda Functions**: Python handlers in `src/*/functions/`
 - **Frontend (React)**: Components in `lib/user-interface/react-app/src/`
-- **Agent Runtime**: Docker container and Python code in `lib/agent-core/docker/`
+- **Agent Runtime**: Docker container and Python code in `src/agent-core/docker/`
 
 ### Documentation Contributions
 

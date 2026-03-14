@@ -12,7 +12,9 @@ agentic-chatbot-accelerator/
 │   ├── config.ts          # Default TypeScript configuration
 │   ├── config.yaml        # YAML configuration override - not Git versioned
 │   └── aca.ts           # CDK app entry point
-├── lib/                    # CDK constructs and infrastructure code
+├── src/                    # Shared runtime code (Lambda, Docker, React)
+├── iac-cdk/                # CDK infrastructure-as-code
+├── iac-terraform/          # Terraform infrastructure-as-code
 │   ├── api/               # GraphQL API and Lambda functions
 │   │   ├── functions/     # Lambda function implementations
 │   │   │   ├── http-api-handler/      # Main HTTP API handler
@@ -67,9 +69,9 @@ The Agentic Chatbot Accelerator supports optional features that can be enabled o
 ### Knowledge Base Feature
 
 The Knowledge Base feature includes:
-- **Data Processing Pipeline** (`lib/data-processing/`): Step Functions workflow for document processing
-- **Knowledge Base Management** (`lib/knowledge-base/`): Bedrock Knowledge Base provisioning and management
-- **Knowledge Base API** (`lib/api/knowledge-base.ts`): Dedicated Lambda resolver for KB operations
+- **Data Processing Pipeline** (`src/data-processing/` (CDK construct: `iac-cdk/lib/data-processing/`)): Step Functions workflow for document processing
+- **Knowledge Base Management** (`src/knowledge-base/` (CDK construct: `iac-cdk/lib/knowledge-base/`)): Bedrock Knowledge Base provisioning and management
+- **Knowledge Base API** (`iac-cdk/lib/api/knowledge-base.ts`): Dedicated Lambda resolver for KB operations
 - **UI Components**: Navigation items and pages for document and KB management
 
 This feature is enabled when both `knowledgeBaseParameters` and `dataProcessingParameters` are configured in `bin/config.yaml`. When disabled:
@@ -113,7 +115,7 @@ If you are using VSCode as your IDE, you can use the following workspace setting
 
 ```json
 {
-    "python.analysis.extraPaths": ["./lib/shared/layers/python-sdk"],
+    "python.analysis.extraPaths": ["./src/shared/layers/python-sdk"],
     "[python]": {
         "editor.formatOnSave": false,
         "editor.defaultFormatter": "ms-python.black-formatter"
@@ -132,7 +134,7 @@ If you are using VSCode as your IDE, you can use the following workspace setting
     },
     "isort.args":["--profile", "black"],
     "python.testing.pytestArgs": [
-        "lib/shared/layers/python-sdk/tests"
+        "src/shared/layers/python-sdk/tests"
     ],
     "python.testing.unittestEnabled": false,
     "python.testing.pytestEnabled": true,
@@ -151,13 +153,13 @@ If you are using VSCode as your IDE, you can use the following workspace setting
 
 ### Key Components
 
-#### Chat Interface (`lib/user-interface/react-app/src/components/chatbot/`)
+#### Chat Interface (`src/user-interface/react-app/src/components/chatbot/`)
 - `chat.tsx`: Main chat container
 - `chat-input-panel.tsx`: Message input with voice support
 - `chat-message.tsx`: Message rendering with markdown support
 - `sessions.tsx`: Session history management
 
-#### Admin Interface (`lib/user-interface/react-app/src/components/admin/`)
+#### Admin Interface (`src/user-interface/react-app/src/components/admin/`)
 - `agent-core-runtime-manager.tsx`: AgentCore runtime management
 - `kb-manager.tsx`: Knowledge base administration
 - `documents.tsx`: Document upload and processing
@@ -174,7 +176,7 @@ npm run gen
 
 ### Local development
 
-Go to `<app cloudfront URL>/aws-exports.json` and copy its content to `lib/user-interface/react-app/public/aws-exports.json`, then run `npm run dev` from the [react app folder](../../lib/user-interface/react-app).
+Go to `<app cloudfront URL>/aws-exports.json` and copy its content to `src/user-interface/react-app/public/aws-exports.json`, then run `npm run dev` from the [react app folder](../../src/user-interface/react-app).
 
 If you get a CDK deployment error after changing frontend code, you might want to run `npm run build:dev` from the react app folder to debug more easily. Note that running `npm run build:dev` will overwrite the `aws-exports.json` file, and you will need to populate it again.
 

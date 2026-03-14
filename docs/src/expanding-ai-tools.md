@@ -239,7 +239,7 @@ class MyTool(AbstractToolObject):
 
 ### 1. Implement Tool Logic
 
-Add your tool to [lib/agent-core/docker/src/registry.py](../../lib/agent-core/docker/src/registry.py):
+Add your tool to [lib/agent-core/docker/src/registry.py](../../src/agent-core/docker/src/registry.py):
 
 ```python
 # Function-based example

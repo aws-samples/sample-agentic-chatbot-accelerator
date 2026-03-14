@@ -15,7 +15,7 @@ Creates:
 
 locals {
   name_prefix        = lower(var.prefix)
-  state_machines_dir = "${path.module}/../../../../lib/api/state-machines"
+  state_machines_dir = "${path.module}/../../../../src/api/state-machines"
 }
 
 # Get current region and account

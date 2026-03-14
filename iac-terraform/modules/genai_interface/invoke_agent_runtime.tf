@@ -10,7 +10,7 @@ Creates:
 - IAM Role with permissions for DynamoDB, SNS, and Bedrock AgentCore
 - SNS subscription to messages topic (direction = "In")
 
-Equivalent to: invokeAgentCoreRuntime Lambda in lib/genai-interface/index.ts
+Equivalent to: invokeAgentCoreRuntime Lambda in iac-cdk/lib/genai-interface/index.ts
 */
 
 # -----------------------------------------------------------------------------

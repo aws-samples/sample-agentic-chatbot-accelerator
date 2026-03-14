@@ -9,12 +9,12 @@ Creates:
 - null_resource that triggers cleanup on destroy
 - IAM role with permissions for Bedrock, EventBridge, and AgentCore cleanup
 
-Equivalent to: lib/cleanup/index.ts
+Equivalent to: iac-cdk/lib/cleanup/index.ts
 */
 
 locals {
   name_prefix      = lower(var.prefix)
-  lambda_asset_dir = "${path.module}/../../../lib/cleanup/functions/cleanup-handler"
+  lambda_asset_dir = "${path.module}/../../../src/cleanup/functions/cleanup-handler"
 }
 
 # Get current region and account

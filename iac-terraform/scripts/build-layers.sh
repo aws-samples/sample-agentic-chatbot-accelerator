@@ -193,7 +193,7 @@ fi
 # -----------------------------------------------------------------------------
 # Build boto3 Layer
 # -----------------------------------------------------------------------------
-BOTO3_LAYER_DIR="${PROJECT_ROOT}/lib/shared/layers/boto3-latest"
+BOTO3_LAYER_DIR="${PROJECT_ROOT}/src/shared/layers/boto3-latest"
 BOTO3_ZIP="${BUILD_DIR}/boto3-layer.zip"
 BOTO3_HASH_FILE="${BUILD_DIR}/.boto3-layer.hash"
 
@@ -255,7 +255,7 @@ fi
 # -----------------------------------------------------------------------------
 # Build GenAI Core Layer
 # -----------------------------------------------------------------------------
-GENAI_CORE_DIR="${PROJECT_ROOT}/lib/shared/layers/python-sdk"
+GENAI_CORE_DIR="${PROJECT_ROOT}/src/shared/layers/python-sdk"
 GENAI_CORE_ZIP="${BUILD_DIR}/genai-core-layer.zip"
 GENAI_CORE_HASH_FILE="${BUILD_DIR}/.genai-core-layer.hash"
 
@@ -290,7 +290,7 @@ fi
 # Build TypeScript Lambda Functions
 # Uses esbuild to compile TypeScript to JavaScript
 # -----------------------------------------------------------------------------
-NOTIFY_RUNTIME_UPDATE_DIR="${PROJECT_ROOT}/lib/api/functions/notify-runtime-update"
+NOTIFY_RUNTIME_UPDATE_DIR="${PROJECT_ROOT}/src/api/functions/notify-runtime-update"
 NOTIFY_RUNTIME_UPDATE_OUT="${BUILD_DIR}/notify-runtime-update"
 NOTIFY_RUNTIME_UPDATE_HASH_FILE="${BUILD_DIR}/.notify-runtime-update.hash"
 

@@ -18,7 +18,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TERRAFORM_DIR="${PROJECT_ROOT}/iac-terraform"
-DOCKER_DIR="${PROJECT_ROOT}/lib/agent-core/docker"
+DOCKER_DIR="${PROJECT_ROOT}/src/agent-core/docker"
 
 # Defaults
 AWS_PROFILE=""
@@ -161,7 +161,7 @@ if [[ -z "$IMAGE_TAG" ]]; then
 fi
 
 # Determine swarm image tag from Terraform output or content hash
-SWARM_DOCKER_DIR="${PROJECT_ROOT}/lib/agent-core/docker-swarm"
+SWARM_DOCKER_DIR="${PROJECT_ROOT}/src/agent-core/docker-swarm"
 cd "${TERRAFORM_DIR}"
 SWARM_IMAGE_TAG=$(terraform output -raw swarm_docker_image_tag 2>/dev/null || echo "")
 cd - > /dev/null

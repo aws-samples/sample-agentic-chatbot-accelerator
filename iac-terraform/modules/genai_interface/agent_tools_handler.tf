@@ -10,7 +10,7 @@ Creates:
 - IAM Role with permissions for SNS and Bedrock InvokeModel
 - SNS subscription to agent tools topic
 
-Equivalent to: agentToolsHandler Lambda in lib/genai-interface/index.ts
+Equivalent to: agentToolsHandler Lambda in iac-cdk/lib/genai-interface/index.ts
 */
 
 # -----------------------------------------------------------------------------

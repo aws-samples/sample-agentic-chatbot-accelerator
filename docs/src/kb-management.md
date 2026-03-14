@@ -73,7 +73,7 @@ As shown in the GIF, users can also manage document metadata. For example, they 
 
 ![Knowledge Base Manager](../gifs/ux-kb-creation-experience.gif)
 
-Users can create new Bedrock Knowledge Bases to attach to agents. This allows users to test different chunking and vector embedding options. Knowledge bases created by a user are only visible to that user by default. Note that the CDK will clean up Bedrock Knowledge Bases created from the application upon destruction using a [custom cleanup Lambda function](../../lib/cleanup/functions/cleanup-handler/index.py).
+Users can create new Bedrock Knowledge Bases to attach to agents. This allows users to test different chunking and vector embedding options. Knowledge bases created by a user are only visible to that user by default. Note that the CDK will clean up Bedrock Knowledge Bases created from the application upon destruction using a [custom cleanup Lambda function](../../src/cleanup/functions/cleanup-handler/index.py).
 
 ## Reranking Configuration
 

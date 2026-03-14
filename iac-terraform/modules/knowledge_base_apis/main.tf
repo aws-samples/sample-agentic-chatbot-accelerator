@@ -10,7 +10,7 @@ Creates:
 - AppSync data source and resolvers
 - OpenSearch Serverless access policy
 
-Equivalent to: KnowledgeBaseOps construct in lib/api/knowledge-base.ts
+Equivalent to: KnowledgeBaseOps construct in iac-cdk/lib/api/knowledge-base.ts
 */
 
 locals {
@@ -255,7 +255,7 @@ resource "aws_opensearchserverless_access_policy" "lambda_access" {
 
 data "archive_file" "kb_resolver" {
   type        = "zip"
-  source_dir  = "${path.module}/../../../lib/api/functions/knowledge-base-resolver"
+  source_dir  = "${path.module}/../../../src/api/functions/knowledge-base-resolver"
   output_path = "${path.module}/../../build/knowledge-base-resolver.zip"
 }
 

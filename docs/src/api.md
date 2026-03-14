@@ -1,6 +1,6 @@
 # API Reference
 
-The following table documents the [GraphQL API schema](../../lib/api/schema/schema.graphql).
+The following table documents the [GraphQL API schema](../../src/api/schema/schema.graphql).
 
 | FieldName | Type | Functionality | Callable from Internet | Authorized Callers | Comments |
 |-----------|------|---------------|------------------------|-------------------|----------|

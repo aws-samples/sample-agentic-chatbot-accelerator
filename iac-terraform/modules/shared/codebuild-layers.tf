@@ -31,11 +31,11 @@ data "aws_region" "current_region" {}
 
 locals {
   # Source paths for layers
-  boto3_requirements_path = "${path.module}/../../../lib/shared/layers/boto3-latest/requirements.txt"
-  genai_core_source_path  = "${path.module}/../../../lib/shared/layers/python-sdk/genai_core"
+  boto3_requirements_path = "${path.module}/../../../src/shared/layers/boto3-latest/requirements.txt"
+  genai_core_source_path  = "${path.module}/../../../src/shared/layers/python-sdk/genai_core"
 
   # Source path for TypeScript Lambda
-  notify_runtime_update_path = "${path.module}/../../../lib/api/functions/notify-runtime-update"
+  notify_runtime_update_path = "${path.module}/../../../src/api/functions/notify-runtime-update"
 
   # Content-based tags for change detection
   boto3_content_hash     = filesha256(local.boto3_requirements_path)

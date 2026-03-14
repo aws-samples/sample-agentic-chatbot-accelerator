@@ -9,12 +9,12 @@ Creates:
 - CloudFront distribution with OAC
 - React app build and deployment
 
-Equivalent to: lib/user-interface/index.ts UserInterface construct
+Equivalent to: iac-cdk/lib/user-interface/index.ts UserInterface construct
 */
 
 locals {
   name_prefix     = lower(var.prefix)
-  react_app_path  = "${path.module}/../../../lib/user-interface/react-app"
+  react_app_path  = "${path.module}/../../../src/user-interface/react-app"
   build_path      = "${local.react_app_path}/dist"
   aws_profile_arg = var.aws_profile != "" ? "--profile ${var.aws_profile}" : ""
 }

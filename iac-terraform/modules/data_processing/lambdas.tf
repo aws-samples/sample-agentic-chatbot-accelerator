@@ -27,7 +27,7 @@ locals {
 
 data "archive_file" "pipeline_start" {
   type        = "zip"
-  source_dir  = "${path.module}/../../../lib/data-processing/functions/pipeline-start"
+  source_dir  = "${path.module}/../../../src/data-processing/functions/pipeline-start"
   output_path = "${path.module}/../../../iac-terraform/build/data_processing_pipeline_start.zip"
 }
 
@@ -163,7 +163,7 @@ resource "aws_lambda_event_source_mapping" "pipeline_start_sqs" {
 
 data "archive_file" "create_metadata_file" {
   type        = "zip"
-  source_dir  = "${path.module}/../../../lib/data-processing/functions/create-metadata-file"
+  source_dir  = "${path.module}/../../../src/data-processing/functions/create-metadata-file"
   output_path = "${path.module}/../../../iac-terraform/build/data_processing_create_metadata_file.zip"
 }
 
@@ -292,7 +292,7 @@ resource "aws_iam_role_policy" "lambda_create_metadata_file" {
 
 data "archive_file" "transcribe_read" {
   type        = "zip"
-  source_dir  = "${path.module}/../../../lib/data-processing/functions/transcribe-read"
+  source_dir  = "${path.module}/../../../src/data-processing/functions/transcribe-read"
   output_path = "${path.module}/../../../iac-terraform/build/data_processing_transcribe_read.zip"
 }
 
@@ -411,7 +411,7 @@ resource "aws_iam_role_policy" "lambda_transcribe_read" {
 
 data "archive_file" "json_read" {
   type        = "zip"
-  source_dir  = "${path.module}/../../../lib/data-processing/functions/json-read"
+  source_dir  = "${path.module}/../../../src/data-processing/functions/json-read"
   output_path = "${path.module}/../../../iac-terraform/build/data_processing_json_read.zip"
 }
 

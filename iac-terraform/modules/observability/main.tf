@@ -9,7 +9,7 @@ Creates:
 - X-Ray Transaction Search Configuration
 - CloudWatch Dashboard for AgentCore metrics
 
-Equivalent to: lib/observability/index.ts
+Equivalent to: iac-cdk/lib/observability/index.ts
 */
 
 locals {

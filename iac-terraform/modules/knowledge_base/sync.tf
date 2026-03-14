@@ -5,7 +5,7 @@
 # -------------------------------------------------------------------------
 # Sync Lambda and SQS Queue for Knowledge Base
 #
-# Equivalent to: createSyncQueue() in lib/knowledge-base/index.ts
+# Equivalent to: createSyncQueue() in iac-cdk/lib/knowledge-base/index.ts
 # -------------------------------------------------------------------------
 
 # -----------------------------------------------------------------------------
@@ -81,7 +81,7 @@ data "archive_file" "sync_kb" {
   count = var.enabled ? 1 : 0
 
   type        = "zip"
-  source_dir  = "${path.module}/../../../lib/knowledge-base/functions/sync-knowledgebase"
+  source_dir  = "${path.module}/../../../src/knowledge-base/functions/sync-knowledgebase"
   output_path = "${path.module}/../../build/sync-knowledgebase.zip"
 }
 

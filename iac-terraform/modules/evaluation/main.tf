@@ -15,7 +15,7 @@ Creates:
 
 locals {
   name_prefix   = lower(var.prefix)
-  functions_dir = "${path.module}/../../../lib/api/functions"
+  functions_dir = "${path.module}/../../../src/api/functions"
 }
 
 data "aws_region" "current" {}

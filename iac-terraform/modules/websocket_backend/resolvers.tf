@@ -11,7 +11,7 @@ Creates:
 */
 
 locals {
-  resolver_path = "${path.module}/../../../lib/api/functions/resolvers"
+  resolver_path = "${path.module}/../../../src/api/functions/resolvers"
 }
 
 # -----------------------------------------------------------------------------

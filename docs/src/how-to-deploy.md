@@ -75,7 +75,7 @@ make deploy-finch PROFILE=user-profile
 
 ## CDK Configuration
 
-The CDK stack is configured through the `SystemConfig` interface defined in [lib/shared/types.ts](../../lib/shared/types.ts). Configuration is loaded from `bin/config.yaml`, with fallback to default values in [bin/config.ts](../../bin/config.ts).
+The CDK stack is configured through the `SystemConfig` interface defined in [iac-cdk/lib/shared/types.ts](../../iac-cdk/lib/shared/types.ts). Configuration is loaded from `iac-cdk/bin/config.yaml`, with fallback to default values in [iac-cdk/bin/config.ts](../../iac-cdk/bin/config.ts).
 
 ### Configuration Structure
 

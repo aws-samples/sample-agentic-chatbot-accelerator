@@ -5,7 +5,7 @@ SPDX-License-Identifier: MIT-0
 Knowledge Base APIs Module - Input Variables
 
 This module handles Knowledge Base GraphQL operations via AppSync resolvers.
-Equivalent to: KnowledgeBaseOps construct in lib/api/knowledge-base.ts
+Equivalent to: KnowledgeBaseOps construct in iac-cdk/lib/api/knowledge-base.ts
 */
 
 variable "prefix" {

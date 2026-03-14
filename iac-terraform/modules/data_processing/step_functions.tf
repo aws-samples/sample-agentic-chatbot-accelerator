@@ -25,7 +25,7 @@ resource "aws_cloudwatch_log_group" "state_machine" {
 locals {
   # Read the state machine definition and perform substitutions
   state_machine_definition = templatefile(
-    "${path.module}/../../../lib/data-processing/state-machines/data-processing.json",
+    "${path.module}/../../../src/data-processing/state-machines/data-processing.json",
     {
       tableDocumentProcessingState = aws_dynamodb_table.document_state.arn
       lambdaCreateMetadataFile     = aws_lambda_function.create_metadata_file.arn

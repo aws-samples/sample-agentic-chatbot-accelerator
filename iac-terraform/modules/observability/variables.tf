@@ -5,7 +5,7 @@ SPDX-License-Identifier: MIT-0
 Observability Module - Input Variables
 
 Creates X-Ray Transaction Search and CloudWatch Dashboard for AgentCore.
-Equivalent to: lib/observability/index.ts
+Equivalent to: iac-cdk/lib/observability/index.ts
 */
 
 variable "prefix" {

@@ -6,7 +6,7 @@ SPDX-License-Identifier: MIT-0
 # -----------------------------------------------------------------------------
 # ACA Stack - Terraform equivalent
 # This is the root module that instantiates all infrastructure components.
-# Equivalent to lib/aca-stack.ts in CDK.
+# Equivalent to iac-cdk/lib/aca-stack.ts in CDK.
 # -----------------------------------------------------------------------------
 
 # -----------------------------------------------------------------------------
@@ -178,7 +178,7 @@ module "agent_core" {
 # -----------------------------------------------------------------------------
 # API Tables Module
 # Creates DynamoDB tables for session and favorite runtime storage
-# Equivalent to: new ChatbotDynamoDBTables(this, "ChatTables") in lib/api/tables/index.ts
+# Equivalent to: new ChatbotDynamoDBTables(this, "ChatTables") in iac-cdk/lib/api/tables/index.ts
 # -----------------------------------------------------------------------------
 module "api_tables" {
   source = "./modules/api_tables"
@@ -192,14 +192,14 @@ module "api_tables" {
 # -----------------------------------------------------------------------------
 # AppSync GraphQL API Module
 # Creates the GraphQL API with Cognito and IAM authentication
-# Equivalent to: new appsync.GraphqlApi(this, "ChatbotApi", {...}) in lib/api/index.ts
+# Equivalent to: new appsync.GraphqlApi(this, "ChatbotApi", {...}) in iac-cdk/lib/api/index.ts
 # -----------------------------------------------------------------------------
 module "appsync" {
   source = "./modules/appsync"
 
   prefix           = local.prefix
   user_pool_id     = module.authentication.user_pool_id
-  schema_file_path = "${path.module}/../lib/api/schema/schema.graphql"
+  schema_file_path = "${path.module}/../src/api/schema/schema.graphql"
   kms_key_arn      = aws_kms_key.main.arn
 
   depends_on = [module.authentication, aws_kms_key.main]
@@ -208,7 +208,7 @@ module "appsync" {
 # -----------------------------------------------------------------------------
 # HTTP API Resolver Module
 # Creates Lambda function and AppSync resolvers for HTTP API operations
-# Equivalent to: new HttpApiBackend(this, "SyncApiBackend", {...}) in lib/api/index.ts
+# Equivalent to: new HttpApiBackend(this, "SyncApiBackend", {...}) in iac-cdk/lib/api/index.ts
 # -----------------------------------------------------------------------------
 module "http_api_resolver" {
   source = "./modules/http_api_resolver"
@@ -217,7 +217,7 @@ module "http_api_resolver" {
 
   # AppSync
   appsync_api_id      = module.appsync.api_id
-  graphql_schema_path = "${path.module}/../lib/api/schema/schema.graphql"
+  graphql_schema_path = "${path.module}/../src/api/schema/schema.graphql"
 
   # DynamoDB Tables
   sessions_table_name            = module.api_tables.sessions_table_name
@@ -257,7 +257,7 @@ module "http_api_resolver" {
 # -----------------------------------------------------------------------------
 # WebSocket Backend Module
 # Creates SNS topic and Lambda for real-time messaging
-# Equivalent to: new WebsocketApiBackend(this, "RealtimeBackend", {...}) in lib/api/index.ts
+# Equivalent to: new WebsocketApiBackend(this, "RealtimeBackend", {...}) in iac-cdk/lib/api/index.ts
 # -----------------------------------------------------------------------------
 module "websocket_backend" {
   source = "./modules/websocket_backend"
@@ -278,7 +278,7 @@ module "websocket_backend" {
 # Agent Core APIs Module
 # Creates Lambda functions, Step Functions, and AppSync resolvers for
 # Bedrock AgentCore runtime lifecycle management
-# Equivalent to: new AgentCoreApis(this, "AgentCoreApis", {...}) in lib/api/index.ts
+# Equivalent to: new AgentCoreApis(this, "AgentCoreApis", {...}) in iac-cdk/lib/api/index.ts
 # -----------------------------------------------------------------------------
 module "agent_core_apis" {
   source = "./modules/agent_core_apis"
@@ -336,7 +336,7 @@ module "agent_core_apis" {
 # -----------------------------------------------------------------------------
 # GenAI Interface Module
 # Creates Lambda functions for invoking AgentCore runtime and handling agent tools
-# Equivalent to: new GenAIInterface(this, "GenAI", {...}) in lib/aca-stack.ts
+# Equivalent to: new GenAIInterface(this, "GenAI", {...}) in iac-cdk/lib/aca-stack.ts
 # -----------------------------------------------------------------------------
 module "genai_interface" {
   source = "./modules/genai_interface"
@@ -372,7 +372,7 @@ module "genai_interface" {
 # -----------------------------------------------------------------------------
 # User Interface Module
 # Creates S3 buckets, CloudFront distribution, builds and deploys React app
-# Equivalent to: new UserInterface(this, "UserInterface", {...}) in lib/aca-stack.ts
+# Equivalent to: new UserInterface(this, "UserInterface", {...}) in iac-cdk/lib/aca-stack.ts
 # -----------------------------------------------------------------------------
 module "user_interface" {
   source = "./modules/user_interface"
@@ -412,7 +412,7 @@ module "user_interface" {
 # S3 CORS Configuration for Data Bucket (when data_processing is enabled)
 # Allows browser-based uploads via Amplify Storage
 # Must be defined at root level to access CloudFront domain from user_interface
-# Matches CDK configuration in lib/user-interface/index.ts
+# Matches CDK configuration in iac-cdk/lib/user-interface/index.ts
 # -----------------------------------------------------------------------------
 resource "aws_s3_bucket_cors_configuration" "data_bucket_cors" {
   count  = var.data_processing != null ? 1 : 0
@@ -440,7 +440,7 @@ resource "aws_s3_bucket_cors_configuration" "data_bucket_cors" {
 # -----------------------------------------------------------------------------
 # IAM Policy for Cognito Authenticated Users to access Data Bucket
 # Allows browser-based uploads via Amplify Storage
-# Matches CDK configuration in lib/user-interface/index.ts:
+# Matches CDK configuration in iac-cdk/lib/user-interface/index.ts:
 #   props.identityPool.authenticatedRole.addToPrincipalPolicy(...)
 # -----------------------------------------------------------------------------
 resource "aws_iam_role_policy" "cognito_data_bucket_access" {
@@ -483,7 +483,7 @@ resource "aws_iam_role_policy" "cognito_data_bucket_access" {
 # Data Processing Module (Optional)
 # Creates S3 buckets, DynamoDB table, Lambda functions, Step Functions,
 # SQS queues, and EventBridge rules for document processing pipeline
-# Equivalent to: new DataProcessing(this, "DataProcessing", {...}) in lib/aca-stack.ts
+# Equivalent to: new DataProcessing(this, "DataProcessing", {...}) in iac-cdk/lib/aca-stack.ts
 # -----------------------------------------------------------------------------
 module "data_processing" {
   source = "./modules/data_processing"
@@ -517,7 +517,7 @@ module "data_processing" {
 # Creates Bedrock Knowledge Base with OpenSearch Serverless vector store
 # using the aws-ia/bedrock community module
 # Requires data_processing module to be enabled
-# Equivalent to: new VectorKnowledgeBase(this, "KnowledgeBase", {...}) in lib/aca-stack.ts
+# Equivalent to: new VectorKnowledgeBase(this, "KnowledgeBase", {...}) in iac-cdk/lib/aca-stack.ts
 # -----------------------------------------------------------------------------
 module "knowledge_base" {
   source = "./modules/knowledge_base"
@@ -561,7 +561,7 @@ module "knowledge_base" {
 # Knowledge Base APIs Module (Optional)
 # Creates Lambda function and AppSync resolvers for Knowledge Base operations
 # Requires both data_processing and knowledge_base modules to be enabled
-# Equivalent to: KnowledgeBaseOps in lib/api/knowledge-base.ts
+# Equivalent to: KnowledgeBaseOps in iac-cdk/lib/api/knowledge-base.ts
 # -----------------------------------------------------------------------------
 module "knowledge_base_apis" {
   source = "./modules/knowledge_base_apis"
@@ -608,7 +608,7 @@ module "knowledge_base_apis" {
 # Evaluation Module
 # Creates S3 buckets, SQS queues, Lambda functions, and AppSync resolvers
 # for agent evaluation using the Strands Eval SDK
-# Equivalent to: new EvaluationApi(this, "EvaluationApi", {...}) in lib/api/index.ts
+# Equivalent to: new EvaluationApi(this, "EvaluationApi", {...}) in iac-cdk/lib/api/index.ts
 # -----------------------------------------------------------------------------
 module "evaluation" {
   source = "./modules/evaluation"
@@ -640,7 +640,7 @@ module "evaluation" {
 # -----------------------------------------------------------------------------
 # Observability Module (Optional)
 # Creates X-Ray Transaction Search and CloudWatch Dashboard for AgentCore
-# Equivalent to: new Observability(this, "Observability", {...}) in lib/aca-stack.ts
+# Equivalent to: new Observability(this, "Observability", {...}) in iac-cdk/lib/aca-stack.ts
 # -----------------------------------------------------------------------------
 module "observability" {
   source = "./modules/observability"
@@ -659,7 +659,7 @@ module "observability" {
 # Cleanup Module
 # Creates Lambda function that runs during terraform destroy to clean up
 # user-created resources (agents, knowledge bases, EventBridge rules)
-# Equivalent to: new Cleanup(this, "CleanUpCustomResources", {...}) in lib/aca-stack.ts
+# Equivalent to: new Cleanup(this, "CleanUpCustomResources", {...}) in iac-cdk/lib/aca-stack.ts
 # -----------------------------------------------------------------------------
 module "cleanup" {
   source = "./modules/cleanup"

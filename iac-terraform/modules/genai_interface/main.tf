@@ -8,12 +8,12 @@ Creates:
 - invoke-agentCoreRuntime Lambda (handles AgentCore invocation via SNS)
 - agent-tools-handler Lambda (processes agent tools messages)
 
-Equivalent to: lib/genai-interface/index.ts GenAIInterface construct
+Equivalent to: iac-cdk/lib/genai-interface/index.ts GenAIInterface construct
 */
 
 locals {
   name_prefix   = lower(var.prefix)
-  functions_dir = "${path.module}/../../../lib/genai-interface/functions"
+  functions_dir = "${path.module}/../../../src/genai-interface/functions"
 
   # Build IAM condition for AgentCore resource scoping (matches CDK getTagConditions)
   # Restricts Lambda to only invoke AgentCore runtimes with matching tags

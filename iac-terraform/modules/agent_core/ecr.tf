@@ -292,7 +292,7 @@ resource "aws_ecr_lifecycle_policy" "agents_as_tools_agent_core" {
 locals {
   # Parent directory containing all Docker build contexts and shared code
   # All Dockerfiles reference paths relative to this dir (e.g., COPY shared/ shared/.)
-  agent_core_dir = "${path.module}/../../../lib/agent-core"
+  agent_core_dir = "${path.module}/../../../src/agent-core"
 
   docker_dir                 = "${local.agent_core_dir}/docker"
   swarm_docker_dir           = "${local.agent_core_dir}/docker-swarm"

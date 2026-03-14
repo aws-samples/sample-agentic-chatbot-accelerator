@@ -20,7 +20,7 @@ resource "aws_appsync_resolver" "update_favorite_runtime" {
   data_source = aws_appsync_datasource.favorites_dynamodb.name
   kind        = "UNIT"
 
-  code = file("${path.module}/../../../lib/api/functions/resolvers/favorite-runtime-resolvers/update.js")
+  code = file("${path.module}/../../../src/api/functions/resolvers/favorite-runtime-resolvers/update.js")
 
   runtime {
     name            = "APPSYNC_JS"
@@ -35,7 +35,7 @@ resource "aws_appsync_resolver" "reset_favorite_runtime" {
   data_source = aws_appsync_datasource.favorites_dynamodb.name
   kind        = "UNIT"
 
-  code = file("${path.module}/../../../lib/api/functions/resolvers/favorite-runtime-resolvers/delete.js")
+  code = file("${path.module}/../../../src/api/functions/resolvers/favorite-runtime-resolvers/delete.js")
 
   runtime {
     name            = "APPSYNC_JS"
@@ -50,7 +50,7 @@ resource "aws_appsync_resolver" "get_favorite_runtime" {
   data_source = aws_appsync_datasource.favorites_dynamodb.name
   kind        = "UNIT"
 
-  code = file("${path.module}/../../../lib/api/functions/resolvers/favorite-runtime-resolvers/get.js")
+  code = file("${path.module}/../../../src/api/functions/resolvers/favorite-runtime-resolvers/get.js")
 
   runtime {
     name            = "APPSYNC_JS"

@@ -4,7 +4,7 @@ SPDX-License-Identifier: MIT-0
 ----------------------------------------------------------------------
 Data Processing Module - Variables
 
-Equivalent to: lib/data-processing/index.ts
+Equivalent to: iac-cdk/lib/data-processing/index.ts
 */
 
 # -----------------------------------------------------------------------------

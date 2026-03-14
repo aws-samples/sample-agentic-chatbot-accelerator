@@ -1,23 +1,42 @@
+# =============================================================================
+# Shared build steps (used by both CDK and Terraform)
+# =============================================================================
+
+# Copy GraphQL utility file between Lambda functions
+copy-graphql-util:
+	cp src/api/functions/outgoing-message-handler/graphql.ts src/api/functions/notify-runtime-update/graphql.ts
+
+# Generate TypeScript types from GraphQL schema (requires @aws-amplify/cli)
+gen-graphql:
+	cd iac-cdk && npx @aws-amplify/cli codegen
+
+# =============================================================================
+# Python environment
+# =============================================================================
+
 init-python-env:
 	uv venv
 install-python-packages:
 	uv sync
 precommit-run:
 	pre-commit run --all-files
-deploy:
-	npm run copy-graphql-util
-	npm run gen
-# 	docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-	npx cdk deploy $(if $(PROFILE),--profile $(PROFILE))
-deploy-finch:
-	npm run copy-graphql-util
-	npm run gen
-	CDK_DOCKER=finch npx cdk deploy $(if $(PROFILE),--profile $(PROFILE))
 run-ash:
 	pre-commit run --hook-stage manual ash
+
+# =============================================================================
+# CDK Deployment
+# =============================================================================
+
+deploy: copy-graphql-util gen-graphql
+# 	docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+	cd iac-cdk && npx cdk deploy $(if $(PROFILE),--profile $(PROFILE))
+
+deploy-finch: copy-graphql-util gen-graphql
+	cd iac-cdk && CDK_DOCKER=finch npx cdk deploy $(if $(PROFILE),--profile $(PROFILE))
+
 clean-build:
-	git clean -fx lib/
-	git clean -fx bin/
+	git clean -fx iac-cdk/lib/
+	git clean -fx iac-cdk/bin/
 
 # =============================================================================
 # Terraform Deployment
@@ -62,10 +81,7 @@ tf-plan:
 # - React web app (user interface)
 # No local Docker or Node.js required for builds!
 # All settings read from iac-terraform/terraform.tfvars
-tf-deploy:
-	@echo "Regenerating GraphQL files..."
-	npm run copy-graphql-util
-	npm run gen
+tf-deploy: copy-graphql-util gen-graphql
 	@echo "Initializing Terraform..."
 	cd iac-terraform && terraform init -upgrade
 	@echo "Deploying all infrastructure..."
@@ -73,9 +89,7 @@ tf-deploy:
 	cd iac-terraform && terraform apply
 
 # Deploy with auto-approve (for CI/CD)
-tf-deploy-auto:
-	npm run copy-graphql-util
-	npm run gen
+tf-deploy-auto: copy-graphql-util gen-graphql
 	cd iac-terraform && terraform init -upgrade
 	cd iac-terraform && terraform apply -auto-approve
 
@@ -89,7 +103,7 @@ tf-checkov:
 
 # Clean Terraform build artifacts
 tf-clean:
-	rm -rf iac-terraform/build terraform/.terraform
+	rm -rf iac-terraform/build iac-terraform/.terraform
 
 # Full validation (format + validate + checkov)
 tf-lint: tf-fmt tf-validate tf-checkov
