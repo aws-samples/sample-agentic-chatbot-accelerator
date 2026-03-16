@@ -247,6 +247,7 @@ resource "null_resource" "build_evaluation_executor" {
 
   depends_on = [
     aws_codebuild_project.evaluation_executor,
-    aws_s3_object.executor_source_context
+    aws_s3_object.executor_source_context,
+    aws_iam_role_policy.codebuild_executor
   ]
 }

@@ -50,16 +50,19 @@ resource "aws_bedrockagentcore_agent_runtime" "default" {
     network_mode = "PUBLIC"
   }
 
-  environment_variables = {
-    accountId          = data.aws_caller_identity.current.account_id
-    agentName          = local.agent_name
-    createdAt          = local.created_at
-    tableName          = aws_dynamodb_table.agent_runtime_config.name
-    toolRegistry       = aws_dynamodb_table.tool_registry.name
-    mcpServerRegistry  = aws_dynamodb_table.mcp_server_registry.name
-    agentToolsTopicArn = aws_sns_topic.agent_tools.arn
-    memoryId           = var.agent_runtime_config.memory_config != null ? aws_bedrockagentcore_memory.default[0].id : ""
-  }
+  environment_variables = merge(
+    {
+      accountId          = data.aws_caller_identity.current.account_id
+      agentName          = local.agent_name
+      createdAt          = local.created_at
+      tableName          = aws_dynamodb_table.agent_runtime_config.name
+      toolRegistry       = aws_dynamodb_table.tool_registry.name
+      mcpServerRegistry  = aws_dynamodb_table.mcp_server_registry.name
+      agentToolsTopicArn = aws_sns_topic.agent_tools.arn
+      memoryId           = var.agent_runtime_config.memory_config != null ? aws_bedrockagentcore_memory.default[0].id : ""
+    },
+    var.bedrock_access_role_arn != null ? { bedrockAccessRoleArn = var.bedrock_access_role_arn } : {}
+  )
 
   dynamic "lifecycle_configuration" {
     for_each = var.agent_runtime_config.lifecycle_config != null ? [1] : []

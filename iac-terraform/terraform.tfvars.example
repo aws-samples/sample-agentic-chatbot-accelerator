@@ -26,6 +26,22 @@ aws_region = "us-east-1"
 # aws_profile = "your-profile-name"
 
 # =============================================================================
+# Optional: Cross-Account Bedrock Access
+# =============================================================================
+
+# ARN of a cross-account IAM role to assume for Bedrock model invocation (optional)
+# When set, agent runtimes will use STS AssumeRole to obtain temporary credentials
+# for invoking Bedrock models in the target account. This is useful when model access
+# is centralized in a separate AWS account.
+#
+# Prerequisites:
+# 1. The target account must have a role that trusts this account's AgentCore execution role
+# 2. The target role must have bedrock:InvokeModel* permissions
+#
+# Example:
+# bedrock_access_role_arn = "arn:aws:iam::<accountID>:role/<roleName>"
+
+# =============================================================================
 # Optional: Lambda Configuration
 # =============================================================================
 

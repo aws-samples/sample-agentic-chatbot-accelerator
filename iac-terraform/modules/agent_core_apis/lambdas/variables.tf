@@ -213,3 +213,13 @@ variable "notify_runtime_update_source_hash" {
   description = "Content hash for change detection"
   type        = string
 }
+
+# -----------------------------------------------------------------------------
+# Cross-Account Bedrock Access (Optional)
+# -----------------------------------------------------------------------------
+
+variable "bedrock_access_role_arn" {
+  description = "Optional ARN of a cross-account IAM role to assume for Bedrock model invocation."
+  type        = string
+  default     = null
+}

@@ -372,6 +372,16 @@ export class AcaAgentCoreContainer extends Construct {
                     `arn:aws:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:gateway/*`,
                 ],
             }),
+            // Cross-account Bedrock access via STS AssumeRole
+            ...(props.config.bedrockAccessRoleArn
+                ? [
+                      new iam.PolicyStatement({
+                          sid: "CrossAccountBedrockAccess",
+                          actions: ["sts:AssumeRole"],
+                          resources: [props.config.bedrockAccessRoleArn],
+                      }),
+                  ]
+                : []),
             new iam.PolicyStatement({
                 sid: "AgentCoreMemoryActions",
                 actions: [
@@ -489,6 +499,9 @@ export class AcaAgentCoreContainer extends Construct {
                     agentToolsTopicArn: agentToolsTopic.topicArn,
                     ...(memory && {
                         memoryId: memory.memoryId,
+                    }),
+                    ...(props.config.bedrockAccessRoleArn && {
+                        bedrockAccessRoleArn: props.config.bedrockAccessRoleArn,
                     }),
                 },
                 tags: {

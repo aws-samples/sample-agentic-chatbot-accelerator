@@ -89,6 +89,9 @@ module "lambdas" {
   notify_runtime_update_s3_bucket   = var.notify_runtime_update_s3_bucket
   notify_runtime_update_s3_key      = var.notify_runtime_update_s3_key
   notify_runtime_update_source_hash = var.notify_runtime_update_source_hash
+
+  # Cross-account Bedrock access
+  bedrock_access_role_arn = var.bedrock_access_role_arn
 }
 
 # -----------------------------------------------------------------------------

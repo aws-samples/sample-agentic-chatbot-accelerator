@@ -7,8 +7,11 @@
 # ---------------------------------------------------------------------------- #
 from __future__ import annotations
 
+import logging
+import os
 from typing import TYPE_CHECKING, Any
 
+import boto3
 from strands.agent.conversation_manager import (
     ConversationManager,
     NullConversationManager,
@@ -19,6 +22,8 @@ from strands.models import BedrockModel
 
 from .base_constants import RETRIEVE_FROM_KB_PREFIX
 from .stream_types import ReasoningEffort
+
+_cross_account_logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from logging import Logger
@@ -144,7 +149,48 @@ class BaseAgentFactory:
                 model_args["additional_request_fields"] = temp_add_args | {
                     reasoning_key: reasoning_cfg
                 }
+        # Use cross-account session if a Bedrock access role ARN is configured
+        bedrock_access_role_arn = os.environ.get("bedrockAccessRoleArn")
+        if bedrock_access_role_arn:
+            boto_session = BaseAgentFactory._get_cross_account_boto_session(
+                bedrock_access_role_arn
+            )
+            model_args["boto_session"] = boto_session
+
         return BedrockModel(**model_args)
+
+    @staticmethod
+    def _get_cross_account_boto_session(role_arn: str) -> boto3.Session:
+        """Assume a cross-account IAM role and return a boto3 Session with temporary credentials.
+
+        This enables invoking Bedrock models in a different AWS account that hosts
+        the model access. The role is assumed via STS and the resulting temporary
+        credentials are used to create a new boto3 Session.
+
+        Args:
+            role_arn (str): The ARN of the cross-account role to assume.
+
+        Returns:
+            boto3.Session: A boto3 session configured with assumed-role credentials.
+        """
+        _cross_account_logger.info(
+            f"Assuming cross-account role for Bedrock access: {role_arn}"
+        )
+        sts_client = boto3.client("sts")
+        response = sts_client.assume_role(
+            RoleArn=role_arn,
+            RoleSessionName="AgentCoreCrossAccountBedrock",
+            DurationSeconds=3600,
+        )
+        credentials = response["Credentials"]
+        _cross_account_logger.info(
+            f"Successfully assumed cross-account role. Session expires at: {credentials['Expiration']}"
+        )
+        return boto3.Session(
+            aws_access_key_id=credentials["AccessKeyId"],
+            aws_secret_access_key=credentials["SecretAccessKey"],
+            aws_session_token=credentials["SessionToken"],
+        )
 
     @staticmethod
     def create_conversation_manager(

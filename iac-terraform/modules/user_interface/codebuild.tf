@@ -329,6 +329,7 @@ resource "null_resource" "build_react_app_codebuild" {
     aws_s3_object.react_source,
     aws_s3_object.aws_exports,
     aws_s3_bucket.website,
-    aws_cloudfront_distribution.website
+    aws_cloudfront_distribution.website,
+    aws_iam_role_policy.codebuild
   ]
 }

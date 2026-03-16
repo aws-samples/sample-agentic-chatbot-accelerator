@@ -36,6 +36,7 @@ AGENT_TOOLS_TOPIC_ARN = os.environ["AGENT_TOOLS_TOPIC_ARN"]
 ACCOUNT_ID = os.environ["ACCOUNT_ID"]
 AGENTS_TABLE_NAME = os.environ.get("AGENTS_TABLE_NAME", "")
 AGENTS_SUMMARY_TABLE_NAME = os.environ.get("AGENTS_SUMMARY_TABLE_NAME", "")
+BEDROCK_ACCESS_ROLE_ARN = os.environ.get("BEDROCK_ACCESS_ROLE_ARN", "")
 
 ENVIRONMENT_TAG = os.environ.get("ENVIRONMENT_TAG", None)
 STACK_TAG = os.environ.get("STACK_TAG", None)
@@ -256,6 +257,12 @@ def handler(event: InputModel, _) -> dict:
     ):
         logger.info(f"Attaching created AgentCore memory {event.memoryId}")
         api_args["environmentVariables"]["memoryId"] = event.memoryId
+
+    # Propagate cross-account Bedrock access role ARN to runtime containers
+    if BEDROCK_ACCESS_ROLE_ARN:
+        api_args["environmentVariables"][
+            "bedrockAccessRoleArn"
+        ] = BEDROCK_ACCESS_ROLE_ARN
 
     api_func = (
         BAC_CLIENT.update_agent_runtime if agent else BAC_CLIENT.create_agent_runtime

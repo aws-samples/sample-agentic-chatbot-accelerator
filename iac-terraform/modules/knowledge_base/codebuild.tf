@@ -328,6 +328,7 @@ resource "null_resource" "build_vector_index_lambda" {
 
   depends_on = [
     aws_codebuild_project.vector_index_builder,
-    aws_s3_object.vector_index_source_context
+    aws_s3_object.vector_index_source_context,
+    aws_iam_role_policy.codebuild_vector_index
   ]
 }

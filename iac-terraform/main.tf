@@ -168,6 +168,9 @@ module "agent_core" {
   # The knowledge_base module outputs the ID which you can then add here for subsequent applies
   knowledge_base_id = var.knowledge_base_id
 
+  # Cross-account Bedrock access
+  bedrock_access_role_arn = var.bedrock_access_role_arn
+
   # KMS key from root level (breaks circular dependency)
   kms_key_arn = aws_kms_key.main.arn
   kms_key_id  = aws_kms_key.main.key_id
@@ -329,6 +332,9 @@ module "agent_core_apis" {
   notify_runtime_update_s3_bucket   = module.shared.notify_runtime_update_s3_bucket
   notify_runtime_update_s3_key      = module.shared.notify_runtime_update_s3_key
   notify_runtime_update_source_hash = module.shared.notify_runtime_update_source_hash
+
+  # Cross-account Bedrock access
+  bedrock_access_role_arn = var.bedrock_access_role_arn
 
   depends_on = [module.appsync, module.agent_core, module.websocket_backend]
 }

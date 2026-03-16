@@ -259,3 +259,27 @@ resource "aws_iam_role_policy" "execution" {
   role   = aws_iam_role.execution.id
   policy = data.aws_iam_policy_document.agentcore_execution.json
 }
+
+# -----------------------------------------------------------------------------
+# Cross-Account Bedrock Access Policy (Optional)
+# Allows the execution role to assume a role in another account for Bedrock
+# -----------------------------------------------------------------------------
+
+resource "aws_iam_role_policy" "cross_account_bedrock" {
+  count = var.bedrock_access_role_arn != null ? 1 : 0
+
+  name = "${local.name_prefix}-CrossAccountBedrockAccess"
+  role = aws_iam_role.execution.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "AllowAssumeRoleForBedrockAccess"
+        Effect   = "Allow"
+        Action   = "sts:AssumeRole"
+        Resource = var.bedrock_access_role_arn
+      }
+    ]
+  })
+}

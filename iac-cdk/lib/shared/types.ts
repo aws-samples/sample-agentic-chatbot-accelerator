@@ -335,6 +335,8 @@ export interface ExperimentsConfig {
 export interface SystemConfig {
     prefix: string;
 
+    bedrockAccessRoleArn?: string;
+
     enableGeoRestrictions: boolean;
 
     allowedGeoRegions: string[];

@@ -602,6 +602,9 @@ export class AgentCoreApis extends Construct {
                 AGENT_TOOLS_TOPIC_ARN: props.agentToolsTopic.topicArn,
                 AGENTS_TABLE_NAME: props.agentCoreRuntimeTable.tableName,
                 AGENTS_SUMMARY_TABLE_NAME: props.agentCoreSummaryTable.tableName,
+                ...(props.config.bedrockAccessRoleArn && {
+                    BEDROCK_ACCESS_ROLE_ARN: props.config.bedrockAccessRoleArn,
+                }),
             },
         });
         // TODO - consider using a custom policy with minimal permissions

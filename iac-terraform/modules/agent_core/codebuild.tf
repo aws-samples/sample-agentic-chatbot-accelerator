@@ -405,7 +405,8 @@ resource "null_resource" "build_agent_image" {
   depends_on = [
     aws_codebuild_project.agent_image_builder,
     aws_s3_object.agent_docker_context,
-    aws_ecr_repository.agent_core
+    aws_ecr_repository.agent_core,
+    aws_iam_role_policy.codebuild
   ]
 }
 
@@ -461,7 +462,8 @@ resource "null_resource" "build_swarm_image" {
   depends_on = [
     aws_codebuild_project.swarm_image_builder,
     aws_s3_object.swarm_docker_context,
-    aws_ecr_repository.swarm_agent_core
+    aws_ecr_repository.swarm_agent_core,
+    aws_iam_role_policy.codebuild
   ]
 }
 
@@ -568,7 +570,8 @@ resource "null_resource" "build_graph_image" {
   depends_on = [
     aws_codebuild_project.graph_image_builder,
     aws_s3_object.graph_docker_context,
-    aws_ecr_repository.graph_agent_core
+    aws_ecr_repository.graph_agent_core,
+    aws_iam_role_policy.codebuild
   ]
 }
 
@@ -675,6 +678,7 @@ resource "null_resource" "build_agents_as_tools_image" {
   depends_on = [
     aws_codebuild_project.agents_as_tools_image_builder,
     aws_s3_object.agents_as_tools_docker_context,
-    aws_ecr_repository.agents_as_tools_agent_core
+    aws_ecr_repository.agents_as_tools_agent_core,
+    aws_iam_role_policy.codebuild
   ]
 }

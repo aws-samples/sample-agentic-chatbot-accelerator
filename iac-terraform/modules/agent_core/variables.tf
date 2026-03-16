@@ -166,6 +166,16 @@ variable "kms_key_id" {
 }
 
 # -----------------------------------------------------------------------------
+# Cross-Account Bedrock Access (Optional)
+# -----------------------------------------------------------------------------
+
+variable "bedrock_access_role_arn" {
+  description = "Optional ARN of a cross-account IAM role to assume for Bedrock model invocation."
+  type        = string
+  default     = null
+}
+
+# -----------------------------------------------------------------------------
 # Knowledge Base Integration
 # -----------------------------------------------------------------------------
 

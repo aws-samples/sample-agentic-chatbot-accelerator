@@ -293,7 +293,8 @@ resource "null_resource" "build_boto3_layer" {
 
   depends_on = [
     aws_codebuild_project.boto3_layer_builder,
-    aws_s3_object.boto3_requirements
+    aws_s3_object.boto3_requirements,
+    aws_iam_role_policy.layer_builder
   ]
 }
 
@@ -432,6 +433,7 @@ resource "null_resource" "build_notify_runtime_update" {
 
   depends_on = [
     aws_codebuild_project.notify_runtime_update_builder,
-    aws_s3_object.notify_runtime_update_source
+    aws_s3_object.notify_runtime_update_source,
+    aws_iam_role_policy.layer_builder
   ]
 }

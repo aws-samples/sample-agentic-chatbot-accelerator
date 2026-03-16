@@ -43,6 +43,16 @@ variable "environment" {
 }
 
 # -----------------------------------------------------------------------------
+# Cross-Account Bedrock Access (Optional)
+# -----------------------------------------------------------------------------
+
+variable "bedrock_access_role_arn" {
+  description = "Optional ARN of a cross-account IAM role to assume for Bedrock model invocation. When set, agents will use STS AssumeRole to obtain temporary credentials for Bedrock API calls in the target account."
+  type        = string
+  default     = null
+}
+
+# -----------------------------------------------------------------------------
 # Agent Core Configuration
 # -----------------------------------------------------------------------------
 
