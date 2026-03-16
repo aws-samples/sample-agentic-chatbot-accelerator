@@ -52,6 +52,8 @@ export abstract class ChatScrollState {
     static userHasScrolled = false;
     static skipNextScrollEvent = false;
     static skipNextHistoryUpdate = false;
+    /** Set to true when a new message is sent; triggers scroll-to-user-message */
+    static scrollToUserMessage = false;
 }
 
 export default function ChatInputPanel(props: ChatInputPanelProps) {
@@ -424,19 +426,16 @@ export default function ChatInputPanel(props: ChatInputPanelProps) {
         };
     }, []);
 
+    // NOTE: Window-level auto-scroll on messageHistory change has been removed.
+    // Scroll management is now handled entirely by the container-level logic in chat.tsx.
+    // The user's message is scrolled to the top on send, and during streaming
+    // we intentionally do NOT scroll — letting the user read from the top.
     useLayoutEffect(() => {
         if (ChatScrollState.skipNextHistoryUpdate) {
             ChatScrollState.skipNextHistoryUpdate = false;
             return;
         }
-
-        if (!ChatScrollState.userHasScrolled && props.messageHistory.length > 0) {
-            ChatScrollState.skipNextScrollEvent = true;
-            window.scrollTo({
-                top: document.documentElement.scrollHeight + 1000,
-                behavior: "instant",
-            });
-        }
+        // No auto-scroll during streaming — handled by chat.tsx container scroll
     }, [props.messageHistory]);
 
     const generateMessageId = (messageNumber: number): string => {
@@ -450,6 +449,7 @@ export default function ChatInputPanel(props: ChatInputPanelProps) {
         if (!agentRuntimeId) return;
 
         ChatScrollState.userHasScrolled = false;
+        ChatScrollState.scrollToUserMessage = true;
 
         const message_id = generateMessageId(messageHistoryRef.current.length);
 

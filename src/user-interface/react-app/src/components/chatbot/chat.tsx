@@ -78,13 +78,17 @@ export default function Chat(props: { sessionId?: string }) {
 
     const [annex, setAnnex] = useState<React.ReactElement | null>(null);
 
+    const [scrollPaused, setScrollPaused] = useState(false);
     const [agentsAvailable, setAgentsAvailable] = useState<boolean | null>(null);
     const navigate = useNavigate();
     const chatContainerRef = useRef<HTMLDivElement>(null);
     const messagesContainerRef = useRef<HTMLDivElement>(null);
+    const lastUserMessageRef = useRef<HTMLDivElement>(null);
 
-    // Auto-scroll to bottom when message history changes
-    // Only scroll if the messages content actually exceeds the available viewport space
+    // Scroll management when message history changes:
+    // - On new message send: scroll so the user's message is at the top of the viewport
+    // - During streaming: auto-scroll to follow the growing response, but STOP once
+    //   scrolling further would push the user's question off the top of the viewport.
     useLayoutEffect(() => {
         if (ChatScrollState.skipNextHistoryUpdate) {
             return;
@@ -95,20 +99,84 @@ export default function Chat(props: { sessionId?: string }) {
         }
 
         const container = chatContainerRef.current;
-        const messagesContainer = messagesContainerRef.current;
-        if (!ChatScrollState.userHasScrolled && container && messagesContainer) {
-            // Get the height of the messages content
-            const messagesHeight = messagesContainer.getBoundingClientRect().height;
-            // Get the visible height of the scroll container
-            const containerHeight = container.clientHeight;
+        if (!container) return;
 
-            // Only scroll if messages content is taller than the visible area
-            // (with some margin for the input area and padding)
-            if (messagesHeight > containerHeight * 0.6) {
-                container.scrollTop = container.scrollHeight;
+        // When a new message was just sent (or session loaded), scroll the user's message to the top
+        if (ChatScrollState.scrollToUserMessage) {
+            ChatScrollState.scrollToUserMessage = false;
+            setScrollPaused(false);
+
+            if (lastUserMessageRef.current) {
+                // Use scrollIntoView — works reliably regardless of RTL, flex, or DOM nesting
+                lastUserMessageRef.current.scrollIntoView({ behavior: "instant", block: "start" });
+            }
+            return;
+        }
+
+        // During streaming: auto-scroll to follow the response, but only as long as
+        // the user's question message would remain visible at the top of the viewport
+        if (!ChatScrollState.userHasScrolled && lastUserMessageRef.current) {
+            const containerRect = container.getBoundingClientRect();
+            const messageRect = lastUserMessageRef.current.getBoundingClientRect();
+
+            // Check: is the user's message currently visible in the container?
+            const isUserMessageVisible = messageRect.top >= containerRect.top;
+
+            if (isUserMessageVisible) {
+                // Calculate where the user message would be if we scrolled to the very bottom
+                const maxScrollTop = container.scrollHeight - container.clientHeight;
+                const userMsgOffsetInContainer = lastUserMessageRef.current.offsetTop
+                    || (messageRect.top - containerRect.top + container.scrollTop);
+
+                // If scrolling to bottom would still keep user message visible (within container top)
+                if (userMsgOffsetInContainer >= maxScrollTop) {
+                    // Safe to scroll — user message would still be at or above the fold
+                    container.scrollTop = container.scrollHeight;
+                } else {
+                    // Scrolling further would push user message off the top — stop auto-scrolling
+                    ChatScrollState.userHasScrolled = true;
+                    setScrollPaused(true);
+                }
+            } else {
+                // User message is already out of view — stop
+                ChatScrollState.userHasScrolled = true;
+                setScrollPaused(true);
             }
         }
     }, [messageHistory]);
+
+    // Reset scrollPaused when generation completes
+    useEffect(() => {
+        if (!running) {
+            setScrollPaused(false);
+        }
+    }, [running]);
+
+    // Detect user scrolling on the chat container to pause auto-scroll
+    useEffect(() => {
+        const container = chatContainerRef.current;
+        if (!container) return;
+
+        const onContainerScroll = () => {
+            if (ChatScrollState.skipNextScrollEvent) {
+                ChatScrollState.skipNextScrollEvent = false;
+                return;
+            }
+
+            const isAtBottom =
+                Math.abs(container.scrollHeight - container.scrollTop - container.clientHeight) <=
+                10;
+
+            if (!isAtBottom) {
+                ChatScrollState.userHasScrolled = true;
+            } else {
+                ChatScrollState.userHasScrolled = false;
+            }
+        };
+
+        container.addEventListener("scroll", onContainerScroll);
+        return () => container.removeEventListener("scroll", onContainerScroll);
+    }, []);
 
     useEffect(() => {
         if (!appContext) return;
@@ -132,8 +200,8 @@ export default function Chat(props: { sessionId?: string }) {
                 if (result.data?.getSession?.history) {
                     // load history
                     console.log(result.data.getSession);
-                    ChatScrollState.skipNextHistoryUpdate = true;
-                    ChatScrollState.skipNextScrollEvent = true;
+                    // Scroll to the last user message after history renders
+                    ChatScrollState.scrollToUserMessage = true;
                     console.log("History", result.data.getSession.history);
                     setMessageHistory(
                         result
@@ -175,11 +243,6 @@ export default function Chat(props: { sessionId?: string }) {
                         loading: false,
                         runtimeId: result.data.getSession.runtimeId,
                         endpoint: result.data.getSession.endpoint,
-                    });
-
-                    window.scrollTo({
-                        top: 0,
-                        behavior: "instant",
                     });
                 } else {
                     setSession({ id: props.sessionId, loading: false });
@@ -235,14 +298,32 @@ export default function Chat(props: { sessionId?: string }) {
 
                     <div ref={messagesContainerRef}>
                         <SpaceBetween direction="vertical" size="m">
-                            {messageHistory.map((message, idx) => (
-                                <ChatMessage
-                                    key={idx}
-                                    message={message}
-                                    sessionId={session.id}
-                                    setAnnex={setAnnex}
-                                />
-                            ))}
+                            {messageHistory.map((message, idx) => {
+                                // Find the last user message to attach the scroll ref
+                                const isLastUserMessage =
+                                    message.type === ChatBotMessageType.Human &&
+                                    !messageHistory
+                                        .slice(idx + 1)
+                                        .some(
+                                            (m) => m.type === ChatBotMessageType.Human,
+                                        );
+                                return (
+                                    <div
+                                        key={idx}
+                                        ref={
+                                            isLastUserMessage
+                                                ? lastUserMessageRef
+                                                : undefined
+                                        }
+                                    >
+                                        <ChatMessage
+                                            message={message}
+                                            sessionId={session.id}
+                                            setAnnex={setAnnex}
+                                        />
+                                    </div>
+                                );
+                            })}
                         </SpaceBetween>
                     </div>
                     <div className={styles.welcome_text}>
@@ -257,6 +338,13 @@ export default function Chat(props: { sessionId?: string }) {
                     </div>
 
                     <div className={styles.input_container}>
+                        {running && scrollPaused && (
+                            <div style={{ textAlign: "center", paddingBottom: "8px" }}>
+                                <StatusIndicator type="loading">
+                                    Still generating response — scroll down to see more
+                                </StatusIndicator>
+                            </div>
+                        )}
                         <ChatInputPanel
                             session={session}
                             running={running}

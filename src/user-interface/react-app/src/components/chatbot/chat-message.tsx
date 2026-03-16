@@ -1,9 +1,8 @@
-/* Copyright 2026 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-
-SPDX-License-Identifier: MIT-0
-----------------------------------------------------------------------
-
-*/
+// ----------------------------------------------------------------------
+// Copyright 2026 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+//
+// SPDX-License-Identifier: MIT-0
+// ----------------------------------------------------------------------
 import { generateClient } from "aws-amplify/api";
 
 import React, { Dispatch, SetStateAction, useRef, useState } from "react";
@@ -137,6 +136,9 @@ export default function ChatMessage(props: ChatMessageProps) {
         }
     }
 
+    const isGenerating = props.message?.type === ChatBotMessageType.AI && !props.message.complete;
+    const hasNoContent = !content || content.length === 0;
+
     const [stepsExpanded, setStepsExpanded] = useState(false);
 
     const renderToolStepsRow = () => {
@@ -264,12 +266,13 @@ export default function ChatMessage(props: ChatMessageProps) {
                 <ChatBubble
                     ariaLabel="Avatar of generative AI assistant"
                     type="incoming"
+                    showLoadingBar={isGenerating}
                     avatar={
                         <Avatar
                             ariaLabel="Avatar of generative AI assistant"
                             color="gen-ai"
                             iconName="gen-ai"
-                            loading={content?.length === 0}
+                            loading={isGenerating && hasNoContent}
                         />
                     }
                 >
