@@ -247,6 +247,7 @@ def handle_run(record: InputModel) -> None:
         record=record,
         ai_response=response_data.get("content", ""),
         reasoning_content=response_data.get("reasoningContent", ""),
+        structured_output=response_data.get("structuredOutput", ""),
         references=response_data.get("references"),
         runtime_id=record.data.agentRuntimeId,
         runtime_version=runtime_version,
@@ -288,6 +289,7 @@ def save_conversation_exchange(
     ai_response: str,
     record: InputModel,
     reasoning_content: str,
+    structured_output: str,
     references: Optional[str],
     runtime_id: str,
     runtime_version: str,
@@ -340,6 +342,7 @@ def save_conversation_exchange(
         render=True,
         references=parsed_refs,
         reasoning_content=reasoning_content,
+        structured_output=structured_output,
     )
 
 

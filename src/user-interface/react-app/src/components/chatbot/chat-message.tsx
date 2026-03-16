@@ -6,12 +6,12 @@ SPDX-License-Identifier: MIT-0
 */
 import { generateClient } from "aws-amplify/api";
 
-import { Dispatch, SetStateAction, useRef, useState } from "react";
+import React, { Dispatch, SetStateAction, useRef, useState } from "react";
 import { ChatBotHistoryItem, ChatBotMessageType, Reference } from "./types";
 
 import Avatar from "@cloudscape-design/chat-components/avatar";
 import ChatBubble from "@cloudscape-design/chat-components/chat-bubble";
-import { Button, ExpandableSection, Modal, SpaceBetween } from "@cloudscape-design/components";
+import { Box, Button, ExpandableSection, Modal, SpaceBetween } from "@cloudscape-design/components";
 import { useTranslation } from "react-i18next";
 import { StorageHelper } from "../../common/helpers/storage-helper";
 import { getPresignedUrl as getPresignedUrlQuery } from "../../graphql/queries";
@@ -40,6 +40,81 @@ export default function ChatMessage(props: ChatMessageProps) {
     });
 
     const [reasoningModalVisible, setReasoningModalVisible] = useState(false);
+    const [structuredOutputModalVisible, setStructuredOutputModalVisible] = useState(false);
+
+    /** Render a structured output value with auto-linked URLs */
+    const renderValue = (value: unknown): React.ReactNode => {
+        if (typeof value === "string") {
+            // Auto-detect URLs and make them clickable
+            const urlRegex = /(https?:\/\/[^\s"<>]+)/g;
+            const parts = value.split(urlRegex);
+            if (parts.length > 1) {
+                return parts.map((part, i) =>
+                    urlRegex.test(part) ? (
+                        <a
+                            key={i}
+                            href={part}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ color: "#0972d3", wordBreak: "break-all" }}
+                        >
+                            {part}
+                        </a>
+                    ) : (
+                        <span key={i}>{part}</span>
+                    ),
+                );
+            }
+            return value;
+        }
+        if (Array.isArray(value)) {
+            return (
+                <ul style={{ margin: "4px 0", paddingLeft: "20px" }}>
+                    {value.map((item, i) => (
+                        <li key={i} style={{ marginBottom: "2px" }}>
+                            {renderValue(item)}
+                        </li>
+                    ))}
+                </ul>
+            );
+        }
+        if (typeof value === "object" && value !== null) {
+            return renderStructuredObject(value as Record<string, unknown>);
+        }
+        return String(value);
+    };
+
+    /** Render a JSON object as a labeled key-value table */
+    const renderStructuredObject = (obj: Record<string, unknown>): React.ReactNode => {
+        return (
+            <div
+                style={{
+                    display: "grid",
+                    gridTemplateColumns: "auto 1fr",
+                    gap: "6px 16px",
+                    alignItems: "start",
+                }}
+            >
+                {Object.entries(obj).map(([key, val]) => (
+                    <React.Fragment key={key}>
+                        <span
+                            style={{
+                                fontWeight: 600,
+                                fontSize: "13px",
+                                color: "#16191f",
+                                paddingTop: "2px",
+                            }}
+                        >
+                            {key}
+                        </span>
+                        <span style={{ fontSize: "13px", color: "#414d5c" }}>
+                            {renderValue(val)}
+                        </span>
+                    </React.Fragment>
+                ))}
+            </div>
+        );
+    };
 
     const formatExecutionTime = (ms: number): string => {
         return `${(ms / 1000).toFixed(1)}s`;
@@ -239,9 +314,28 @@ export default function ChatMessage(props: ChatMessageProps) {
                                     </span>
                                 </Button>
                             )}
-                            {props.message.reasoningContent && props.message.executionTimeMs && (
-                                <span style={{ color: "#5f6b7a", fontSize: "12px" }}>|</span>
+                            {props.message.structuredOutput && (
+                                <Button
+                                    variant="icon"
+                                    iconName="script"
+                                    onClick={() => setStructuredOutputModalVisible(true)}
+                                    ariaLabel="View structured output"
+                                >
+                                    <span
+                                        style={{
+                                            fontSize: "16px",
+                                            cursor: "pointer",
+                                        }}
+                                        title="View structured output"
+                                    >
+                                        📋
+                                    </span>
+                                </Button>
                             )}
+                            {(props.message.reasoningContent || props.message.structuredOutput) &&
+                                props.message.executionTimeMs && (
+                                    <span style={{ color: "#5f6b7a", fontSize: "12px" }}>|</span>
+                                )}
                             {props.message.executionTimeMs && (
                                 <span
                                     style={{
@@ -266,6 +360,48 @@ export default function ChatMessage(props: ChatMessageProps) {
                                 content={props.message.reasoningContent}
                                 setAnnex={props.setAnnex}
                             />
+                        </Modal>
+                    )}
+                    {props.message.structuredOutput && (
+                        <Modal
+                            visible={structuredOutputModalVisible}
+                            onDismiss={() => setStructuredOutputModalVisible(false)}
+                            header="Structured Output"
+                            size="large"
+                        >
+                            <div style={{ padding: "8px 0" }}>
+                                {(() => {
+                                    try {
+                                        const parsed = JSON.parse(
+                                            props.message.structuredOutput!,
+                                        );
+                                        if (
+                                            typeof parsed === "object" &&
+                                            parsed !== null &&
+                                            !Array.isArray(parsed)
+                                        ) {
+                                            return renderStructuredObject(parsed);
+                                        }
+                                        return renderValue(parsed);
+                                    } catch {
+                                        // Fallback to raw text if not valid JSON
+                                        return (
+                                            <Box variant="code">
+                                                <pre
+                                                    style={{
+                                                        whiteSpace: "pre-wrap",
+                                                        wordBreak: "break-word",
+                                                        margin: 0,
+                                                        fontSize: "13px",
+                                                    }}
+                                                >
+                                                    {props.message.structuredOutput}
+                                                </pre>
+                                            </Box>
+                                        );
+                                    }
+                                })()}
+                            </div>
                         </Modal>
                     )}
                     {props.message.references &&

@@ -153,6 +153,9 @@ export default function Chat(props: { sessionId?: string }) {
                                 reasoningContent: x!.reasoningContent
                                     ? x!.reasoningContent
                                     : undefined,
+                                structuredOutput: x!.structuredOutput
+                                    ? x!.structuredOutput
+                                    : undefined,
                                 toolActions: x!.toolActions
                                     ? (JSON.parse(x!.toolActions) as ToolActionItem[])
                                     : undefined,
