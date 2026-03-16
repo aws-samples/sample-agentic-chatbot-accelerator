@@ -227,9 +227,10 @@ resource "aws_iam_role_policy" "codebuild_vector_index" {
 resource "aws_codebuild_project" "vector_index_builder" {
   count = var.enabled ? 1 : 0
 
-  name         = "${local.kb_name_prefix}-vector-index-builder"
-  description  = "Builds the vector index creator Lambda package (pip install + zip)"
-  service_role = aws_iam_role.codebuild_vector_index[0].arn
+  name           = "${local.kb_name_prefix}-vector-index-builder"
+  description    = "Builds the vector index creator Lambda package (pip install + zip)"
+  service_role   = aws_iam_role.codebuild_vector_index[0].arn
+  encryption_key = var.kms_key_arn
 
   build_timeout = 15 # minutes
 

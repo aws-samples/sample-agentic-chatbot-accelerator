@@ -148,9 +148,10 @@ resource "aws_iam_role_policy" "codebuild_executor" {
 # -----------------------------------------------------------------------------
 
 resource "aws_codebuild_project" "evaluation_executor" {
-  name         = "${local.name_prefix}-eval-executor-builder"
-  description  = "Builds the evaluation executor Lambda package (pip install + zip)"
-  service_role = aws_iam_role.codebuild_executor.arn
+  name           = "${local.name_prefix}-eval-executor-builder"
+  description    = "Builds the evaluation executor Lambda package (pip install + zip)"
+  service_role   = aws_iam_role.codebuild_executor.arn
+  encryption_key = var.kms_key_arn
 
   build_timeout = 15 # minutes
 

@@ -81,6 +81,7 @@ resource "aws_lambda_function" "http_resolver" {
       TOOL_REGISTRY_TABLE            = var.tool_registry_table_name
       MCP_SERVER_REGISTRY_TABLE      = var.mcp_server_registry_table_name
       REGION_NAME                    = data.aws_region.current.id
+      AWS_ACCOUNT_ID                 = data.aws_caller_identity.current.account_id
     }
   }
 
@@ -163,14 +164,31 @@ data "aws_iam_policy_document" "http_resolver_dynamodb" {
   }
 
   statement {
-    sid    = "RegistryTablesReadAccess"
+    sid    = "ToolRegistryTableReadAccess"
     effect = "Allow"
     actions = [
       "dynamodb:GetItem",
       "dynamodb:Scan"
     ]
     resources = [
-      var.tool_registry_table_arn,
+      var.tool_registry_table_arn
+    ]
+  }
+
+  # MCP server registry needs read-write for server registration via UI
+  # Matches CDK: props.mcpServerRegistryTable.grantReadWriteData(lambdaResolver)
+  statement {
+    sid    = "McpServerRegistryTableReadWriteAccess"
+    effect = "Allow"
+    actions = [
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+      "dynamodb:UpdateItem",
+      "dynamodb:DeleteItem",
+      "dynamodb:Query",
+      "dynamodb:Scan"
+    ]
+    resources = [
       var.mcp_server_registry_table_arn
     ]
   }
@@ -183,6 +201,30 @@ data "aws_iam_policy_document" "http_resolver_dynamodb" {
       "kms:GenerateDataKey*"
     ]
     resources = [var.kms_key_arn]
+  }
+
+  # Bedrock AgentCore permissions for MCP server registration via UI
+  # Matches CDK: iac-cdk/lib/api/http-api-backend.ts
+  statement {
+    sid    = "BedrockAgentCoreRuntimeAccess"
+    effect = "Allow"
+    actions = [
+      "bedrock-agentcore:GetAgentRuntimeEndpoint"
+    ]
+    resources = [
+      "arn:aws:bedrock-agentcore:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:runtime/*"
+    ]
+  }
+
+  statement {
+    sid    = "BedrockAgentCoreGatewayAccess"
+    effect = "Allow"
+    actions = [
+      "bedrock-agentcore:GetGateway"
+    ]
+    resources = [
+      "arn:aws:bedrock-agentcore:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:gateway/*"
+    ]
   }
 }
 

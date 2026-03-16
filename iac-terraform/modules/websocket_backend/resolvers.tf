@@ -71,6 +71,16 @@ data "aws_iam_policy_document" "sns_publish" {
     ]
     resources = [aws_sns_topic.messages.arn]
   }
+
+  statement {
+    sid    = "KMSEncryptForSNS"
+    effect = "Allow"
+    actions = [
+      "kms:GenerateDataKey",
+      "kms:Decrypt"
+    ]
+    resources = [var.kms_key_arn]
+  }
 }
 
 resource "aws_iam_role_policy" "sns_http_publish" {

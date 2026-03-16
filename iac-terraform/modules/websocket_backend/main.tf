@@ -27,8 +27,8 @@ data "aws_caller_identity" "current" {}
 # -----------------------------------------------------------------------------
 
 resource "aws_sns_topic" "messages" {
-  # checkov:skip=CKV_AWS_26:No sensitive data in topic - message routing only
-  name = "${local.name_prefix}-chatMessagesTopic"
+  name              = "${local.name_prefix}-chatMessagesTopic"
+  kms_master_key_id = var.kms_key_arn
 
   tags = merge(var.tags, {
     Name = "${local.name_prefix}-chatMessagesTopic"
