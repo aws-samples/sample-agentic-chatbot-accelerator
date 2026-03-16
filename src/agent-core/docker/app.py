@@ -131,6 +131,10 @@ async def invoke(payload, context: RequestContext):
                     "Agent configured with trace attributes for trajectory capture"
                 )
 
+            # Parse optional session state from payload (stringified JSON)
+            state_json = payload.get("state")
+            state = json.loads(state_json) if state_json else None
+
             AGENT, CALLBACKS = create_agent(
                 configuration,
                 logger,
@@ -139,6 +143,7 @@ async def invoke(payload, context: RequestContext):
                 MCP_CLIENT_MANAGER,
                 session_manager,
                 trace_attributes=trace_attrs,  # type: ignore
+                state=state,
             )
             CURRENT_SESSION_ID = session_id
 

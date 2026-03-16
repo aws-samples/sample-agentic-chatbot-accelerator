@@ -32,6 +32,7 @@ def create_swarm(
     user_id: str,
     mcp_client_manager: MCPClientManager | None,
     session_manager: Any | None = None,
+    state: dict | None = None,
 ) -> tuple[Swarm, AgentCallbacks, dict[str, Agent]]:
     """
     Create and configure a Strands Swarm with multiple agents.
@@ -58,6 +59,7 @@ def create_swarm(
             mcp_client_manager=mcp_client_manager,
             conversation_manager_type=configuration.conversationManager,
             session_manager=session_manager,
+            state=state,
         )
         agents[agent_def.name] = agent
 
@@ -114,6 +116,7 @@ def _create_agent_from_definition(
     mcp_client_manager: MCPClientManager | None,
     conversation_manager_type: EConversationManagerType,
     session_manager: Any | None = None,
+    state: dict | None = None,
 ) -> Agent:
     """
     Create a single Agent from a SwarmAgentDefinition.
@@ -149,6 +152,7 @@ def _create_agent_from_definition(
             conversation_manager_type.value, logger
         ),
         session_manager=session_manager,
+        state=state,
     )
 
     logger.info(

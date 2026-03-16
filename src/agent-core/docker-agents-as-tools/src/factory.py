@@ -35,6 +35,7 @@ def create_orchestrator(
     mcp_client_manager: MCPClientManager | None,
     session_manager: Any | None = None,
     trace_attributes: dict[str, str] | None = None,
+    state: dict | None = None,
 ) -> tuple[Agent, AgentCallbacks]:
     """
     Create and configure a Strands Agent with tools, callbacks, and conversation management.
@@ -69,6 +70,7 @@ def create_orchestrator(
         ),
         session_manager=session_manager,
         trace_attributes=trace_attributes,
+        state=state,
     )
     callbacks = AgentCallbacks(logger, session_id, user_id)
 

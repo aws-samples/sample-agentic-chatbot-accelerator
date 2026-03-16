@@ -54,6 +54,7 @@ class CallArguments(BaseModel):
     text: Optional[str] = None
     agentRuntimeId: Optional[str] = None
     qualifier: Optional[str] = None
+    state: Optional[str] = None
 
 
 class InputModel(BaseModel):
@@ -177,13 +178,15 @@ def handle_run(record: InputModel) -> None:
         },
     )
     try:
-        payload = json.dumps(
-            {
-                "prompt": record.data.text,
-                "userId": record.userId,
-                "messageId": record.data.messageId,
-            }
-        ).encode()
+        payload_dict = {
+            "prompt": record.data.text,
+            "userId": record.userId,
+            "messageId": record.data.messageId,
+        }
+        if record.data.state is not None:
+            payload_dict["state"] = record.data.state
+
+        payload = json.dumps(payload_dict).encode()
 
         response = AC_CLIENT.invoke_agent_runtime(
             agentRuntimeArn=record.data.agentRuntimeId,

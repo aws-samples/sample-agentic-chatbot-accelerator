@@ -3,6 +3,7 @@
 #
 # SPDX-License-Identifier: MIT-0
 # ---------------------------------------------------------------------------- #
+import json
 import logging
 import os
 from datetime import datetime, timezone
@@ -103,6 +104,10 @@ async def invoke(payload, context: RequestContext):
                     extra={"context": {"memoryId": MEMORY_ID}},
                 )
 
+            # Parse optional session state from payload (stringified JSON)
+            state_json = payload.get("state")
+            state = json.loads(state_json) if state_json else None
+
             SWARM, CALLBACKS, AGENTS = create_swarm(
                 configuration,
                 logger,
@@ -110,6 +115,7 @@ async def invoke(payload, context: RequestContext):
                 user_id=user_id,
                 mcp_client_manager=MCP_CLIENT_MANAGER,
                 session_manager=None,
+                state=state,
             )
             CURRENT_SESSION_ID = session_id
 

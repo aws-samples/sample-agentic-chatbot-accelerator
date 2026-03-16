@@ -57,8 +57,12 @@ async def invoke(payload: dict, context: RequestContext):
         MEMORY_EXPORTER.clear()
         logger.info("Trajectory capture enabled for this request")
 
+    # Parse optional session state from payload (stringified JSON)
+    state_json = payload.get("state")
+    state = json.loads(state_json) if state_json else None
+
     if ORCHESTRATOR is None or SESSION_ID != session_id:
-        _initialize(user_id, session_id, include_trajectory)
+        _initialize(user_id, session_id, include_trajectory, state=state)
 
     _reset(include_trajectory)
 
@@ -123,7 +127,12 @@ def _get_context(payload: dict, context: RequestContext) -> tuple[str, str]:
     return user_id, session_id
 
 
-def _initialize(user_id: str, session_id: str, include_trajectory: bool):
+def _initialize(
+    user_id: str,
+    session_id: str,
+    include_trajectory: bool,
+    state: dict | None = None,
+):
     """initialize a new agent once for each runtime container session
 
     Conversation state will be persisted in both local memory and remote agentcore memory.
@@ -189,6 +198,7 @@ def _initialize(user_id: str, session_id: str, include_trajectory: bool):
             MCP_CLIENT_MANAGER,
             session_manager,
             trace_attributes=trace_attrs,  # type: ignore
+            state=state,
         )
         SESSION_ID = session_id
 
