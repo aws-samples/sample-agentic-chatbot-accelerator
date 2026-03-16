@@ -98,9 +98,22 @@ export class AgentCoreApis extends Construct {
         props.agentCoreRuntimeTable.grantReadWriteData(agentCoreRuntimeCreationResolver);
         props.agentCoreSummaryTable.grantReadWriteData(agentCoreRuntimeCreationResolver);
 
-        // TODO - consider using a custom policy with minimal permissions
-        agentCoreRuntimeCreationResolver.role!.addManagedPolicy(
-            iam.ManagedPolicy.fromAwsManagedPolicyName("BedrockAgentCoreFullAccess"),
+        // Bedrock AgentCore — least-privilege: only the API actions this resolver Lambda invokes
+        agentCoreRuntimeCreationResolver.addToRolePolicy(
+            new iam.PolicyStatement({
+                sid: "BedrockAgentCoreAccess",
+                effect: iam.Effect.ALLOW,
+                actions: [
+                    "bedrock-agentcore:CreateAgentRuntimeEndpoint",
+                    "bedrock-agentcore:GetAgentRuntimeEndpoint",
+                    "bedrock-agentcore:ListAgentRuntimeVersions",
+                    "bedrock-agentcore:ListAgentRuntimeEndpoints",
+                    "bedrock-agentcore:TagResource",
+                ],
+                resources: [
+                    `arn:aws:bedrock-agentcore:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:runtime/*`,
+                ],
+            }),
         );
         // Add BedrockAgentCore PassRole permission
         agentCoreRuntimeCreationResolver.addToRolePolicy(
@@ -607,24 +620,25 @@ export class AgentCoreApis extends Construct {
                 }),
             },
         });
-        // TODO - consider using a custom policy with minimal permissions
-        // startRuntimeCreationFunc.addToRolePolicy(
-        //     new iam.PolicyStatement({
-        //         effect: iam.Effect.ALLOW,
-        //         actions: [
-        //             "bedrock-agentcore:ListAgentRuntimes",
-        //             "bedrock-agentcore:ListTagsForResource",
-        //             "bedrock-agentcore:UpdateAgentRuntime",
-        //             "bedrock-agentcore:CreateAgentRuntime",
-        //             "bedrock-agentcore:TagResource",
-        //         ],
-        //         resources: [
-        //             `arn:aws:bedrock-agentcore:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:runtime/*`,
-        //         ],
-        //     }),
-        // );
-        startRuntimeCreationFunc.role!.addManagedPolicy(
-            iam.ManagedPolicy.fromAwsManagedPolicyName("BedrockAgentCoreFullAccess"),
+        // Bedrock AgentCore — least-privilege: only the actions this runtime creation Lambda invokes
+        startRuntimeCreationFunc.addToRolePolicy(
+            new iam.PolicyStatement({
+                sid: "BedrockAgentCoreAccess",
+                effect: iam.Effect.ALLOW,
+                actions: [
+                    "bedrock-agentcore:ListAgentRuntimes",
+                    "bedrock-agentcore:ListTagsForResource",
+                    "bedrock-agentcore:UpdateAgentRuntime",
+                    "bedrock-agentcore:CreateAgentRuntime",
+                    "bedrock-agentcore:CreateAgentRuntimeEndpoint",
+                    "bedrock-agentcore:CreateWorkloadIdentity",
+                    "bedrock-agentcore:TagResource",
+                ],
+                resources: [
+                    `arn:aws:bedrock-agentcore:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:runtime/*`,
+                    `arn:aws:bedrock-agentcore:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:workload-identity-directory/*`,
+                ],
+            }),
         );
         startRuntimeCreationFunc.addToRolePolicy(
             new iam.PolicyStatement({

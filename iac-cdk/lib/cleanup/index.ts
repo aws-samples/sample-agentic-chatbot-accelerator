@@ -68,7 +68,9 @@ export class Cleanup extends Construct {
             runtime: props.shared.pythonRuntime,
             functionName: `${prefix}-cleanCustomResources`,
             handler: "index.handler",
-            code: lambda.Code.fromAsset(path.join(__dirname, "../../../src/cleanup/functions", "cleanup-handler")),
+            code: lambda.Code.fromAsset(
+                path.join(__dirname, "../../../src/cleanup/functions", "cleanup-handler"),
+            ),
             timeout: Duration.minutes(15),
             environment: environmentVariables,
             layers: [props.shared.boto3Layer, props.shared.powerToolsLayer],
@@ -97,27 +99,45 @@ export class Cleanup extends Construct {
             }),
         );
 
-        cleanupLambda.role!.addManagedPolicy(
-            iam.ManagedPolicy.fromAwsManagedPolicyName("BedrockAgentCoreFullAccess"),
+        // Bedrock AgentCore — least-privilege for cleanup (runtime + memory)
+        cleanupLambda.addToRolePolicy(
+            new iam.PolicyStatement({
+                sid: "BedrockAgentCoreRuntimeCleanup",
+                effect: iam.Effect.ALLOW,
+                actions: [
+                    "bedrock-agentcore:ListAgentRuntimes",
+                    "bedrock-agentcore:ListTagsForResource",
+                    "bedrock-agentcore:DeleteAgentRuntime",
+                    "bedrock-agentcore:DeleteAgentRuntimeEndpoint",
+                ],
+                resources: [
+                    `arn:aws:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:runtime/*`,
+                ],
+            }),
         );
-
-        // cleanupLambda.addToRolePolicy(
-        //     new iam.PolicyStatement({
-        //         effect: iam.Effect.ALLOW,
-        //         actions: [
-        //             "bedrock-agentcore:ListAgentRuntimes",
-        //             "bedrock-agentcore:ListTagsForResource",
-        //             "bedrock-agentcore:DeleteAgentRuntime",
-        //             "bedrock-agentcore:DeleteAgentRuntimeEndpoint",
-        //         ],
-        //         resources: [
-        //             `arn:aws:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:runtime/*`,
-        //         ],
-        //         conditions: {
-        //             StringEquals: getTagConditions(this),
-        //         },
-        //     }),
-        // );
+        cleanupLambda.addToRolePolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: ["bedrock-agentcore:DeleteWorkloadIdentity"],
+                resources: [
+                    `arn:aws:bedrock-agentcore:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:workload-identity-directory/*`,
+                ],
+            }),
+        );
+        cleanupLambda.addToRolePolicy(
+            new iam.PolicyStatement({
+                sid: "BedrockAgentCoreMemoryCleanup",
+                effect: iam.Effect.ALLOW,
+                actions: [
+                    "bedrock-agentcore:ListMemories",
+                    "bedrock-agentcore:ListTagsForResource",
+                    "bedrock-agentcore:DeleteMemory",
+                ],
+                resources: [
+                    `arn:aws:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:memory/*`,
+                ],
+            }),
+        );
 
         // Add permissions for EventBridge rule cleanup
         // Restricted to resources tagged with "aca"

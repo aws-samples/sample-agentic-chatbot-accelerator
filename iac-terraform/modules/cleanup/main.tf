@@ -179,11 +179,51 @@ resource "aws_iam_role_policy" "cleanup_bedrock" {
   policy = data.aws_iam_policy_document.cleanup_bedrock.json
 }
 
-# Bedrock AgentCore permissions (full access for cleanup)
-# Using managed policy as AgentCore doesn't support tag-based conditions well
-resource "aws_iam_role_policy_attachment" "cleanup_agentcore" {
-  role       = aws_iam_role.cleanup.name
-  policy_arn = "arn:aws:iam::aws:policy/BedrockAgentCoreFullAccess"
+# Bedrock AgentCore — least-privilege for cleanup
+data "aws_iam_policy_document" "cleanup_agentcore" {
+  statement {
+    sid    = "BedrockAgentCoreRuntimeCleanup"
+    effect = "Allow"
+    actions = [
+      "bedrock-agentcore:ListAgentRuntimes",
+      "bedrock-agentcore:ListTagsForResource",
+      "bedrock-agentcore:DeleteAgentRuntime",
+      "bedrock-agentcore:DeleteAgentRuntimeEndpoint",
+    ]
+    resources = [
+      "arn:aws:bedrock-agentcore:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:runtime/*",
+    ]
+  }
+
+  statement {
+    sid    = "BedrockAgentCoreWorkloadIdentityCleanup"
+    effect = "Allow"
+    actions = [
+      "bedrock-agentcore:DeleteWorkloadIdentity",
+    ]
+    resources = [
+      "arn:aws:bedrock-agentcore:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:workload-identity-directory/*",
+    ]
+  }
+
+  statement {
+    sid    = "BedrockAgentCoreMemoryCleanup"
+    effect = "Allow"
+    actions = [
+      "bedrock-agentcore:ListMemories",
+      "bedrock-agentcore:ListTagsForResource",
+      "bedrock-agentcore:DeleteMemory",
+    ]
+    resources = [
+      "arn:aws:bedrock-agentcore:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:memory/*",
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "cleanup_agentcore" {
+  name   = "${local.name_prefix}-cleanup-agentcore"
+  role   = aws_iam_role.cleanup.id
+  policy = data.aws_iam_policy_document.cleanup_agentcore.json
 }
 
 # EventBridge permissions (tag-scoped)

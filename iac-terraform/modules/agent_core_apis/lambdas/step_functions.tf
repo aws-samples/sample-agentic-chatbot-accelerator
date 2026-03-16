@@ -430,10 +430,31 @@ resource "aws_iam_role_policy_attachment" "create_runtime_version_xray" {
   policy_arn = "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
 }
 
-# Full AgentCore access for create runtime
-resource "aws_iam_role_policy_attachment" "create_runtime_version_bedrock" {
-  role       = aws_iam_role.create_runtime_version.name
-  policy_arn = "arn:aws:iam::aws:policy/BedrockAgentCoreFullAccess"
+# Bedrock AgentCore — least-privilege for create runtime
+data "aws_iam_policy_document" "create_runtime_version_bedrock" {
+  statement {
+    sid    = "BedrockAgentCoreAccess"
+    effect = "Allow"
+    actions = [
+      "bedrock-agentcore:ListAgentRuntimes",
+      "bedrock-agentcore:ListTagsForResource",
+      "bedrock-agentcore:UpdateAgentRuntime",
+      "bedrock-agentcore:CreateAgentRuntime",
+      "bedrock-agentcore:CreateAgentRuntimeEndpoint",
+      "bedrock-agentcore:CreateWorkloadIdentity",
+      "bedrock-agentcore:TagResource",
+    ]
+    resources = [
+      "arn:aws:bedrock-agentcore:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:runtime/*",
+      "arn:aws:bedrock-agentcore:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:workload-identity-directory/*",
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "create_runtime_version_bedrock" {
+  name   = "${local.name_prefix}-startRuntimeCreation-bedrock"
+  role   = aws_iam_role.create_runtime_version.id
+  policy = data.aws_iam_policy_document.create_runtime_version_bedrock.json
 }
 
 # PassRole for create runtime

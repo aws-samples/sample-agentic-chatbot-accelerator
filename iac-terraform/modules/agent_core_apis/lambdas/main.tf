@@ -142,11 +142,31 @@ resource "aws_iam_role_policy_attachment" "agent_core_resolver_xray" {
   policy_arn = "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
 }
 
-# Bedrock AgentCore Full Access (managed policy)
-# TODO: Consider using a custom policy with minimal permissions
-resource "aws_iam_role_policy_attachment" "agent_core_resolver_bedrock" {
-  role       = aws_iam_role.agent_core_resolver.name
-  policy_arn = "arn:aws:iam::aws:policy/BedrockAgentCoreFullAccess"
+# Bedrock AgentCore — least-privilege custom policy
+# Only the API actions the resolver Lambda actually invokes:
+#   create_agent_runtime_endpoint, get_agent_runtime_endpoint,
+#   list_agent_runtime_versions, list_agent_runtime_endpoints
+data "aws_iam_policy_document" "agent_core_resolver_bedrock" {
+  statement {
+    sid    = "BedrockAgentCoreAccess"
+    effect = "Allow"
+    actions = [
+      "bedrock-agentcore:CreateAgentRuntimeEndpoint",
+      "bedrock-agentcore:GetAgentRuntimeEndpoint",
+      "bedrock-agentcore:ListAgentRuntimeVersions",
+      "bedrock-agentcore:ListAgentRuntimeEndpoints",
+      "bedrock-agentcore:TagResource",
+    ]
+    resources = [
+      "arn:aws:bedrock-agentcore:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:runtime/*",
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "agent_core_resolver_bedrock" {
+  name   = "${local.name_prefix}-agentCoreResolver-bedrock"
+  role   = aws_iam_role.agent_core_resolver.id
+  policy = data.aws_iam_policy_document.agent_core_resolver_bedrock.json
 }
 
 # DynamoDB access policy
