@@ -208,6 +208,22 @@ class ModelConfiguration(BaseModel):
     reasoningBudget: Optional[int | str] = None
 
 
+class StructuredOutputFieldSpec(BaseModel):
+    """Specification for a single field in a structured output model.
+
+    Attributes:
+        name: The field name (must be a valid Python identifier)
+        pythonType: The Python type as a string, e.g. 'str', 'int', 'list[str]'
+        description: Human-readable description of the field
+        optional: Whether the field defaults to None when not provided
+    """
+
+    name: str
+    pythonType: str
+    description: str
+    optional: bool = False
+
+
 class AgentConfiguration(BaseModel):
     modelInferenceParameters: ModelConfiguration
     instructions: str
@@ -218,6 +234,7 @@ class AgentConfiguration(BaseModel):
         EConversationManagerType.SLIDING_WINDOW
     )
     useMemory: bool = False
+    structuredOutput: Optional[list[StructuredOutputFieldSpec]] = None
 
     @model_validator(mode="after")
     def validate_tool_parameters(self):
