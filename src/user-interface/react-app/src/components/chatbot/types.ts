@@ -67,6 +67,7 @@ export interface ChatBotHistoryItem {
     endTime?: number; // Timestamp when response completed
     executionTimeMs?: number; // Calculated execution time in milliseconds
     reasoningContent?: string; // Model reasoning/thinking content
+    structuredOutput?: string; // Structured output JSON from the agent
 }
 
 export interface Reference {
@@ -93,6 +94,7 @@ export interface ChatBotMessageResponse {
         toolName?: string;
         invocationNumber?: number;
         reasoningContent?: string;
+        structuredOutput?: string;
     };
 }
 

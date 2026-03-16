@@ -6,16 +6,21 @@
 import {
     Alert,
     Box,
+    Button,
+    Checkbox,
+    ColumnLayout,
     Container,
     FormField,
     Header,
     Input,
+    Select,
     SpaceBetween,
+    Textarea,
 } from "@cloudscape-design/components";
 import { KnowledgeBase, McpServer, Tool } from "../../../API";
 import { AgentCoreRuntimeConfiguration } from "../types";
 import { AdditionalToolsSection, AgentConfigSection } from "../wizard-shared-components";
-import { STEP_MIN_HEIGHT, getReasoningType } from "../wizard-utils";
+import { PYTHON_TYPE_OPTIONS, STEP_MIN_HEIGHT, getReasoningType } from "../wizard-utils";
 
 interface SingleAgentStepsProps {
     config: AgentCoreRuntimeConfiguration;
@@ -238,6 +243,214 @@ export function getSingleAgentSteps({
                                 }))
                             }
                         />
+
+                        {/* ── Structured Output ────────────────────────────── */}
+                        <Container
+                            header={
+                                <Header
+                                    variant="h2"
+                                    description="When enabled, the agent's final response will be parsed into a structured JSON object with the fields you define below."
+                                >
+                                    Structured Output
+                                </Header>
+                            }
+                        >
+                            <SpaceBetween direction="vertical" size="m">
+                                <Checkbox
+                                    checked={Array.isArray(config.structuredOutput)}
+                                    onChange={({ detail }) =>
+                                        setConfig((prev) => ({
+                                            ...prev,
+                                            structuredOutput: detail.checked ? [] : undefined,
+                                        }))
+                                    }
+                                >
+                                    Enable Structured Output
+                                </Checkbox>
+
+                                {Array.isArray(config.structuredOutput) && (
+                                    <>
+                                        {config.structuredOutput.length === 0 && (
+                                            <Box
+                                                textAlign="center"
+                                                color="text-body-secondary"
+                                                padding="l"
+                                            >
+                                                No fields defined yet. Click &quot;Add Field&quot;
+                                                to start.
+                                            </Box>
+                                        )}
+
+                                        {config.structuredOutput.map((field, idx) => (
+                                            <Container
+                                                key={idx}
+                                                header={
+                                                    <Header
+                                                        variant="h3"
+                                                        actions={
+                                                            <Button
+                                                                variant="icon"
+                                                                iconName="close"
+                                                                onClick={() =>
+                                                                    setConfig((prev) => ({
+                                                                        ...prev,
+                                                                        structuredOutput: (
+                                                                            prev.structuredOutput ||
+                                                                            []
+                                                                        ).filter(
+                                                                            (_, i) => i !== idx,
+                                                                        ),
+                                                                    }))
+                                                                }
+                                                            />
+                                                        }
+                                                    >
+                                                        Field {idx + 1}
+                                                    </Header>
+                                                }
+                                            >
+                                                <SpaceBetween direction="vertical" size="s">
+                                                    <ColumnLayout columns={2} variant="text-grid">
+                                                        <FormField label="Field Name">
+                                                            <Input
+                                                                value={field.name}
+                                                                placeholder="e.g. loop_id"
+                                                                onChange={({ detail }) => {
+                                                                    setConfig((prev) => {
+                                                                        const fields = [
+                                                                            ...(prev.structuredOutput ||
+                                                                                []),
+                                                                        ];
+                                                                        fields[idx] = {
+                                                                            ...fields[idx],
+                                                                            name: detail.value,
+                                                                        };
+                                                                        return {
+                                                                            ...prev,
+                                                                            structuredOutput:
+                                                                                fields,
+                                                                        };
+                                                                    });
+                                                                }}
+                                                            />
+                                                        </FormField>
+                                                        <FormField label="Python Type">
+                                                            <Select
+                                                                selectedOption={
+                                                                    PYTHON_TYPE_OPTIONS.find(
+                                                                        (o) =>
+                                                                            o.value ===
+                                                                            field.pythonType,
+                                                                    ) || null
+                                                                }
+                                                                options={PYTHON_TYPE_OPTIONS}
+                                                                onChange={({ detail }) => {
+                                                                    setConfig((prev) => {
+                                                                        const fields = [
+                                                                            ...(prev.structuredOutput ||
+                                                                                []),
+                                                                        ];
+                                                                        fields[idx] = {
+                                                                            ...fields[idx],
+                                                                            pythonType:
+                                                                                detail
+                                                                                    .selectedOption
+                                                                                    ?.value ||
+                                                                                "str",
+                                                                        };
+                                                                        return {
+                                                                            ...prev,
+                                                                            structuredOutput:
+                                                                                fields,
+                                                                        };
+                                                                    });
+                                                                }}
+                                                                placeholder="Select type..."
+                                                            />
+                                                        </FormField>
+                                                    </ColumnLayout>
+                                                    <FormField label="Description">
+                                                        <Textarea
+                                                            value={field.description}
+                                                            placeholder="Describe this field..."
+                                                            rows={2}
+                                                            onChange={({ detail }) => {
+                                                                setConfig((prev) => {
+                                                                    const fields = [
+                                                                        ...(prev.structuredOutput ||
+                                                                            []),
+                                                                    ];
+                                                                    fields[idx] = {
+                                                                        ...fields[idx],
+                                                                        description: detail.value,
+                                                                    };
+                                                                    return {
+                                                                        ...prev,
+                                                                        structuredOutput: fields,
+                                                                    };
+                                                                });
+                                                            }}
+                                                        />
+                                                    </FormField>
+                                                    <Checkbox
+                                                        checked={field.optional}
+                                                        onChange={({ detail }) => {
+                                                            setConfig((prev) => {
+                                                                const fields = [
+                                                                    ...(prev.structuredOutput ||
+                                                                        []),
+                                                                ];
+                                                                fields[idx] = {
+                                                                    ...fields[idx],
+                                                                    optional: detail.checked,
+                                                                };
+                                                                return {
+                                                                    ...prev,
+                                                                    structuredOutput: fields,
+                                                                };
+                                                            });
+                                                        }}
+                                                    >
+                                                        Optional (defaults to None when not
+                                                        provided)
+                                                    </Checkbox>
+                                                </SpaceBetween>
+                                            </Container>
+                                        ))}
+
+                                        <Button
+                                            iconName="add-plus"
+                                            onClick={() => {
+                                                setConfig((prev) => ({
+                                                    ...prev,
+                                                    structuredOutput: [
+                                                        ...(prev.structuredOutput || []),
+                                                        {
+                                                            name: "",
+                                                            pythonType: "str",
+                                                            description: "",
+                                                            optional: false,
+                                                        },
+                                                    ],
+                                                }));
+                                            }}
+                                        >
+                                            Add Field
+                                        </Button>
+
+                                        {config.structuredOutput.length > 0 &&
+                                            config.structuredOutput.some(
+                                                (f) => !f.name.trim() || !f.description.trim(),
+                                            ) && (
+                                                <Alert type="warning">
+                                                    All structured output fields must have a
+                                                    non-empty name and description.
+                                                </Alert>
+                                            )}
+                                    </>
+                                )}
+                            </SpaceBetween>
+                        </Container>
                     </SpaceBetween>
                 </div>
             ),
@@ -322,17 +535,42 @@ export function isSingleAgentStepValid(
 
         // Validate reasoning budget if enabled
         const budget = config.modelInferenceParameters.reasoningBudget;
-        if (budget !== undefined) {
+        if (budget != null) {
             const rType = getReasoningType(config.modelInferenceParameters.modelId);
             if (rType === "int") {
-                return typeof budget === "number" && budget >= 1024;
+                if (!(typeof budget === "number" && budget >= 1024)) return false;
+            } else if (rType === "effort") {
+                if (!(typeof budget === "string" && ["low", "medium", "high"].includes(budget)))
+                    return false;
+            } else {
+                // Model doesn't support reasoning but budget is set — invalid
+                return false;
             }
-            if (rType === "effort") {
-                return typeof budget === "string" && ["low", "medium", "high"].includes(budget);
-            }
-            // Model doesn't support reasoning but budget is set — invalid
-            return false;
         }
+
+        // Validate structured output if enabled
+        if (Array.isArray(config.structuredOutput)) {
+            // Must have at least one field
+            if (config.structuredOutput.length === 0) return false;
+            // Every field must have a non-empty name and description
+            const allFieldsValid = config.structuredOutput.every(
+                (f) =>
+                    f.name.trim() !== "" &&
+                    f.pythonType.trim() !== "" &&
+                    f.description.trim() !== "",
+            );
+            if (!allFieldsValid) return false;
+            // Field names must be valid Python identifiers (letters, digits, underscores, starting with letter/underscore)
+            const pyIdentPattern = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+            const allNamesValid = config.structuredOutput.every((f) =>
+                pyIdentPattern.test(f.name.trim()),
+            );
+            if (!allNamesValid) return false;
+            // Field names must be unique
+            const names = config.structuredOutput.map((f) => f.name.trim());
+            if (new Set(names).size !== names.length) return false;
+        }
+
         return true;
     }
     // Step 1: Additional Tools — always valid (optional)

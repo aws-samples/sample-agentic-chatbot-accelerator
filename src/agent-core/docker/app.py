@@ -19,6 +19,7 @@ from shared.utils import enrich_trajectory
 from src.data_source import parse_configuration
 from src.factory import create_agent
 from src.registry import AVAILABLE_MCPS
+from src.structured_output import build_structured_output_model
 from src.types import ChatbotAction
 from strands_evals.mappers import StrandsInMemorySessionMapper
 
@@ -40,6 +41,9 @@ AGENT = None
 CURRENT_SESSION_ID: str | None = None
 CALLBACKS = None
 MCP_CLIENT_MANAGER: MCPClientManager | None = None
+STRUCTURED_OUTPUT_MODEL = (
+    None  # Pydantic model for structured output (built from config)
+)
 
 TELEMETRY = StrandsEvalsTelemetry().setup_in_memory_exporter()
 MEMORY_EXPORTER = TELEMETRY.in_memory_exporter
@@ -51,7 +55,7 @@ AWS_REGION = os.environ.get("AWS_REGION")
 @app.entrypoint
 async def invoke(payload, context: RequestContext):
     """Process user input and return a response"""
-    global AGENT, CURRENT_SESSION_ID, CALLBACKS, MCP_CLIENT_MANAGER
+    global AGENT, CURRENT_SESSION_ID, CALLBACKS, MCP_CLIENT_MANAGER, STRUCTURED_OUTPUT_MODEL
 
     user_message = payload.get("prompt", "Hello")
     user_id = payload.get("userId")
@@ -147,6 +151,25 @@ async def invoke(payload, context: RequestContext):
             )
             CURRENT_SESSION_ID = session_id
 
+            # Build structured output model from config (if specified)
+            # When present, the agent's final response will be parsed into
+            # this Pydantic model, similar to passing structured_output_model
+            # directly in the notebook example.
+            if configuration.structuredOutput:
+                STRUCTURED_OUTPUT_MODEL = build_structured_output_model(
+                    configuration.structuredOutput
+                )
+                logger.info(
+                    "Structured output model built from configuration",
+                    extra={
+                        "fields": [
+                            f.model_dump() for f in configuration.structuredOutput
+                        ]
+                    },
+                )
+            else:
+                STRUCTURED_OUTPUT_MODEL = None
+
         except Exception as err:
             logger.error(
                 "Failed to initialize agent", extra={"rawErrorMessage": str(err)}
@@ -174,10 +197,15 @@ async def invoke(payload, context: RequestContext):
     try:
         run_id = str(uuid.uuid4())
         token_id = 0
-        async for event in AGENT.stream_async(
-            user_message,
-            invocation_state={"userId": user_id, "sessionId": session_id},
-        ):
+        # Build stream_async kwargs — only include structured_output_model
+        # when the configuration defines one (keeps backwards compatibility)
+        stream_kwargs: dict = {
+            "invocation_state": {"userId": user_id, "sessionId": session_id},
+        }
+        if STRUCTURED_OUTPUT_MODEL is not None:
+            stream_kwargs["structured_output_model"] = STRUCTURED_OUTPUT_MODEL
+
+        async for event in AGENT.stream_async(user_message, **stream_kwargs):
             if "data" in event:
                 data_to_send = {
                     "action": ChatbotAction.ON_NEW_LLM_TOKEN.value,
@@ -237,6 +265,26 @@ async def invoke(payload, context: RequestContext):
                     final_answer_data["references"] = json.dumps(
                         CALLBACKS.metadata["references"]
                     )
+
+                # Include structured output as JSON when available
+                # The Strands agent parses the LLM response into the Pydantic
+                # model and exposes it via result.structured_output
+                if STRUCTURED_OUTPUT_MODEL is not None:
+                    try:
+                        structured = raw_final_response.structured_output
+                        if structured is not None:
+                            final_answer_data[
+                                "structuredOutput"
+                            ] = structured.model_dump_json()
+                            logger.info(
+                                "Structured output included in response",
+                                extra={"structuredOutput": structured.model_dump()},
+                            )
+                    except Exception as so_err:
+                        logger.warning(
+                            f"Failed to extract structured output: {so_err}",
+                            extra={"error": str(so_err)},
+                        )
 
                 # Capture trajectory for evaluation features if requested
                 # The trajectory contains tool calls, reasoning steps, and other

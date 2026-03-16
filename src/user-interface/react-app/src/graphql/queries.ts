@@ -23,6 +23,7 @@ export const listSessions = /* GraphQL */ `query ListSessions {
       references
       feedback
       reasoningContent
+      structuredOutput
       toolActions
       executionTimeMs
       complete
@@ -50,6 +51,7 @@ export const getSession = /* GraphQL */ `query GetSession($id: String!) {
       references
       feedback
       reasoningContent
+      structuredOutput
       toolActions
       executionTimeMs
       complete

@@ -162,6 +162,7 @@ export default function AgentCoreRuntimeCreatorWizard({
             modelId: "",
             parameters: { temperature: 0.2, maxTokens: 3000 },
         },
+        structuredOutput: initialData?.structuredOutput,
     });
 
     const apiClient = useMemo(() => generateClient(), []);

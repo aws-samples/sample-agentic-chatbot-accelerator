@@ -36,6 +36,13 @@ export interface KnowledgeBaseCreationData {
     }>;
 }
 
+export interface StructuredOutputField {
+    name: string;
+    pythonType: string;
+    description: string;
+    optional: boolean;
+}
+
 export interface AgentCoreRuntimeConfiguration {
     agentName: string;
     modelInferenceParameters: {
@@ -54,6 +61,7 @@ export interface AgentCoreRuntimeConfiguration {
     mcpServers: string[];
     conversationManager: "null" | "sliding_window" | "summarizing";
     useMemory?: boolean;
+    structuredOutput?: StructuredOutputField[];
     architectureType?: ArchitectureType;
     swarmConfig?: SwarmConfiguration;
     graphConfig?: GraphConfiguration;

@@ -64,6 +64,8 @@ def get_session(user_id: str, id: str):
             history_item["feedback"] = json.dumps(data.get("feedback"))
         if "reasoningContent" in data:
             history_item["reasoningContent"] = data["reasoningContent"]
+        if "structuredOutput" in data:
+            history_item["structuredOutput"] = data["structuredOutput"]
         if "toolActions" in data:
             # Convert Decimal to int for JSON serialization
             tool_actions = data["toolActions"]

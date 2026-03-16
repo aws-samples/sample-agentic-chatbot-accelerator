@@ -1,3 +1,8 @@
+// ----------------------------------------------------------------------
+// Copyright 2026 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+//
+// SPDX-License-Identifier: MIT-0
+// ----------------------------------------------------------------------
 import {
     ChatBotAction,
     ChatBotHistoryItem,
@@ -70,6 +75,7 @@ export function updateMessageHistoryRef(
         const token = response.data?.token;
         const references = response.data?.references;
         const reasoningContent = response.data?.reasoningContent;
+        const structuredOutput = response.data?.structuredOutput;
         const hasContent = typeof content !== "undefined";
         const hasToken = typeof token !== "undefined";
 
@@ -113,6 +119,7 @@ export function updateMessageHistoryRef(
                 tokens: lastMessage.tokens,
                 toolActions: toolActions[lastMessageId] ?? lastMessage.toolActions,
                 reasoningContent: reasoningContent ?? lastMessage.reasoningContent,
+                structuredOutput: structuredOutput ?? lastMessage.structuredOutput,
             };
         }
     }

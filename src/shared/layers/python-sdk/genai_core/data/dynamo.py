@@ -183,6 +183,7 @@ class ChatHistoryHandler:
         runtime_version: Optional[str] = None,
         endpoint_name: Optional[str] = None,
         reasoning_content: Optional[str] = None,
+        structured_output: Optional[str] = None,
     ) -> None:
         """Adds a new message to the chat history.
 
@@ -208,6 +209,8 @@ class ChatHistoryHandler:
             )
         if reasoning_content:
             message_data["reasoningContent"] = reasoning_content
+        if structured_output:
+            message_data["structuredOutput"] = structured_output
 
         to_add = [
             {

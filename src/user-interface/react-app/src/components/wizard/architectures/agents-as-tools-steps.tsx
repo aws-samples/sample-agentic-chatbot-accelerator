@@ -637,7 +637,7 @@ export function isAgentsAsToolsStepValid(
 
         // Validate reasoning budget if enabled
         const budget = agentsAsToolsConfig.modelInferenceParameters.reasoningBudget;
-        if (budget !== undefined) {
+        if (budget != null) {
             const rType = getReasoningType(agentsAsToolsConfig.modelInferenceParameters.modelId);
             if (rType === "int") {
                 return typeof budget === "number" && budget >= 1024;

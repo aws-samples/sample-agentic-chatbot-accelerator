@@ -48,6 +48,21 @@ from shared.stream_types import (
 # ============================================================================ #
 
 
+class StructuredOutputFieldSpec(BaseModel):
+    """Specification for a single field in a structured output model.
+
+    Attributes:
+        name (str): The field name (must be a valid Python identifier)
+        pythonType (str): The Python type as a string, e.g. 'str', 'int', 'list[str]'
+        description (str): Human-readable description of the field
+    """
+
+    name: str
+    pythonType: str
+    description: str
+    optional: bool = False
+
+
 class AgentConfiguration(BaseModel):
     """Configuration for a single agent in the docker implementation.
 
@@ -58,6 +73,9 @@ class AgentConfiguration(BaseModel):
         toolParameters (dict[str, dict]): Parameters for each tool
         mcpServers (list[str]): List of MCP server names to connect
         conversationManager (EConversationManagerType): How to manage conversation history
+        structuredOutput (list[StructuredOutputFieldSpec] | None): Optional structured output
+            field specifications. When provided, the agent will return structured output
+            validated against a dynamically created Pydantic model.
     """
 
     modelInferenceParameters: ModelConfiguration
@@ -68,6 +86,7 @@ class AgentConfiguration(BaseModel):
     conversationManager: EConversationManagerType = (
         EConversationManagerType.SLIDING_WINDOW
     )
+    structuredOutput: list[StructuredOutputFieldSpec] | None = None
 
     @model_validator(mode="after")
     def validate_tool_parameters(self):

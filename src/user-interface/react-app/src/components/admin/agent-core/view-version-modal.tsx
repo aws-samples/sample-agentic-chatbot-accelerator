@@ -777,6 +777,61 @@ export default function ViewVersionModal({
                                 </FormField>
                             )}
 
+                            <FormField label="Structured Output">
+                                {Array.isArray(agentConfig.structuredOutput) &&
+                                agentConfig.structuredOutput.length > 0 ? (
+                                    <Table
+                                        items={agentConfig.structuredOutput}
+                                        columnDefinitions={[
+                                            {
+                                                id: "name",
+                                                header: "Field Name",
+                                                cell: (item) => item.name,
+                                                isRowHeader: true,
+                                            },
+                                            {
+                                                id: "pythonType",
+                                                header: "Python Type",
+                                                cell: (item) => (
+                                                    <span style={{ fontFamily: "monospace" }}>
+                                                        {item.pythonType}
+                                                    </span>
+                                                ),
+                                            },
+                                            {
+                                                id: "description",
+                                                header: "Description",
+                                                cell: (item) => (
+                                                    <span style={{ whiteSpace: "pre-wrap" }}>
+                                                        {item.description}
+                                                    </span>
+                                                ),
+                                            },
+                                            {
+                                                id: "optional",
+                                                header: "Optional",
+                                                cell: (item) =>
+                                                    item.optional ? (
+                                                        <StatusIndicator type="info">
+                                                            Yes
+                                                        </StatusIndicator>
+                                                    ) : (
+                                                        <StatusIndicator type="stopped">
+                                                            No
+                                                        </StatusIndicator>
+                                                    ),
+                                            },
+                                        ]}
+                                    />
+                                ) : (
+                                    <Box padding="m">
+                                        <StatusIndicator type="stopped">
+                                            Not configured
+                                        </StatusIndicator>
+                                    </Box>
+                                )}
+                            </FormField>
+
                             {agentConfig.conversationManager && (
                                 <FormField label="Conversation Manager">
                                     <Box padding="m">{agentConfig.conversationManager}</Box>

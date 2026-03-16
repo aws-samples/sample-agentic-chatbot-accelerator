@@ -59,6 +59,18 @@ export const CONVERSATION_MANAGER_OPTIONS = [
     { label: "None", value: "null" },
 ];
 
+/** Supported Python types for structured output fields */
+export const PYTHON_TYPE_OPTIONS = [
+    { label: "str", value: "str" },
+    { label: "int", value: "int" },
+    { label: "float", value: "float" },
+    { label: "bool", value: "bool" },
+    { label: "list[str]", value: "list[str]" },
+    { label: "list[int]", value: "list[int]" },
+    { label: "list[float]", value: "list[float]" },
+    { label: "dict", value: "dict" },
+];
+
 export const STEP_MIN_HEIGHT = "62vh";
 
 // ---------------------------------------------------------------------------
