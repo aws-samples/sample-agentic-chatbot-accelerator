@@ -72,7 +72,7 @@ def handler(event: InputModel, _) -> dict:
     except ClientError as err:
         msg = "Failed to fetch AgentCore Runtime status"
         logger.error(msg, extra={"rawErrorMessage": str(err)})
-        output = OutputModel(status=400, body=Body(message=msg, status="FAILED"))
+        raise err
 
     logger.info(
         "Lambda handler ready to return", extra={"lambdaResponse": output.model_dump()}

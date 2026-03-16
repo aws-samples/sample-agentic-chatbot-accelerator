@@ -115,11 +115,8 @@ def handler(event: InputModel, _) -> dict:
                 logger.info("Fake match -- resetting to None")
                 matching_memory_id = None
 
-        status_code = 200
     except ClientError as err:
         logger.error("Failed in checking memory", extra={"rawErrorMessage": str(err)})
-        status_code = 400
+        raise err
 
-    return OutputModel(
-        status=status_code, body=Body(memoryId=matching_memory_id)
-    ).model_dump()
+    return OutputModel(status=200, body=Body(memoryId=matching_memory_id)).model_dump()
