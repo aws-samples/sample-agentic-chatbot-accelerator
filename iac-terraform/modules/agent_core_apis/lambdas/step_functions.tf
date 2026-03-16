@@ -57,7 +57,7 @@ locals {
       name        = "startDeleteRuntime"
       asset       = "delete-agent-runtime"
       description = "Initiates deletion of Bedrock AgentCore runtime"
-      permissions = ["bedrock-agentcore:DeleteAgentRuntime"]
+      permissions = ["bedrock-agentcore:DeleteAgentRuntime", "bedrock-agentcore:DeleteAgentRuntimeEndpoint"]
       resource    = "runtime/*"
       extra_envs  = {}
     }
@@ -267,6 +267,24 @@ resource "aws_iam_role_policy" "step_function_lambdas_bedrock" {
         Effect   = "Allow"
         Action   = each.value.permissions
         Resource = "arn:aws:bedrock-agentcore:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:${each.value.resource}"
+      }
+    ]
+  })
+}
+
+# DeleteWorkloadIdentity permission for delete_runtime function
+resource "aws_iam_role_policy" "delete_runtime_workload_identity" {
+  name = "${local.name_prefix}-startDeleteRuntime-workload-identity"
+  role = aws_iam_role.step_function_lambdas["delete_runtime"].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "DeleteWorkloadIdentity"
+        Effect   = "Allow"
+        Action   = ["bedrock-agentcore:DeleteWorkloadIdentity"]
+        Resource = "arn:aws:bedrock-agentcore:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:workload-identity-directory/*"
       }
     ]
   })
