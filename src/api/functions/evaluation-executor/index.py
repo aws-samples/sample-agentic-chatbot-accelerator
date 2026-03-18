@@ -295,13 +295,20 @@ def _invoke_agent_runtime(
     # Include trajectory flag to capture agent reasoning traces for evaluation
     # Trajectory data is required by evaluators like HelpfulnessEvaluator,
     # FaithfulnessEvaluator, and other trajectory-based evaluators
-    payload = json.dumps(
-        {
-            "prompt": input_text,
-            "userId": "evaluation-executor",
-            "includeTrajectory": True,  # Capture agent trajectory for evaluation
-        }
-    ).encode()
+    payload_dict = {
+        "prompt": input_text,
+        "userId": "evaluation-executor",
+        "includeTrajectory": True,  # Capture agent trajectory for evaluation
+    }
+
+    # Include state if provided in the test case (stringified JSON).
+    # This allows evaluation of agents whose tools rely on agent state
+    # (e.g. S3 URI references for document processing).
+    state = test_case.get("state")
+    if state:
+        payload_dict["state"] = state
+
+    payload = json.dumps(payload_dict).encode()
 
     # Step 4: Invoke agent runtime
     try:
