@@ -41,6 +41,7 @@ export enum EvaluatorType {
     TRAJECTORY = "TrajectoryEvaluator",
     INTERACTIONS = "InteractionsEvaluator",
     GOAL_SUCCESS_RATE = "GoalSuccessRateEvaluator",
+    STRUCTURED_OUTPUT = "StructuredOutputEvaluator",
     CUSTOM = "Custom",
 }
 
@@ -68,7 +69,7 @@ export interface Evaluator {
 export interface TestCase {
     name: string;
     input: string;
-    expected_output: string;
+    expected_output: string | Record<string, unknown>;
     metadata?: Record<string, string>;
 }
 

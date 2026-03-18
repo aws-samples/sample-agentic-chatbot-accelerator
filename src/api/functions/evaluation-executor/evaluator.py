@@ -20,13 +20,16 @@ Note: Requires strands-agents-evals package to be installed.
 """
 from __future__ import annotations
 
+import json
 import logging
+import re
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from strands_evals.evaluators import (
+    Evaluator,
     FaithfulnessEvaluator,
     GoalSuccessRateEvaluator,
     HelpfulnessEvaluator,
@@ -36,8 +39,12 @@ from strands_evals.evaluators import (
     ToolSelectionAccuracyEvaluator,
     TrajectoryEvaluator,
 )
-from strands_evals.types.evaluation import EvaluationData
+from strands_evals.types.evaluation import EvaluationData, EvaluationOutput
 from strands_evals.types.trace import AgentInvocationSpan, Session, SpanInfo, Trace
+from typing_extensions import TypeVar
+
+InputT = TypeVar("InputT")
+OutputT = TypeVar("OutputT")
 
 logger = logging.getLogger(__name__)
 
@@ -339,6 +346,204 @@ class TrajectoryBuilder:
         return Session(traces=[combined_trace], session_id=session_id)
 
 
+# ========================= StructuredOutputEvaluator ========================= #
+
+
+class StructuredOutputEvaluator(Evaluator[InputT, OutputT]):
+    """Deterministic evaluator for structured JSON output.
+
+    Compares expected key-value pairs against the agent's actual structured output.
+    This is a metric-based evaluator (no LLM required).
+
+    Semantics:
+    - For non-null expected values: the actual output must contain the field with
+      an identical value (exact match for strings, sorted comparison for lists).
+    - For null expected values: the field must be absent from the actual output
+      or explicitly set to null/None.
+    - Fields present in the actual output but not in the expected output are ignored.
+
+    The evaluator receives structured data through `actual_structured_output`
+    (a dict passed alongside the evaluation case) rather than parsing JSON from
+    the canonical text output. This keeps the text output untouched for other
+    evaluators.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+
+    # ---- public API required by Evaluator base class ---- #
+
+    def evaluate(
+        self,
+        evaluation_case: EvaluationData[InputT, OutputT],
+    ) -> list[EvaluationOutput]:
+        """Synchronous structured-output evaluation.
+
+        Uses ``evaluation_case.expected_output`` as the ground truth and
+        ``evaluation_case.actual_output`` as the agent response to compare.
+
+        ``expected_output`` can be:
+        - A JSON string  (``'{"loop_id": "x22A-002", "template_tags": null}'``)
+        - Already serialized by the caller from a dict
+
+        ``actual_output`` for this evaluator is expected to be a JSON string
+        representation of the agent's structured output dict (set by the runner).
+        """
+        # --- parse expected ------------------------------------------------- #
+        expected = self._to_dict(
+            evaluation_case.expected_output, label="expected_output"
+        )
+        if expected is None:
+            return [
+                EvaluationOutput(
+                    score=0.0,
+                    test_pass=False,
+                    reason="expected_output could not be parsed as JSON object",
+                )
+            ]
+
+        # --- parse actual --------------------------------------------------- #
+        actual = self._to_dict(evaluation_case.actual_output, label="actual_output")
+        if actual is None:
+            return [
+                EvaluationOutput(
+                    score=0.0,
+                    test_pass=False,
+                    reason="actual_output could not be parsed as JSON object",
+                )
+            ]
+
+        # --- compare field by field ----------------------------------------- #
+        total_fields = len(expected)
+        if total_fields == 0:
+            return [
+                EvaluationOutput(
+                    score=1.0,
+                    test_pass=True,
+                    reason="No expected fields to check (empty expected_output)",
+                )
+            ]
+
+        matched = 0
+        field_reports: list[str] = []
+
+        for key, expected_value in expected.items():
+            actual_value = actual.get(key, _SENTINEL)
+
+            if expected_value is None:
+                # Null-means-absent: field should be missing, null, or empty
+                # in actual ([], {}, "" are treated as equivalent to null)
+                if self._is_empty(actual_value):
+                    matched += 1
+                    field_reports.append(f"{key} ✓ (correctly absent/null/empty)")
+                else:
+                    field_reports.append(
+                        f"{key} ✗ (expected absent/null, got {json.dumps(actual_value)})"
+                    )
+            else:
+                # Non-null: exact value match
+                if actual_value is _SENTINEL:
+                    field_reports.append(f"{key} ✗ (missing in actual output)")
+                elif self._values_equal(expected_value, actual_value):
+                    matched += 1
+                    field_reports.append(f"{key} ✓")
+                else:
+                    field_reports.append(
+                        f"{key} ✗ (expected {json.dumps(expected_value)}, "
+                        f"got {json.dumps(actual_value)})"
+                    )
+
+        score = matched / total_fields
+        test_pass = score == 1.0
+        reason = f"{matched}/{total_fields} structured fields match: " + ", ".join(
+            field_reports
+        )
+
+        return [
+            EvaluationOutput(
+                score=score,
+                test_pass=test_pass,
+                reason=reason,
+            )
+        ]
+
+    async def evaluate_async(
+        self,
+        evaluation_case: EvaluationData[InputT, OutputT],
+    ) -> list[EvaluationOutput]:
+        """Async wrapper – delegates to the synchronous implementation."""
+        return self.evaluate(evaluation_case)
+
+    # ---- helpers ----------------------------------------------------------- #
+
+    @staticmethod
+    def _to_dict(value: Any, label: str = "value") -> Optional[dict]:
+        """Convert a value to a dict.
+
+        Accepts:
+        - dict  → returned as-is
+        - str   → attempt JSON parse; if the string contains mixed text + JSON,
+                  extract the first JSON object via regex
+        - other → None (cannot convert)
+        """
+        if isinstance(value, dict):
+            return value
+
+        if not isinstance(value, str):
+            logger.warning(f"{label} is not a string or dict: {type(value)}")
+            return None
+
+        # Try direct JSON parse first
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, dict):
+                return parsed
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        # Fallback: extract first JSON object from mixed text
+        match = re.search(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", value)
+        if match:
+            try:
+                parsed = json.loads(match.group())
+                if isinstance(parsed, dict):
+                    return parsed
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        logger.warning(f"Could not extract JSON object from {label}")
+        return None
+
+    @staticmethod
+    def _is_empty(value: Any) -> bool:
+        """Check if a value is semantically empty/absent.
+
+        Considers None, empty list, empty dict, and empty string as empty.
+        This allows expected null values to match agent outputs that return
+        [] or {} instead of null.
+        """
+        if value is None or value is _SENTINEL:
+            return True
+        if isinstance(value, (list, dict, str)) and len(value) == 0:
+            return True
+        return False
+
+    @staticmethod
+    def _values_equal(expected: Any, actual: Any) -> bool:
+        """Compare two values with special handling for lists (order-insensitive)."""
+        if isinstance(expected, list) and isinstance(actual, list):
+            try:
+                return sorted(expected) == sorted(actual)
+            except TypeError:
+                # Fallback for non-sortable items
+                return expected == actual
+        return expected == actual
+
+
+# Sentinel object to distinguish "key missing" from "key present with None value"
+_SENTINEL = object()
+
+
 # ========================= EvaluatorFactory ========================= #
 
 
@@ -354,6 +559,7 @@ class EvaluatorFactory:
     - ToolParameterAccuracyEvaluator: Validates tool parameters
     - TrajectoryEvaluator: Assesses sequence of actions/tool calls taken by an agent (requires rubric)
     - InteractionsEvaluator: Evaluates how well the agent interacts with users (requires rubric)
+    - StructuredOutputEvaluator: Deterministic JSON field comparison (no LLM needed)
     """
 
     # Mapping of evaluator type names to classes
@@ -366,6 +572,7 @@ class EvaluatorFactory:
         "ToolParameterAccuracyEvaluator": ToolParameterAccuracyEvaluator,
         "TrajectoryEvaluator": TrajectoryEvaluator,
         "InteractionsEvaluator": InteractionsEvaluator,
+        "StructuredOutputEvaluator": StructuredOutputEvaluator,
     }
 
     # Evaluators that require a rubric parameter
@@ -373,6 +580,11 @@ class EvaluatorFactory:
         "OutputEvaluator",
         "TrajectoryEvaluator",
         "InteractionsEvaluator",
+    }
+
+    # Evaluators that are deterministic (no LLM / model required)
+    DETERMINISTIC_EVALUATORS = {
+        "StructuredOutputEvaluator",
     }
 
     @classmethod
@@ -400,6 +612,10 @@ class EvaluatorFactory:
             )
 
         evaluator_class = cls.EVALUATOR_CLASSES[config.evaluator_type]
+
+        # Deterministic evaluators don't require an LLM model
+        if config.evaluator_type in cls.DETERMINISTIC_EVALUATORS:
+            return evaluator_class()
 
         # Only certain evaluators require rubric parameter
         if config.evaluator_type in cls.EVALUATORS_REQUIRING_RUBRIC:
@@ -470,13 +686,14 @@ class EvaluationRunner:
         self,
         evaluator_type: str,
         input_text: str,
-        expected_output: str,
+        expected_output: Union[str, dict],
         actual_output: str,
         rubric: str = "",
         trajectory: Optional[dict] = None,
         case_name: str = "eval-case",
         expected_trajectory: Optional[List[str]] = None,
         expected_interactions: Optional[List[dict]] = None,
+        actual_structured_output: Optional[dict] = None,
     ) -> EvaluationResult:
         """Run evaluation using specified evaluator type.
 
@@ -484,7 +701,7 @@ class EvaluationRunner:
             evaluator_type: Type of evaluator to use
             input_text: The input that was sent to the agent
             expected_output: The expected output
-            actual_output: The actual output from the agent
+            actual_output: The actual output from the agent (canonical text)
             rubric: Optional rubric for evaluators that support it
             trajectory: Optional trajectory data from agent execution (supports both
                         single agent format with 'traces' and swarm format with
@@ -493,6 +710,9 @@ class EvaluationRunner:
             expected_trajectory: Optional expected sequence of agent/tool names
             expected_interactions: Optional expected interactions for swarm agents
                 Each interaction: {"node_name": str, "dependencies": [str], "messages": str}
+            actual_structured_output: Optional structured output dict from the agent.
+                Used by StructuredOutputEvaluator instead of actual_output so that
+                other evaluators receive the canonical text output untouched.
 
         Returns:
             EvaluationResult with score, passed status, and reason
@@ -500,7 +720,8 @@ class EvaluationRunner:
         logger.info(
             f"Running {evaluator_type} evaluation, "
             f"input_length={len(input_text)}, "
-            f"has_trajectory={trajectory is not None}"
+            f"has_trajectory={trajectory is not None}, "
+            f"has_structured_output={actual_structured_output is not None}"
         )
 
         try:
@@ -555,11 +776,39 @@ class EvaluationRunner:
                 except Exception as e:
                     logger.warning(f"Failed to build session from trajectory: {e}")
 
+            # For StructuredOutputEvaluator, use the structured output dict
+            # (serialized as JSON) instead of the canonical text output so that
+            # other evaluators still receive the untouched text.
+            effective_actual_output = actual_output
+            if (
+                evaluator_type == "StructuredOutputEvaluator"
+                and actual_structured_output is not None
+            ):
+                # actual_structured_output can be a dict OR a JSON string
+                # (AgentCore returns it as a JSON string in the SSE payload).
+                # Only json.dumps() if it's a dict; otherwise use as-is.
+                if isinstance(actual_structured_output, dict):
+                    effective_actual_output = json.dumps(actual_structured_output)
+                else:
+                    effective_actual_output = str(actual_structured_output)
+                logger.info(
+                    "StructuredOutputEvaluator: using structured output "
+                    "instead of canonical text output"
+                )
+
+            # Ensure expected_output is a JSON string (not a dict) because
+            # EvaluationData.expected_output is typed as str in the Strands SDK.
+            # If we pass a dict, Pydantic coerces it to Python repr format
+            # (single quotes, None instead of null) which breaks JSON parsing.
+            effective_expected_output: Any = expected_output
+            if isinstance(expected_output, dict):
+                effective_expected_output = json.dumps(expected_output)
+
             # Create evaluation data with appropriate trajectory/interactions
             eval_data_kwargs: Dict[str, Any] = {
                 "input": input_text,
-                "expected_output": expected_output,
-                "actual_output": actual_output,
+                "expected_output": effective_expected_output,
+                "actual_output": effective_actual_output,
                 "name": case_name,
             }
 

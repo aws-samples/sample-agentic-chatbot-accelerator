@@ -72,7 +72,7 @@ AppSync → EvaluationResolver → SQS Queue → EvaluationExecutor → DynamoDB
 
 ## Available Evaluators
 
-The system supports eight evaluator types from the Strands Evaluation SDK:
+The system supports nine evaluator types — eight from the Strands Evaluation SDK plus one custom evaluator:
 
 | Evaluator | Purpose | Requires Rubric | Requires Trajectory | Best For |
 |-----------|---------|-----------------|---------------------|----------|
@@ -84,6 +84,7 @@ The system supports eight evaluator types from the Strands Evaluation SDK:
 | **ToolSelectionAccuracyEvaluator** | Validates tool selection decisions | No | Yes | Multi-tool agents |
 | **ToolParameterAccuracyEvaluator** | Validates tool parameters accuracy | No | Yes | Complex tool usage |
 | **InteractionsEvaluator** | Evaluates agent-to-agent handoffs and interactions (swarm only) | Yes | Yes | Swarm agents |
+| **StructuredOutputEvaluator** | Deterministic field-by-field JSON comparison of structured output (no LLM needed) | No | No | Structured output validation |
 
 ## Recommended Evaluator Combinations
 
@@ -100,6 +101,11 @@ OutputEvaluator, HelpfulnessEvaluator, TrajectoryEvaluator, ToolSelectionAccurac
 ### For Simple Q&A Agents
 ```
 OutputEvaluator, HelpfulnessEvaluator
+```
+
+### For Agents with Structured Output (JSON fields)
+```
+StructuredOutputEvaluator, OutputEvaluator
 
 
 
@@ -154,6 +160,32 @@ evaluationExecutor.addEventSource(
 ]
 ```
 
+### Structured Output Test Cases (for StructuredOutputEvaluator)
+
+For agents that return structured JSON output (e.g., extracted fields like `aws_services`, `links`), use `StructuredOutputEvaluator` with a structured `expected_output`. The evaluator compares each field deterministically — no LLM is required.
+
+**Semantics:**
+- **Non-null values**: The actual output must contain the field with an identical value (exact match for strings, order-insensitive comparison for lists).
+- **Null values**: The field must be **absent** from the actual output or explicitly `null`. This is the "null-means-absent" convention.
+- **Extra fields**: Fields present in the actual output but not in the expected output are ignored.
+
+The `expected_output` field accepts both a **dict** (recommended) or a **JSON string**:
+
+```json
+[
+  {
+    "name": "aws-question-0001",
+    "input": "What is Bedrock?",
+    "expected_output": {
+      "aws_services": ["Amazon Bedrock"]
+    },
+    "metadata": { "category": "aws"}
+  }
+]
+```
+
+> **Note**: `StructuredOutputEvaluator` uses the agent's `structuredOutput` dict (returned alongside the text response), not the text response itself. This means you can combine it with `OutputEvaluator` — one checks the structured fields, the other evaluates the natural language response.
+
 ### Swarm Agent Test Cases (with expected_interactions)
 
 For `InteractionsEvaluator`, use the `expected_interactions` field to define the expected agent-to-agent handoff sequence:
@@ -179,7 +211,7 @@ For `InteractionsEvaluator`, use the `expected_interactions` field to define the
 |-------|-------------|---------|
 | `name` | Test case identifier | All evaluators |
 | `input` | User input/question | All evaluators |
-| `expected_output` | Expected agent response | OutputEvaluator |
+| `expected_output` | Expected agent response (string or dict for structured output) | OutputEvaluator, StructuredOutputEvaluator |
 | `expected_trajectory` | Expected sequence of tool/agent names | TrajectoryEvaluator |
 | `expected_interactions` | Expected agent-to-agent handoffs (swarm only) | InteractionsEvaluator |
 | `metadata` | Additional test case metadata | Filtering/categorization |
@@ -196,6 +228,7 @@ For `InteractionsEvaluator`, use the `expected_interactions` field to define the
 | ToolSelectionAccuracyEvaluator | ✅ | ✅ |
 | ToolParameterAccuracyEvaluator | ✅ | ✅ |
 | InteractionsEvaluator | ❌ | ✅ |
+| StructuredOutputEvaluator | ✅ | ❌ |
 
 > **Note**: `InteractionsEvaluator` is specifically designed for swarm agents as it evaluates agent-to-agent handoffs, which don't exist in single agent configurations.
 
@@ -208,6 +241,7 @@ For `InteractionsEvaluator`, use the `expected_interactions` field to define the
 5. **Define expected_trajectory for workflow validation**: Use this with `TrajectoryEvaluator` to verify action sequences
 6. **Test iteratively**: Run small test sets first to validate evaluator selection
 7. **Monitor pass rates**: A consistent pass rate below 70% may indicate evaluator mismatch
+8. **Use StructuredOutputEvaluator for JSON outputs**: For agents that return structured data (e.g., extracted `loop_id`, `template_tags`), this evaluator provides deterministic field-level comparison without LLM costs. Use `null` in `expected_output` to assert a field should be absent.
 
 ## Related Resources
 

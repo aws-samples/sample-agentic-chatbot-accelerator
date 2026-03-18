@@ -17,7 +17,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import TYPE_CHECKING, Optional, Tuple
+from typing import TYPE_CHECKING, Optional, Tuple, Union
 
 import boto3
 from aws_lambda_powertools import Logger, Tracer
@@ -29,6 +29,7 @@ from botocore.exceptions import ClientError
 
 # Import evaluator classes
 from evaluator import EvaluationRunner
+from pydantic import ConfigDict, Field
 
 if TYPE_CHECKING:
     from aws_lambda_powertools.utilities.typing import LambdaContext
@@ -36,11 +37,21 @@ if TYPE_CHECKING:
 
 # ===================== Models ==================== #
 class TestCase(BaseModel):
-    """Test case data model."""
+    """Test case data model.
+
+    Accepts both snake_case (from test case JSON files) and camelCase field names.
+    E.g. both "expected_output" and "expectedOutput" map to the same field.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
 
     name: str
     input: str
-    expectedOutput: Optional[str] = None
+    expectedOutput: Optional[Union[str, dict]] = Field(
+        default=None, alias="expected_output"
+    )
+    expected_trajectory: Optional[list] = None
+    expected_interactions: Optional[list] = None
     metadata: Optional[dict] = None
 
 
@@ -117,7 +128,7 @@ def process_record(record: SQSRecord):
     Missing or invalid fields will raise ValidationError.
     """
     # Parse and validate SQS message payload using Pydantic
-    payload: SQSMessagePayload = parse(event=record.body, model=SQSMessagePayload)
+    payload: SQSMessagePayload = parse(event=record.body, model=SQSMessagePayload)  # type: ignore
 
     evaluator_id = payload.evaluatorId
     test_case_index = payload.testCaseIndex
@@ -157,6 +168,7 @@ def process_record(record: SQSRecord):
             actual_output=result.get("output", ""),
             evaluator_config=evaluator_config,
             trajectory=result.get("trajectory"),
+            actual_structured_output=result.get("structuredOutput"),
         )
 
         # Add latency
@@ -341,6 +353,7 @@ def _invoke_agent_runtime(
                     logger.debug("Parsed event", extra={"event": event})
 
         output = response_data.get("content", "")
+        structured_output = response_data.get("structuredOutput")
         trajectory = response_data.get("trajectory")
 
         logger.info(
@@ -348,12 +361,14 @@ def _invoke_agent_runtime(
             extra={
                 "sessionId": session_id,
                 "outputLength": len(str(output)),
+                "hasStructuredOutput": structured_output is not None,
                 "hasTrajectory": trajectory is not None,
             },
         )
 
         return {
-            "output": output,
+            "output": output,  # Canonical text output for most evaluators
+            "structuredOutput": structured_output,  # Dict for StructuredOutputEvaluator
             "sessionId": session_id,
             "agentRuntimeArn": agent_runtime_arn,
             "trajectory": trajectory,  # Include trajectory for evaluators
@@ -425,24 +440,28 @@ def _evaluate_result(
     actual_output: str,
     evaluator_config: EvaluatorConfig,
     trajectory: Optional[dict] = None,
+    actual_structured_output: Optional[dict] = None,
 ) -> dict:
     """Evaluate the agent's output using Strands Evals SDK.
 
     Supports multiple comma-separated evaluator types (e.g., "OutputEvaluator, HelpfulnessEvaluator").
     When multiple types are provided, runs each evaluator separately and aggregates results.
 
-    Uses the evaluator module which supports 5 built-in evaluators:
+    Uses the evaluator module which supports built-in and custom evaluators:
     - OutputEvaluator: Compares actual vs expected output (works without trajectory)
     - HelpfulnessEvaluator: Evaluates response helpfulness (requires trajectory)
     - FaithfulnessEvaluator: Checks factual accuracy (requires trajectory)
     - ToolSelectionAccuracyEvaluator: Validates tool selection (requires trajectory)
     - ToolParameterAccuracyEvaluator: Validates tool parameters (requires trajectory)
+    - StructuredOutputEvaluator: Deterministic JSON field comparison (no LLM needed)
 
     Args:
         test_case: TestCase model with input, expected output, and metadata
-        actual_output: Actual output from agent
+        actual_output: Actual canonical text output from agent
         evaluator_config: Configuration with evaluator types, rubrics, and thresholds
         trajectory: Optional trajectory data from agent for advanced evaluators
+        actual_structured_output: Optional structured output dict from the agent.
+            Passed to StructuredOutputEvaluator for field-level comparison.
 
     Returns:
         dict: Evaluation result with score, passed, reason
@@ -492,6 +511,7 @@ def _evaluate_result(
                 expected_output=expected_output,
                 actual_output=actual_output,
                 trajectory=trajectory,
+                actual_structured_output=actual_structured_output,
             )
 
             score = result.score
@@ -742,7 +762,7 @@ def _finalize_evaluation(evaluator_id: str, item: dict) -> None:
         # Update status to Completed
         timestamp = datetime.now(timezone.utc).isoformat()
 
-        EVALUATIONS_TABLE.update_item(
+        EVALUATIONS_TABLE.update_item(  # type: ignore
             Key={"EvaluatorName": evaluator_id},
             UpdateExpression="""
                 SET #s = :status,

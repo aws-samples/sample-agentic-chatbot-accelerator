@@ -68,6 +68,12 @@ const EVALUATOR_TYPE_OPTIONS = [
     { label: "Tool Selection Evaluator", value: EvaluatorType.TOOL_SELECTION, description: "Evaluates if the agent selected the correct tools (requires trajectory)" },
     { label: "Tool Parameter Evaluator", value: EvaluatorType.TOOL_PARAMETER, description: "Checks if tool parameters were correctly provided (requires trajectory)" },
     { label: "Trajectory Evaluator", value: EvaluatorType.TRAJECTORY, description: "Assesses the sequence of actions/tool calls taken by the agent to reach its goal" },
+    {
+        label: "Structured Output Evaluator",
+        value: EvaluatorType.STRUCTURED_OUTPUT,
+        description:
+            "Deterministic field-by-field comparison of structured JSON output against expected values (no LLM needed)",
+    },
 ];
 
 // Evaluators that require a rubric
@@ -716,8 +722,14 @@ export default function CreateEvaluatorWizard({
                                                 id: "expected_output",
                                                 header: "Expected Output",
                                                 cell: item => (
-                                                    <span title={item.expected_output}>
-                                                        {item.expected_output.length > 50 ? `${item.expected_output.substring(0, 50)}...` : item.expected_output}
+                                                    <span
+                                                        style={{
+                                                            wordBreak: "break-word",
+                                                        }}
+                                                    >
+                                                        {typeof item.expected_output === "object"
+                                                            ? JSON.stringify(item.expected_output)
+                                                            : item.expected_output || "-"}
                                                     </span>
                                                 ),
                                             },
