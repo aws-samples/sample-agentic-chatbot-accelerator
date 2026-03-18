@@ -219,6 +219,9 @@ export default function CreateEvaluatorWizard({
                     name: item.name,
                     input: item.input,
                     expected_output: item.expected_output || "", // Optional
+                    ...(item.state && { state: item.state }),
+                    ...(item.expected_trajectory && { expected_trajectory: item.expected_trajectory }),
+                    ...(item.expected_interactions && { expected_interactions: item.expected_interactions }),
                     metadata: item.metadata || {},
                 };
             });

@@ -70,6 +70,9 @@ export interface TestCase {
     name: string;
     input: string;
     expected_output: string | Record<string, unknown>;
+    state?: string;
+    expected_trajectory?: string[];
+    expected_interactions?: Record<string, unknown>[];
     metadata?: Record<string, string>;
 }
 

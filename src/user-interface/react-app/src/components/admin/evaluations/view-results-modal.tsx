@@ -142,7 +142,6 @@ export default function ViewResultsModal({
                                 id: "reason",
                                 header: "Evaluator Feedback",
                                 cell: (item) => <ReasonCell reason={item.reason} />,
-                                width: 450,
                             },
                             {
                                 id: "latency",
@@ -154,6 +153,7 @@ export default function ViewResultsModal({
                         variant="embedded"
                         stripedRows
                         stickyHeader
+                        wrapLines
                     />
                 </Container>
             </SpaceBetween>

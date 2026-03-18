@@ -186,6 +186,27 @@ The `expected_output` field accepts both a **dict** (recommended) or a **JSON st
 
 > **Note**: `StructuredOutputEvaluator` uses the agent's `structuredOutput` dict (returned alongside the text response), not the text response itself. This means you can combine it with `OutputEvaluator` — one checks the structured fields, the other evaluates the natural language response.
 
+### Test Cases with Agent State
+
+For agents whose tools rely on **agent state** (e.g. S3 URI references for document processing), you can pass a `state` field in each test case. The value must be a **stringified JSON object**.
+
+The state is forwarded to the agent runtime and becomes available via `tool_context.agent.state` inside tools.
+
+```json
+[
+  {
+    "name": "internal-doc-summary",
+    "input": "Summarize the key findings from this internal architecture review document.",
+    "expected_output": "The architecture review recommends migrating to a serverless-first approach...",
+    "state": "{\"s3_bucket\":\"your-bucket\",\"document_s3_key\":\"reviews/2026-q1-architecture-review.pdf\"}",
+    "expected_trajectory": ["summarize_document"],
+    "metadata": { "category": "document-processing" }
+  }
+]
+```
+
+> **Note**: The `state` field is optional. Test cases without `state` continue to work exactly as before.
+
 ### Swarm Agent Test Cases (with expected_interactions)
 
 For `InteractionsEvaluator`, use the `expected_interactions` field to define the expected agent-to-agent handoff sequence:
@@ -212,6 +233,7 @@ For `InteractionsEvaluator`, use the `expected_interactions` field to define the
 | `name` | Test case identifier | All evaluators |
 | `input` | User input/question | All evaluators |
 | `expected_output` | Expected agent response (string or dict for structured output) | OutputEvaluator, StructuredOutputEvaluator |
+| `state` | Stringified JSON object passed as agent state (optional) | Agents with state-dependent tools |
 | `expected_trajectory` | Expected sequence of tool/agent names | TrajectoryEvaluator |
 | `expected_interactions` | Expected agent-to-agent handoffs (swarm only) | InteractionsEvaluator |
 | `metadata` | Additional test case metadata | Filtering/categorization |
