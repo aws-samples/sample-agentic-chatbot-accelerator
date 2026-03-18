@@ -5,16 +5,14 @@
 // ----------------------------------------------------------------------
 import * as agentcore from "@aws-cdk/aws-bedrock-agentcore-alpha";
 import { RuntimeNetworkConfiguration } from "@aws-cdk/aws-bedrock-agentcore-alpha";
-import { DynamoDBSeeder, Seeds } from "@cloudcomponents/cdk-dynamodb-seeder";
-
 import * as cdk from "aws-cdk-lib";
-import * as path from "path";
 import { CfnOutput } from "aws-cdk-lib";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import { DockerImageAsset, Platform } from "aws-cdk-lib/aws-ecr-assets";
 import * as iam from "aws-cdk-lib/aws-iam";
 import { PolicyDocument, PolicyStatement, Role, ServicePrincipal } from "aws-cdk-lib/aws-iam";
 import * as cr from "aws-cdk-lib/custom-resources";
+import * as path from "path";
 
 import * as sns from "aws-cdk-lib/aws-sns";
 
@@ -89,16 +87,60 @@ export class AcaAgentCoreContainer extends Construct {
                 pointInTimeRecoveryEnabled: true,
             },
         });
-        new DynamoDBSeeder(this, "ToolsSeeder", {
-            table: toolRegistry,
-            seeds: Seeds.fromInline(
-                props.config.toolRegistry.map((tool) => ({
-                    ToolName: tool.name,
-                    ToolDescription: tool.description,
-                    InvokesSubAgent: tool.invokesSubAgent,
-                })),
-            ),
-        });
+        // Seed tool registry table using native CDK AwsCustomResource (DynamoDB BatchWriteItem)
+        const toolSeedItems = props.config.toolRegistry.map((tool) => ({
+            PutRequest: {
+                Item: {
+                    ToolName: { S: tool.name },
+                    ToolDescription: { S: tool.description },
+                    ...(tool.invokesSubAgent !== undefined && {
+                        InvokesSubAgent: { BOOL: tool.invokesSubAgent },
+                    }),
+                },
+            },
+        }));
+
+        if (toolSeedItems.length > 0) {
+            const toolSeeder = new cr.AwsCustomResource(this, "ToolsSeederFunc", {
+                onCreate: {
+                    service: "DynamoDB",
+                    action: "BatchWriteItem",
+                    parameters: {
+                        RequestItems: {
+                            [toolRegistry.tableName]: toolSeedItems,
+                        },
+                    },
+                    physicalResourceId: cr.PhysicalResourceId.of("ToolRegistrySeeder"),
+                },
+                onUpdate: {
+                    service: "DynamoDB",
+                    action: "BatchWriteItem",
+                    parameters: {
+                        RequestItems: {
+                            [toolRegistry.tableName]: toolSeedItems,
+                        },
+                    },
+                    physicalResourceId: cr.PhysicalResourceId.of("ToolRegistrySeeder"),
+                },
+                policy: cr.AwsCustomResourcePolicy.fromStatements([
+                    new iam.PolicyStatement({
+                        actions: ["dynamodb:BatchWriteItem"],
+                        resources: [toolRegistry.tableArn],
+                    }),
+                ]),
+            });
+
+            NagSuppressions.addResourceSuppressions(
+                toolSeeder,
+                [
+                    {
+                        id: "AwsSolutions-IAM5",
+                        reason: "IAM role implicitly created by CDK for AwsCustomResource.",
+                    },
+                ],
+                true,
+            );
+        }
 
         // MCP Server Registry table
         const mcpServerRegistry = new dynamodb.Table(this, "McpServerRegistry", {

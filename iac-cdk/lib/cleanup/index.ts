@@ -209,7 +209,7 @@ export class Cleanup extends Construct {
             [
                 {
                     id: "AwsSolutions-L1",
-                    reason: "Lambda implicitly created by DynamoDBSeeder.",
+                    reason: "Lambda runtime version is managed by CDK custom resource provider framework construct.",
                 },
             ],
         );

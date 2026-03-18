@@ -197,7 +197,10 @@ export class AgentCoreApis extends Construct {
             typeName: "Mutation",
             fieldName: "publishRuntimeUpdate",
             code: appsync.Code.fromAsset(
-                path.join(__dirname, "../../../src/api/functions/resolvers/runtime-update/publish.js"),
+                path.join(
+                    __dirname,
+                    "../../../src/api/functions/resolvers/runtime-update/publish.js",
+                ),
             ),
             runtime: appsync.FunctionRuntime.JS_1_0_0,
             dataSource: noneDataSource,
@@ -206,7 +209,10 @@ export class AgentCoreApis extends Construct {
             typeName: "Subscription",
             fieldName: "receiveUpdateNotification",
             code: appsync.Code.fromAsset(
-                path.join(__dirname, "../../../src/api/functions/resolvers/runtime-update/subscribe.js"),
+                path.join(
+                    __dirname,
+                    "../../../src/api/functions/resolvers/runtime-update/subscribe.js",
+                ),
             ),
             runtime: appsync.FunctionRuntime.JS_1_0_0,
             dataSource: noneDataSource,
@@ -278,10 +284,13 @@ export class AgentCoreApis extends Construct {
             }:094274105915:layer:AWSLambdaPowertoolsTypeScriptV2:17`,
         );
         const notifyRuntimeUpdate = new NodejsFunction(this, "notify-runtime-update", {
-            entry: path.join(__dirname, "../../../src/api/functions/notify-runtime-update/index.ts"),
+            entry: path.join(
+                __dirname,
+                "../../../src/api/functions/notify-runtime-update/index.ts",
+            ),
             layers: [powertoolsLayerJS],
             handler: "index.handler",
-            runtime: Runtime.NODEJS_24_X,
+            runtime: Runtime.NODEJS_LATEST,
             loggingFormat: LoggingFormat.JSON,
             bundling: {
                 externalModules: ["@aws-sdk/*", "@aws-lambda-powertools/*", "@aws-crypto/*"],
@@ -310,7 +319,10 @@ export class AgentCoreApis extends Construct {
 
         const stateMachine = new sfn.StateMachine(scope, "DeleteAgentCoreEndpointStateMachine", {
             definitionBody: sfn.DefinitionBody.fromFile(
-                path.join(__dirname, "../../../src/api/state-machines/delete-agentcore-endpoints.json"),
+                path.join(
+                    __dirname,
+                    "../../../src/api/state-machines/delete-agentcore-endpoints.json",
+                ),
             ),
             definitionSubstitutions: substitutions,
             stateMachineName: `${prefix}-deleteAgentCoreEndpoint`,
@@ -515,7 +527,10 @@ export class AgentCoreApis extends Construct {
 
         const stateMachineDeleteRuntime = new sfn.StateMachine(scope, "DeleteRuntimeStateMachine", {
             definitionBody: sfn.DefinitionBody.fromFile(
-                path.join(__dirname, "../../../src/api/state-machines/delete-agentcore-runtime.json"),
+                path.join(
+                    __dirname,
+                    "../../../src/api/state-machines/delete-agentcore-runtime.json",
+                ),
             ),
             definitionSubstitutions: substitutionsDeleteRuntime,
             stateMachineName: `${prefix}-deleteAgentCoreRuntime`,
@@ -689,7 +704,10 @@ export class AgentCoreApis extends Construct {
 
         const stateMachineCreateRuntime = new sfn.StateMachine(scope, "CreateRuntimeStateMachine", {
             definitionBody: sfn.DefinitionBody.fromFile(
-                path.join(__dirname, "../../../src/api/state-machines/create-agentcore-runtime.json"),
+                path.join(
+                    __dirname,
+                    "../../../src/api/state-machines/create-agentcore-runtime.json",
+                ),
             ),
             definitionSubstitutions: substitutionsCreateRuntime,
             stateMachineName: `${prefix}-createAgentCoreRuntime`,
