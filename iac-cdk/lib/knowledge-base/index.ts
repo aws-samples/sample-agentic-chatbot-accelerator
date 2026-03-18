@@ -8,9 +8,7 @@ import {
     opensearchserverless as oss,
     opensearch_vectorindex as osvi,
 } from "@cdklabs/generative-ai-cdk-constructs";
-import { DynamoDBSeeder, Seeds } from "@cloudcomponents/cdk-dynamodb-seeder";
 import * as cdk from "aws-cdk-lib";
-import * as path from "path";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as events from "aws-cdk-lib/aws-events";
 import * as targets from "aws-cdk-lib/aws-events-targets";
@@ -19,8 +17,10 @@ import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as eventsources from "aws-cdk-lib/aws-lambda-event-sources";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as sqs from "aws-cdk-lib/aws-sqs";
+import * as cr from "aws-cdk-lib/custom-resources";
 import { NagSuppressions } from "cdk-nag";
 import { Construct } from "constructs";
+import * as path from "path";
 import { Shared } from "../shared";
 import { ChunkingStrategyType, KnowledgeBaseParameters, SystemConfig } from "../shared/types";
 import { createLambda, createQueue, generatePrefix } from "../shared/utils";
@@ -216,19 +216,82 @@ export class VectorKnowledgeBase extends Construct {
             }),
         );
 
-        // Seed the inventory table with KB info
-        new DynamoDBSeeder(this, "knowledgeBaseTableSeeder", {
-            table: this.kbInventoryTable,
-            seeds: Seeds.fromInline([
-                {
-                    KnowledgeBaseId: this.knowledgeBase.knowledgeBaseId,
-                    DataSourceId: dataSource.dataSourceId,
-                    DataSourcePrefix: dataSourcePrefix,
-                    S3DataProcessingRuleName: this.s3DataSourceRule.ruleName,
-                    RawInputPrefix: props.config.dataProcessingParameters.inputPrefix,
+        // Seed the inventory table with KB info using native CDK AwsCustomResource
+        const kbSeeder = new cr.AwsCustomResource(this, "knowledgeBaseTableSeeder", {
+            onCreate: {
+                service: "DynamoDB",
+                action: "BatchWriteItem",
+                parameters: {
+                    RequestItems: {
+                        [this.kbInventoryTable.tableName]: [
+                            {
+                                PutRequest: {
+                                    Item: {
+                                        KnowledgeBaseId: {
+                                            S: this.knowledgeBase.knowledgeBaseId,
+                                        },
+                                        DataSourceId: { S: dataSource.dataSourceId },
+                                        DataSourcePrefix: { S: dataSourcePrefix },
+                                        S3DataProcessingRuleName: {
+                                            S: this.s3DataSourceRule.ruleName,
+                                        },
+                                        RawInputPrefix: {
+                                            S: props.config.dataProcessingParameters!.inputPrefix,
+                                        },
+                                    },
+                                },
+                            },
+                        ],
+                    },
                 },
+                physicalResourceId: cr.PhysicalResourceId.of("KnowledgeBaseInventorySeeder"),
+            },
+            onUpdate: {
+                service: "DynamoDB",
+                action: "BatchWriteItem",
+                parameters: {
+                    RequestItems: {
+                        [this.kbInventoryTable.tableName]: [
+                            {
+                                PutRequest: {
+                                    Item: {
+                                        KnowledgeBaseId: {
+                                            S: this.knowledgeBase.knowledgeBaseId,
+                                        },
+                                        DataSourceId: { S: dataSource.dataSourceId },
+                                        DataSourcePrefix: { S: dataSourcePrefix },
+                                        S3DataProcessingRuleName: {
+                                            S: this.s3DataSourceRule.ruleName,
+                                        },
+                                        RawInputPrefix: {
+                                            S: props.config.dataProcessingParameters!.inputPrefix,
+                                        },
+                                    },
+                                },
+                            },
+                        ],
+                    },
+                },
+                physicalResourceId: cr.PhysicalResourceId.of("KnowledgeBaseInventorySeeder"),
+            },
+            policy: cr.AwsCustomResourcePolicy.fromStatements([
+                new iam.PolicyStatement({
+                    actions: ["dynamodb:BatchWriteItem"],
+                    resources: [this.kbInventoryTable.tableArn],
+                }),
             ]),
         });
+
+        NagSuppressions.addResourceSuppressions(
+            kbSeeder,
+            [
+                {
+                    id: "AwsSolutions-IAM5",
+                    reason: "IAM role implicitly created by CDK for AwsCustomResource.",
+                },
+            ],
+            true,
+        );
 
         // Grant Bedrock permissions
         this.funcStartSync.addToRolePolicy(

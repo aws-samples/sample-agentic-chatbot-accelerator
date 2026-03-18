@@ -1,3 +1,8 @@
+// ----------------------------------------------------------------------
+// Copyright 2026 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+//
+// SPDX-License-Identifier: MIT-0
+// ----------------------------------------------------------------------
 import * as cdk from "aws-cdk-lib";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as sns from "aws-cdk-lib/aws-sns";
@@ -196,26 +201,20 @@ export class AcaStack extends cdk.Stack {
                 },
             ],
         );
-        // Add suppressions for DynamoDB seeder custom resource
-        NagSuppressions.addResourceSuppressionsByPath(
-            this,
-            [`/${this.stackName}/Custom::DynamodbSeederCustomDynamodbSeeder/ServiceRole/Resource`],
-            [
-                {
-                    id: "AwsSolutions-IAM4",
-                    reason: "DynamoDB seeder uses AWS managed policy for Lambda basic execution role. This is a third-party construct from @cloudcomponents/cdk-dynamodb-seeder.",
-                },
-            ],
-        );
-        NagSuppressions.addResourceSuppressionsByPath(
-            this,
-            [`/${this.stackName}/Custom::DynamodbSeederCustomDynamodbSeeder/Resource`],
-            [
-                {
-                    id: "AwsSolutions-L1",
-                    reason: "DynamoDB seeder Lambda runtime version is managed by the third-party construct @cloudcomponents/cdk-dynamodb-seeder.",
-                },
-            ],
-        );
+
+        // AwsCustomResource singleton Lambda (used by DynamoDB table seeders)
+        // Only exists when at least one AwsCustomResource is created (KB seeder or tool registry seeder)
+        if (knowledgeBase || props.config.toolRegistry.length > 0) {
+            NagSuppressions.addResourceSuppressionsByPath(
+                this,
+                [`/${this.stackName}/AWS679f53fac002430cb0da5b7982bd2287/ServiceRole/Resource`],
+                [
+                    {
+                        id: "AwsSolutions-IAM4",
+                        reason: "AWS managed policy for Lambda basic execution is required by CDK's AwsCustomResource singleton Lambda. This Lambda is framework-managed.",
+                    },
+                ],
+            );
+        }
     }
 }

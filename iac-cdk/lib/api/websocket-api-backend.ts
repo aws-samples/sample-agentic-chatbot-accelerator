@@ -1,8 +1,8 @@
-/* Copyright 2026 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-
-SPDX-License-Identifier: MIT-0
-----------------------------------------------------------------------
-*/
+// ----------------------------------------------------------------------
+// Copyright 2026 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+//
+// SPDX-License-Identifier: MIT-0
+// ----------------------------------------------------------------------
 
 import * as path from "path";
 
@@ -74,10 +74,13 @@ export class WebsocketApiBackend extends Construct {
         );
 
         const outgoingMessageHandler = new NodejsFunction(this, "outgoing-message-handler", {
-            entry: path.join(__dirname, "../../../src/api/functions/outgoing-message-handler/index.ts"),
+            entry: path.join(
+                __dirname,
+                "../../../src/api/functions/outgoing-message-handler/index.ts",
+            ),
             layers: [powertoolsLayerJS],
             handler: "index.handler",
-            runtime: Runtime.NODEJS_24_X,
+            runtime: Runtime.NODEJS_LATEST,
             loggingFormat: LoggingFormat.JSON,
             bundling: {
                 externalModules: ["@aws-sdk/*", "@aws-lambda-powertools/*", "@aws-crypto/*"],
