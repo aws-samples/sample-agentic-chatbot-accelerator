@@ -4,12 +4,12 @@
 import * as cdk from "aws-cdk-lib";
 import * as batch from "aws-cdk-lib/aws-batch";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
-import * as ecs from "aws-cdk-lib/aws-ecs";
 import { DockerImageAsset, Platform } from "aws-cdk-lib/aws-ecr-assets";
+import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as logs from "aws-cdk-lib/aws-logs";
-import { Construct } from "constructs";
 import { NagSuppressions } from "cdk-nag";
+import { Construct } from "constructs";
 import * as path from "path";
 
 import { Shared } from "../shared";
@@ -74,10 +74,7 @@ export class ExperimentsBatch extends Construct {
         jobRole.addToPolicy(
             new iam.PolicyStatement({
                 effect: iam.Effect.ALLOW,
-                actions: [
-                    "dynamodb:GetItem",
-                    "dynamodb:UpdateItem",
-                ],
+                actions: ["dynamodb:GetItem", "dynamodb:UpdateItem"],
                 resources: [
                     `arn:aws:dynamodb:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:table/${props.experimentsTableName}`,
                 ],
@@ -87,12 +84,8 @@ export class ExperimentsBatch extends Construct {
         jobRole.addToPolicy(
             new iam.PolicyStatement({
                 effect: iam.Effect.ALLOW,
-                actions: [
-                    "s3:PutObject",
-                ],
-                resources: [
-                    `arn:aws:s3:::${props.evaluationsBucketName}/*`,
-                ],
+                actions: ["s3:PutObject"],
+                resources: [`arn:aws:s3:::${props.evaluationsBucketName}/*`],
             }),
         );
 
@@ -126,7 +119,7 @@ export class ExperimentsBatch extends Construct {
 
         // Create CloudWatch log group
         const logGroup = new logs.LogGroup(this, "ExperimentJobLogs", {
-            logGroupName: `/aws/batch/experiments`,
+            logGroupName: `/aws/batch/${prefix}-experiments`,
             retention: logs.RetentionDays.ONE_WEEK,
             removalPolicy: cdk.RemovalPolicy.DESTROY,
         });

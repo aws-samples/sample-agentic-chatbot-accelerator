@@ -131,15 +131,46 @@ resource "aws_iam_role" "agent_core_resolver" {
   })
 }
 
-# Basic Lambda execution policy (logs, X-Ray)
-resource "aws_iam_role_policy_attachment" "agent_core_resolver_basic" {
-  role       = aws_iam_role.agent_core_resolver.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+# Least-privilege Lambda execution policy (logs scoped to this function's log group)
+data "aws_iam_policy_document" "agent_core_resolver_logs" {
+  statement {
+    sid    = "AllowLogStreaming"
+    effect = "Allow"
+    actions = [
+      "logs:CreateLogStream",
+      "logs:PutLogEvents"
+    ]
+    resources = [
+      "${aws_cloudwatch_log_group.agent_core_resolver.arn}:*"
+    ]
+  }
 }
 
-resource "aws_iam_role_policy_attachment" "agent_core_resolver_xray" {
-  role       = aws_iam_role.agent_core_resolver.name
-  policy_arn = "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
+resource "aws_iam_role_policy" "agent_core_resolver_logs" {
+  name   = "${local.name_prefix}-agentCoreResolver-logs"
+  role   = aws_iam_role.agent_core_resolver.id
+  policy = data.aws_iam_policy_document.agent_core_resolver_logs.json
+}
+
+# X-Ray tracing policy scoped to this account/region
+data "aws_iam_policy_document" "agent_core_resolver_xray" {
+  statement {
+    sid    = "AllowXRayTracing"
+    effect = "Allow"
+    actions = [
+      "xray:PutTraceSegments",
+      "xray:PutTelemetryRecords",
+      "xray:GetSamplingRules",
+      "xray:GetSamplingTargets"
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "agent_core_resolver_xray" {
+  name   = "${local.name_prefix}-agentCoreResolver-xray"
+  role   = aws_iam_role.agent_core_resolver.id
+  policy = data.aws_iam_policy_document.agent_core_resolver_xray.json
 }
 
 # Bedrock AgentCore — least-privilege custom policy

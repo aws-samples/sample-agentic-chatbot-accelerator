@@ -28,6 +28,12 @@ dev = [
     "langgraph>=1.0.10",
 ]
 
+[tool.uv]
+override-dependencies = [
+    "urllib3>=2.6.3",
+    "asteval>=1.0.6",
+]
+
 [tool.isort]
 profile = "black"
 multi_line_output = 3

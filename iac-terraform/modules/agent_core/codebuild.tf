@@ -350,6 +350,17 @@ resource "aws_codebuild_project" "swarm_image_builder" {
 }
 
 # -----------------------------------------------------------------------------
+# IAM Propagation Delay
+# IAM policies take a few seconds to propagate globally. Without this sleep,
+# CodeBuild builds can fail with ACCESS_DENIED on logs:CreateLogStream.
+# -----------------------------------------------------------------------------
+
+resource "time_sleep" "wait_for_iam_propagation" {
+  depends_on      = [aws_iam_role_policy.codebuild]
+  create_duration = "15s"
+}
+
+# -----------------------------------------------------------------------------
 # Trigger: Build Standard Agent Image (only when source changes)
 # The content_based_tag changes only when Docker source files change.
 # When it changes, Terraform recreates this null_resource → starts a build.
@@ -406,7 +417,7 @@ resource "null_resource" "build_agent_image" {
     aws_codebuild_project.agent_image_builder,
     aws_s3_object.agent_docker_context,
     aws_ecr_repository.agent_core,
-    aws_iam_role_policy.codebuild
+    time_sleep.wait_for_iam_propagation
   ]
 }
 
@@ -463,7 +474,7 @@ resource "null_resource" "build_swarm_image" {
     aws_codebuild_project.swarm_image_builder,
     aws_s3_object.swarm_docker_context,
     aws_ecr_repository.swarm_agent_core,
-    aws_iam_role_policy.codebuild
+    time_sleep.wait_for_iam_propagation
   ]
 }
 
@@ -571,7 +582,7 @@ resource "null_resource" "build_graph_image" {
     aws_codebuild_project.graph_image_builder,
     aws_s3_object.graph_docker_context,
     aws_ecr_repository.graph_agent_core,
-    aws_iam_role_policy.codebuild
+    time_sleep.wait_for_iam_propagation
   ]
 }
 
@@ -679,6 +690,6 @@ resource "null_resource" "build_agents_as_tools_image" {
     aws_codebuild_project.agents_as_tools_image_builder,
     aws_s3_object.agents_as_tools_docker_context,
     aws_ecr_repository.agents_as_tools_agent_core,
-    aws_iam_role_policy.codebuild
+    time_sleep.wait_for_iam_propagation
   ]
 }
