@@ -114,6 +114,7 @@ module "shared" {
   prefix              = local.prefix
   lambda_architecture = var.lambda_architecture
   kms_key_arn         = aws_kms_key.main.arn
+  aws_profile         = var.aws_profile
 
   depends_on = [aws_kms_key.main]
 }
@@ -174,6 +175,9 @@ module "agent_core" {
   # KMS key from root level (breaks circular dependency)
   kms_key_arn = aws_kms_key.main.arn
   kms_key_id  = aws_kms_key.main.key_id
+
+  # AWS CLI profile for local-exec provisioners
+  aws_profile = var.aws_profile
 
   depends_on = [module.shared, aws_kms_key.main]
 }
@@ -561,6 +565,9 @@ module "knowledge_base" {
   data_source_prefix = try(var.knowledge_base.data_source_prefix, "data-source")
   input_prefix       = try(var.data_processing.input_prefix, "input")
   description        = try(var.knowledge_base.description, "Knowledge Base for searching helpful information.")
+
+  # AWS CLI profile for local-exec provisioners
+  aws_profile = var.aws_profile
 }
 
 # -----------------------------------------------------------------------------
@@ -640,6 +647,9 @@ module "evaluation" {
   # Encryption
   kms_key_arn = aws_kms_key.main.arn
 
+  # AWS CLI profile for local-exec provisioners
+  aws_profile = var.aws_profile
+
   depends_on = [module.appsync, module.api_tables, aws_kms_key.main]
 }
 
@@ -697,6 +707,9 @@ module "cleanup" {
 
   # Encryption
   kms_key_arn = aws_kms_key.main.arn
+
+  # AWS CLI profile for local-exec provisioners
+  aws_profile = var.aws_profile
 
   depends_on = [module.knowledge_base, module.agent_core]
 }

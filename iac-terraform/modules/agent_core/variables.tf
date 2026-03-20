@@ -184,3 +184,9 @@ variable "knowledge_base_id" {
   type        = string
   default     = null
 }
+
+variable "aws_profile" {
+  description = "AWS CLI profile name for local-exec provisioner commands."
+  type        = string
+  default     = ""
+}

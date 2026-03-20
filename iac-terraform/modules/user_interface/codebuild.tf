@@ -288,7 +288,10 @@ resource "null_resource" "build_react_app_codebuild" {
 
   provisioner "local-exec" {
     interpreter = ["/bin/bash", "-c"]
-    command     = <<-EOT
+    environment = {
+      AWS_PROFILE = var.aws_profile
+    }
+    command = <<-EOT
       set -euo pipefail
 
       echo "Starting CodeBuild for React app (source: ${local.react_content_tag}, config: ${local.config_hash})..."

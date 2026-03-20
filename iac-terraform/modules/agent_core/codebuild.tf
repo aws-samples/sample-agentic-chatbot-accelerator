@@ -373,7 +373,10 @@ resource "null_resource" "build_agent_image" {
 
   provisioner "local-exec" {
     interpreter = ["/bin/bash", "-c"]
-    command     = <<-EOT
+    environment = {
+      AWS_PROFILE = var.aws_profile
+    }
+    command = <<-EOT
       set -euo pipefail
 
       echo "Starting CodeBuild for agent image (tag: ${local.content_based_tag})..."
@@ -432,7 +435,10 @@ resource "null_resource" "build_swarm_image" {
 
   provisioner "local-exec" {
     interpreter = ["/bin/bash", "-c"]
-    command     = <<-EOT
+    environment = {
+      AWS_PROFILE = var.aws_profile
+    }
+    command = <<-EOT
       set -euo pipefail
 
       echo "Starting CodeBuild for swarm agent image (tag: ${local.swarm_content_based_tag})..."
@@ -540,7 +546,10 @@ resource "null_resource" "build_graph_image" {
 
   provisioner "local-exec" {
     interpreter = ["/bin/bash", "-c"]
-    command     = <<-EOT
+    environment = {
+      AWS_PROFILE = var.aws_profile
+    }
+    command = <<-EOT
       set -euo pipefail
 
       echo "Starting CodeBuild for graph agent image (tag: ${local.graph_content_based_tag})..."
@@ -648,7 +657,10 @@ resource "null_resource" "build_agents_as_tools_image" {
 
   provisioner "local-exec" {
     interpreter = ["/bin/bash", "-c"]
-    command     = <<-EOT
+    environment = {
+      AWS_PROFILE = var.aws_profile
+    }
+    command = <<-EOT
       set -euo pipefail
 
       echo "Starting CodeBuild for agents-as-tools agent image (tag: ${local.agents_as_tools_content_based_tag})..."

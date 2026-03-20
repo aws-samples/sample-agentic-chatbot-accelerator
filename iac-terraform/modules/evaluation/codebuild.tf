@@ -209,7 +209,10 @@ resource "null_resource" "build_evaluation_executor" {
 
   provisioner "local-exec" {
     interpreter = ["/bin/bash", "-c"]
-    command     = <<-EOT
+    environment = {
+      AWS_PROFILE = var.aws_profile
+    }
+    command = <<-EOT
       set -euo pipefail
 
       echo "Starting CodeBuild for evaluation executor package (hash: ${local.executor_source_hash})..."

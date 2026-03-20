@@ -51,3 +51,9 @@ variable "kms_key_arn" {
   description = "ARN of the KMS key for encrypting S3 objects and other resources."
   type        = string
 }
+
+variable "aws_profile" {
+  description = "AWS CLI profile name for local-exec provisioner commands."
+  type        = string
+  default     = ""
+}
