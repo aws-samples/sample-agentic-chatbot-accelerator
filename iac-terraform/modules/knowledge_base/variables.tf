@@ -166,3 +166,9 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "aws_profile" {
+  description = "AWS CLI profile name for local-exec provisioner commands."
+  type        = string
+  default     = ""
+}

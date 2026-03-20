@@ -308,6 +308,7 @@ resource "null_resource" "cleanup_trigger" {
   triggers = {
     lambda_function_name = aws_lambda_function.cleanup.function_name
     region               = data.aws_region.current.id
+    aws_profile          = var.aws_profile
   }
 
   # This provisioner runs ONLY during terraform destroy
@@ -318,6 +319,7 @@ resource "null_resource" "cleanup_trigger" {
       aws lambda invoke \
         --function-name ${self.triggers.lambda_function_name} \
         --region ${self.triggers.region} \
+        ${lookup(self.triggers, "aws_profile", "") != "" ? "--profile ${lookup(self.triggers, "aws_profile", "")}" : ""} \
         --payload '{"RequestType": "Delete"}' \
         --cli-binary-format raw-in-base64-out \
         /tmp/cleanup-response.json 2>&1 || echo "Cleanup Lambda invocation failed, continuing destroy..."

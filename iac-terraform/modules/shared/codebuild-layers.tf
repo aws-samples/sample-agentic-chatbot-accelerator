@@ -255,7 +255,10 @@ resource "null_resource" "build_boto3_layer" {
 
   provisioner "local-exec" {
     interpreter = ["/bin/bash", "-c"]
-    command     = <<-EOT
+    environment = {
+      AWS_PROFILE = var.aws_profile
+    }
+    command = <<-EOT
       set -euo pipefail
 
       echo "Starting CodeBuild for boto3 layer (tag: ${local.boto3_content_tag})..."
@@ -395,7 +398,10 @@ resource "null_resource" "build_notify_runtime_update" {
 
   provisioner "local-exec" {
     interpreter = ["/bin/bash", "-c"]
-    command     = <<-EOT
+    environment = {
+      AWS_PROFILE = var.aws_profile
+    }
+    command = <<-EOT
       set -euo pipefail
 
       echo "Starting CodeBuild for notify-runtime-update Lambda (tag: ${local.notify_runtime_update_content_tag})..."

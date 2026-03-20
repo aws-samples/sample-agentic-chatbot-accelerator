@@ -290,7 +290,10 @@ resource "null_resource" "build_vector_index_lambda" {
 
   provisioner "local-exec" {
     interpreter = ["/bin/bash", "-c"]
-    command     = <<-EOT
+    environment = {
+      AWS_PROFILE = var.aws_profile
+    }
+    command = <<-EOT
       set -euo pipefail
 
       echo "Starting CodeBuild for vector index Lambda package (hash: ${local.vector_index_source_hash})..."
