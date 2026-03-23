@@ -1,10 +1,12 @@
-# How To Deploy
+# How To Deploy with CDK
+
+> **Note:** All paths in this guide are relative to the repository root unless otherwise noted. Configuration files are located in the `iac-cdk/` directory (e.g., `iac-cdk/bin/config.yaml`).
 
 ## Pre-requisites
 
 - AWS Account Setup:
   - AWS account with appropriate permissions
-  - Permissions to CDK bootstrap the account in the deployment region (`cdk bootstrap`)
+  - Permissions to CDK bootstrap the account in the deployment region (`cd iac-cdk && cdk bootstrap`)
 - Local Deployment:
   - Node.js (version 20 recommended)
   - Docker or Finch installed and running
@@ -29,37 +31,7 @@ While local deployment is convenient, we recognize that CodeBuild would be a bet
 
 ℹ️ For detailed CDK commands, refer to the [official documentation](https://docs.aws.amazon.com/cdk/v2/guide/home.html).
 
-### Quick Start
-
-1. **Bootstrap CDK** (first-time setup):
-   ```bash
-   cdk bootstrap --profile user-profile
-   ```
-
-2. **Install dependencies**:
-   ```bash
-   npm install
-   ```
-
-3. **Deploy the stack**:
-   ```bash
-   cdk deploy --profile user-profile
-   ```
-
-### Deployment Options
-
-#### Standard Docker Deployment
-```bash
-cdk deploy --profile user-profile
-```
-
-#### Finch Deployment
-If using Finch instead of Docker:
-```bash
-CDK_DOCKER=finch cdk deploy --profile user-profile
-```
-
-#### Makefile
+### Makefile
 
 ⚠️ Use the Makefile shortcuts to make sure that you execute required scripts before deployment:
 
@@ -75,7 +47,7 @@ make deploy-finch PROFILE=user-profile
 
 ## CDK Configuration
 
-The CDK stack is configured through the `SystemConfig` interface defined in [iac-cdk/lib/shared/types.ts](../../iac-cdk/lib/shared/types.ts). Configuration is loaded from `iac-cdk/bin/config.yaml`, with fallback to default values in [iac-cdk/bin/config.ts](../../iac-cdk/bin/config.ts).
+The CDK stack is configured through the `SystemConfig` interface defined in [`iac-cdk/lib/shared/types.ts`](../../iac-cdk/lib/shared/types.ts). Configuration is loaded from `iac-cdk/bin/config.yaml`, with fallback to default values in [`iac-cdk/bin/config.ts`](../../iac-cdk/bin/config.ts).
 
 ### Configuration Structure
 
@@ -89,8 +61,11 @@ The CDK stack is configured through the `SystemConfig` interface defined in [iac
 - **toolRegistry**: Array of available tools with name, description, and sub-agent invocation flags
 - **mcpServerRegistry**: Array of available mcp servers with name, description, and URL
 - **ingestionLambdaProps**: Lambda function configuration for chatbot message ingestion including timeout in minutes and reserved concurrency (optional)
-- **agentCoreObservability**: if defined, enables AgentCore observability.
+- **agentCoreObservability**: *(Optional)* Configuration for X-Ray distributed tracing of agent invocations, including transaction search and trace indexing percentage. If omitted, observability features are not enabled. See [Observability & Insights](./observability-insights.md).
 - **agentRuntimeConfig**: *(Optional)* Default agent runtime configuration to deploy via CDK. If provided, an AgentCore runtime will be automatically created during deployment with the specified settings. If omitted, agent runtimes must be created manually through the Agent Factory UI.
+- **evaluatorConfig**: *(Optional)* Configuration for the LLM-based evaluation framework, including supported models, pass threshold, and default rubrics. Defaults are provided in `config.ts`.
+- **experimentsConfig**: *(Optional)* Configuration for synthetic data generation, including supported models. Defaults are provided in `config.ts`.
+- **bedrockAccessRoleArn**: *(Optional)* IAM role ARN for cross-account Amazon Bedrock access.
 
 ### Example of Configuration File
 

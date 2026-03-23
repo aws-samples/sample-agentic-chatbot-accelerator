@@ -294,7 +294,7 @@ TOOL_FACTORY_MAP = {
 
 ### 4. Register in Configuration
 
-Create a `config.yaml` in [bin/ folder](../../bin/) folder with your custom toolRegistry:
+Create a `config.yaml` in the [iac-cdk/bin/ folder](../../iac-cdk/bin/) with your custom toolRegistry:
 
 ```yaml
 toolRegistry:

@@ -1,84 +1,77 @@
 # Agentic Chatbot Accelerator
 
-The Agentic Chatbot Accelerator is a web application deployment solution that utilizes Infrastructure as Code (CDK) to enable customers to create agentic chatbots. Built on AWS Strands and Bedrock AgentCore, this solution streamlines the development of agentic-powered chatbots.
+The Agentic Chatbot Accelerator is a full-stack solution for building, deploying, and iterating on agentic chatbots. It implements an iterative agent development lifecycle:
 
-## Architecture
+<p align="center">
+  <img src="./docs/imgs/agent-lifecycle.png" alt="Agent Development Lifecycle" />
+</p>
 
-![Architecture](./docs/imgs/architecture.png)
+1. **Define Goals & Tasks** – What your agent should accomplish and the tasks it needs to perform
+2. **Design & Configure Agent** – Foundation model selection, agentic pattern choice, and agent system prompts
+3. **Connect Tools & MCP Servers** – Tools and MCP (Model Context Protocol) servers that extend agent capabilities with external resources
+4. **Deploy Agent** – Managed runtime environment for your agents
+5. **Experiment & Gather Feedback** – Agent behavior testing, human feedback collection, and iterative refinement
 
-- **Frontend & User Access**
-  - React Static Website: Hosted on Amazon S3 and distributed globally via Amazon CloudFront for low-latency access
-  - User Authentication: Managed through Amazon Cognito for secure identity and access management
-  - GraphQL API: AWS AppSync serves as the primary interface for real-time backend communication
-- **AI Chatbot Service** - The chatbot service orchestrates bidirectional message flow between users and AI agents:
-  - User Message Flow:
-    - Users send messages through an AppSync mutation and subscribe to responses via GraphQL subscriptions
-    - Inbound messages are published to an Amazon SNS topic for asynchronous processing
-  - Inbound Message Handler (AWS Lambda):
-    - Subscribes to the SNS topic for incoming messages
-    - Invokes the conversational agent hosted on Amazon Bedrock AgentCore runtime
-    - Persists conversation history to Amazon DynamoDB for UI rendering and session management
-    - Publishes streaming tokens and final responses to an outbound SNS topic
-  - Outbound Message Handler (Lambda):
-    - Subscribes to the outbound SNS topic
-    - Delivers responses back to clients in real-time through AppSync GraphQL subscriptions
-- **Agent Factory** - The Agent Factory provides dynamic agent lifecycle management and configuration:
-  - AppSync Resolvers: Handle CRUD operations for Bedrock AgentCore runtime instances
-  - Agent Configuration:
-    - Amazon ECR container images package AWS Strands Agents with flexible configuration options
-    - Runtime configurations are dynamically applied based on settings stored in DynamoDB
-    - Supports agent runtime creation/deletion, endpoint management, and favorite endpoint persistence
-    - MCP Servers: Users can attach existing Model Context Protocol (MCP) servers to their agents, enabling integration with external tools and resources
-  - Agent Runtime Dependencies:
-    - Foundation Models: Serverless large language models hosted on Amazon Bedrock
-    - Data Sources: Amazon Bedrock Knowledge Bases enable semantic/hybrid search and retrieval-augmented generation (RAG)
-  - Storage: Amazon DynamoDB for agent configuration management
-- **Agent Execution Environment** - The agent execution layer handles the core AI processing and integration:
-  - Runtime Deployment: Agents are deployed to Amazon Bedrock AgentCore Runtime as Docker containers registered in Amazon ECR
-  - Knowledge Integration (**if enabled in CDK configuration**):
-    - Agents connect to Amazon Bedrock Knowledge Bases to implement retrieval tools for RAG
-    - Knowledge bases are automatically populated via an AWS Step Functions workflow triggered when documents are uploaded to a designated Amazon S3 bucket
-  - Observability & Monitoring (Amazon AgentCore Observability):
-    - Agent runtime logs are stored in Amazon CloudWatch Logs for debugging and analysis
-    - Distributed traces are captured in AWS X-Ray for performance monitoring and troubleshooting
-  - State Management: Agents persist conversational state using Amazon Bedrock AgentCore Memory (when enabled) for context-aware interactions
-
-## UX Flow
-
-- Check out the [AgentCore Endpoint Manager demo](./docs/gifs/runtime-setup.gif)
-- Check out the [Agent Chat demo](./docs/gifs/chatbot-exp.gif)
-
-
-## Dive Deeper
-
-- Multi-agent patterns:
-  - [Agents as Tools](./docs/src/agents-as-tools.md)
-  - [Swarm](./docs/src/swarm-agents.md)
-  - [Graph](./docs/src/graph-agents.md)
-- [API Reference](./docs/src/api.md)
-- [Expanding AI Tools](./docs/src/expanding-ai-tools.md)
-- [How to Deploy](./docs/src/how-to-deploy.md)
-- [Knowledge Base Management](./docs/src/kb-management.md)
-- [Development Guide](./docs/src/development-guide.md)
-- [Agent Factory](./docs/src/agent-factory.md)
-- [Agent Event Architecture](./docs/src/token-streaming-architecture.md)
-- [Observability Insights](./docs/src/observability-insights.md)
-- [Terraform Deployment (Experimental)](./iac-terraform/README.md)
-
-## Optional Features
-
-The accelerator supports flexible deployment configurations. The **Knowledge Base** feature (document processing and RAG capabilities) is optional and can be disabled by omitting `knowledgeBaseParameters` and `dataProcessingParameters` from the configuration file. This enables lighter deployments focused only on agent management when RAG is not needed. See [How to Deploy](./docs/src/how-to-deploy.md#deployment-scenarios) for details.
+The accelerator provides a web-based interface, agent factory, knowledge base management, and observability tooling to support this full cycle. The current implementation deploys on AWS using CDK or Terraform, leveraging Amazon Bedrock AgentCore.
 
 ## How to Get Started
 
-1. **Install required packages**: Run `npm install`
-2. **Configure features** *(optional)*: Create `bin/config.yaml` to customize deployment (see [How to Deploy](./docs/src/how-to-deploy.md))
+The following steps use **CDK** (the default deployment method). For Terraform, see [Terraform Deployment](./iac-terraform/README.md).
+
+1. **Install required packages**: Run `cd iac-cdk && npm install`
+2. **Configure features** *(optional)*: Create `iac-cdk/bin/config.yaml` to customize deployment (see [How to Deploy](./docs/src/how-to-deploy.md))
 3. **Deploy Infrastructure**: Run either `make deploy` or `make deploy-finch` to deploy the CDK stack with Docker or Finch, respectively
 4. **Create User**: Add a user to the Cognito User Pool (<environment-prefix>-aca-userPool) via AWS Console
 5. **Access Application**: Open the web application using the URL from CDK deployment outputs
 6. **Configure Agent**: Use the Agent Factory to create and configure your first AgentCore runtime
 7. **Test & Chat**: Interact with your agent through the chatbot interface
 8. **Iterate**: Refine agent settings, add tools, and redeploy as needed
+
+## See It in Action
+
+The Agent Manager lets you configure and deploy agents through the full lifecycle — select models, craft instructions, attach tools and MCP servers, deploy, and iterate:
+
+![Agent Manager](./docs/imgs/agent-view.png)
+
+Choose between single agent or multi-agent patterns to match your use case:
+
+![Agent Design Choices](./docs/imgs/agent-design-choice.png)
+
+Use the [Agent Factory](./docs/src/agent-factory.md) to create agents with any of these patterns:
+
+- [Single Agent](./docs/src/agentic-patterns/single-agent.md) – One agent with direct access to tools, knowledge bases, and MCP servers
+- [Agents as Tools](./docs/src/agentic-patterns/agents-as-tools.md) – Orchestrate specialized sub-agents as callable tools
+- [Swarm](./docs/src/agentic-patterns/swarm-agents.md) – Coordinate a swarm of collaborative agents
+- [Graph](./docs/src/agentic-patterns/graph-agents.md) – Define agent workflows as directed graphs
+
+Register and manage MCP servers to extend your agents with external capabilities. The MCP Server Registry lets you connect agents to tools like AWS documentation search, biomedical literature APIs, and custom services. See [Expanding AI Tools](./docs/src/expanding-ai-tools.md) for details on adding MCP servers and custom tools.
+
+![MCP Server Registry](./docs/imgs/mcp-manager.png)
+
+Test your agents through the built-in chatbot interface — interact in real-time, review responses, and provide feedback. Users get real-time visibility as the agent makes calls to tools, and can provide feedback on each response via thumbs up/down or free-text comments.
+
+![Chatbot Experience — real-time tool call visibility with thumbs up/down and free-text feedback](./docs/imgs/chatbot.png)
+
+For systematic validation, run evaluations powered by the [Strands Agents Evals SDK](https://strandsagents.com/latest/documentation/docs/user-guide/evals-sdk/quickstart/) to assess output quality, tool usage, trajectory efficiency, and multi-agent interactions. See [Agent Evaluation](./docs/src/evaluation.md) for details.
+
+## AWS Platform Details
+
+- [Architecture](./docs/src/architecture.md)
+- [API Reference](./docs/src/api.md)
+- [Agent Event Architecture](./docs/src/token-streaming-architecture.md)
+- [Observability & Insights](./docs/src/observability-insights.md)
+
+## Optional Features
+
+The accelerator supports flexible deployment configurations:
+
+- **Knowledge Base & Document Processing** — RAG capabilities with document upload, chunking, and retrieval. Disable by omitting `knowledgeBaseParameters` and `dataProcessingParameters`. See [Knowledge Base Management](./docs/src/kb-management.md).
+
+- **Pre-configured Agent Runtime** — Automatically deploy an agent runtime via CDK instead of creating one manually through the Agent Factory UI. Enable by adding `agentRuntimeConfig` to your configuration.
+
+- **Observability** — X-Ray distributed tracing for agent invocations. Enable by adding `agentCoreObservability` to your configuration. See [Observability & Insights](./docs/src/observability-insights.md).
+
+See [How to Deploy](./docs/src/how-to-deploy.md#deployment-scenarios) for full configuration details.
 
 ## How to Contribute
 

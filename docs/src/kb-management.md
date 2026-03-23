@@ -17,7 +17,7 @@ This figure shows an AWS Step Functions workflow that prepares various document 
 The workflow follows these high-level steps:
 
 1. **Trigger Event**
-    - Initiated when files are uploaded to the _inputPrefix_ (see [configuration file](../../bin/config.ts), e.g., `inputs/`) in the Amazon S3 _data-bucket_ (handled by Amazon EventBridge)
+    - Initiated when files are uploaded to the _inputPrefix_ (see [configuration file](../../iac-cdk/bin/config.ts), e.g., `inputs/`) in the Amazon S3 _data-bucket_ (handled by Amazon EventBridge)
     - Processing state is stored in the _document-state_ table (Amazon DynamoDB)
     - A unique _documentId_ is assigned to each document
 

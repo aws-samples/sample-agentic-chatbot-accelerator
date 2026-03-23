@@ -13,14 +13,10 @@ Thank you for your interest in contributing to the Agentic Chatbot Accelerator! 
   - [Use of AI Coding Assistants](#use-of-ai-coding-assistants)
   - [Project Principles](#project-principles)
   - [Getting Started](#getting-started)
-    - [Prerequisites](#prerequisites)
-    - [Development Environment Setup](#development-environment-setup)
-    - [Project Structure](#project-structure)
   - [Development Workflow](#development-workflow)
     - [Branching Strategy](#branching-strategy)
     - [Making Changes](#making-changes)
-    - [Code Quality](#code-quality)
-    - [Testing Your Changes](#testing-your-changes)
+    - [Code Quality and Testing](#code-quality-and-testing)
   - [Contribution Types](#contribution-types)
     - [Code Contributions](#code-contributions)
     - [Documentation Contributions](#documentation-contributions)
@@ -104,76 +100,18 @@ Contributions should align with the following principles:
 
 ## Getting Started
 
-### Prerequisites
+For complete development environment setup, project structure, IDE configuration, and local development instructions, see the **[Development Guide](./docs/src/development-guide.md)**.
 
-Before contributing, ensure you have the following installed:
+In summary, you will need:
 
 - **Node.js** (version 20 recommended)
 - **Docker** or **Finch** (for container builds)
 - **AWS CLI** (configured with appropriate credentials)
-- **Python 3.11+** or higher (for Lambda development and linting)
+- **Python 3.11+** (for Lambda development and linting)
 - **Git**
 
-### Development Environment Setup
-
-1. **Fork and Clone the Repository**:
-   ```bash
-   git clone https://github.com/<your-username>/agentic-chatbot-accelerator.git     # TODO update with the correct URL
-   cd agentic-chatbot-accelerator
-   ```
-
-2. **Install Node.js Dependencies**:
-   ```bash
-   npm install
-   ```
-
-3. **Set Up Python Environment** (optional but recommended for Lambda development):
-   ```bash
-   make init-python-env
-   make install-python-packages
-   ```
-
-4. **Install Pre-commit Hooks**:
-   ```bash
-   pre-commit install
-   ```
-
-### Project Structure
-
-Familiarize yourself with the project structure:
-
-```
-agentic-chatbot-accelerator/
-├── bin/                    # CDK app entry point and configuration
-│   ├── config.ts          # Default TypeScript configuration
-│   ├── config.yaml        # YAML configuration override (not Git versioned)
-│   └── aca.ts             # CDK app entry point
-├── src/                    # Shared runtime code (Lambda functions, Docker, React app)
-│   ├── agent-core/         # Agent Docker containers and Lambda functions
-│   ├── api/                # API Lambda functions, resolvers, schemas
-│   ├── shared/             # Shared layers and Python SDK
-│   └── user-interface/     # React frontend application
-├── iac-cdk/                # CDK infrastructure-as-code
-├── iac-terraform/          # Terraform infrastructure-as-code
-│   ├── api/               # GraphQL API and Lambda functions
-│   ├── agent-core/        # AgentCore runtime infrastructure
-│   ├── user-interface/    # React frontend application
-│   ├── data-processing/   # Document processing pipeline (optional feature)
-│   ├── knowledge-base/    # Knowledge base management (optional feature)
-│   ├── genai-interface/   # AI service integrations
-│   ├── authentication/    # Cognito User Pool setup
-│   ├── cleanup/           # Resource cleanup functions
-│   ├── shared/            # Common utilities, types, and Lambda layers
-│   └── aca-stack.ts       # Main CDK stack
-├── docs/                   # Documentation
-│   ├── src/               # Markdown documentation files
-│   ├── imgs/              # Documentation images
-│   └── gifs/              # UX demonstration GIFs
-└── test/                   # CDK component tests
-```
-
 **Key Documentation Files**:
-- [Development Guide](./docs/src/development-guide.md) - Detailed development setup
+- [Development Guide](./docs/src/development-guide.md) - Detailed development setup, project structure, and local development
 - [How to Deploy](./docs/src/how-to-deploy.md) - Deployment instructions and configuration
 - [API Reference](./docs/src/api.md) - GraphQL API documentation
 - [Expanding AI Tools](./docs/src/expanding-ai-tools.md) - Guide for adding custom tools
@@ -208,48 +146,19 @@ agentic-chatbot-accelerator/
 3. **Update documentation** for any user-facing changes
 4. **Follow existing patterns** in the codebase
 
-### Code Quality
+### Code Quality and Testing
 
-The following quality checks run automatically via pre-commit hooks:
+Pre-commit hooks automatically enforce code formatting and linting. Before opening a pull request, ensure all checks pass and run a security scan:
 
-- **Python**: Black (formatting), Ruff (linting), isort (import sorting)
-- **TypeScript/JavaScript**: ESLint, Prettier
-- **General**: Trailing whitespace, end-of-file fixes, YAML validation
-
-Run quality checks manually:
 ```bash
 # Run all pre-commit hooks
 make precommit-run
+
+# Run security scan (required before opening a PR)
+make run-ash
 ```
 
-### Testing Your Changes
-
-1. **Local Linting and Formatting**:
-   ```bash
-   make precommit-run
-   ```
-
-2. **Frontend Testing**:
-   ```bash
-   cd src/user-interface/react-app
-   npm run lint
-   npm run build:dev
-   ```
-
-3. **CDK Synthesis** (validates infrastructure code):
-   ```bash
-   npx cdk synth
-   ```
-
-4. **Security Scan** (required before opening a pull request):
-   ```bash
-   make run-ash
-   ```
-
-5. **Local Frontend Development**:
-   - Deploy the stack first to get the CloudFront URL
-   - Copy `<cloudfront-url>/aws-exports.json` to `src/user-interface/react-app/public/aws-exports.json`
-   - Run `npm run dev` from the react-app folder
+For detailed information on code quality tools, frontend testing, CDK synthesis, and local development, see the [Development Guide — Code Quality](./docs/src/development-guide.md#code-quality) section.
 
 ## Contribution Types
 
@@ -318,7 +227,6 @@ Follow the [Expanding AI Tools](./docs/src/expanding-ai-tools.md) guide to add:
   - Architecture changes
   - Configuration options
 - Include diagrams for complex architectures (store in `docs/diagrams/`)
-- Add GIFs for UX demonstrations (store in `docs/gifs/`)
 
 ## Reporting Bugs and Feature Requests
 

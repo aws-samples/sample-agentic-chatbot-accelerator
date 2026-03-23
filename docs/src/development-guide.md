@@ -4,62 +4,66 @@
 
 The Agentic Chatbot Accelerator is a full-stack web application built with AWS CDK that enables rapid deployment of agentic chatbots powered by AWS Bedrock AgentCore and AWS Strands. This guide covers the complete development workflow from setup to deployment.
 
+> **Looking to contribute?** For contribution guidelines — including pull request process, branching strategy, coding standards, and code of conduct — see [CONTRIBUTING.md](../../CONTRIBUTING.md).
+
 ## Project Structure
 
 ```
 agentic-chatbot-accelerator/
-├── bin/                    # CDK app entry point and configuration
-│   ├── config.ts          # Default TypeScript configuration
-│   ├── config.yaml        # YAML configuration override - not Git versioned
-│   └── aca.ts           # CDK app entry point
-├── src/                    # Shared runtime code (Lambda, Docker, React)
-├── iac-cdk/                # CDK infrastructure-as-code
-├── iac-terraform/          # Terraform infrastructure-as-code
-│   ├── api/               # GraphQL API and Lambda functions
-│   │   ├── functions/     # Lambda function implementations
-│   │   │   ├── http-api-handler/      # Main HTTP API handler
-│   │   │   ├── knowledge-base-resolver/ # KB operations (optional feature)
-│   │   │   └── ...        # Other Lambda resolvers
-│   │   ├── schema/        # GraphQL schema definitions
-│   │   ├── tables/        # DynamoDB table constructs
-│   │   ├── knowledge-base.ts # Knowledge Base API construct (optional)
-│   │   └── *.ts           # Other API construct files
-│   ├── user-interface/    # React frontend application
-│   │   ├── react-app/     # React source code
-│   │   ├── index.ts       # UI construct
-│   │   └── public-website.ts # S3/CloudFront setup
-│   ├── agent-core/        # AgentCore runtime infrastructure and definition
-│   │   ├── docker/        # Container definitions
-│   │   └── index.ts       # AgentCore construct
-│   ├── authentication/    # Cognito User Pool setup
-│   ├── cleanup/           # Resource cleanup functions
-│   ├── data-processing/   # Document processing pipeline
-│   │   ├── functions/     # Processing Lambda functions
-│   │   ├── state-machines/ # Step Functions workflows
-│   │   └── *.ts           # Processing constructs
-│   ├── genai-interface/   # AI service integrations - used to invoke AgentCore runtimes
-│   ├── knowledge-base/    # Knowledge base management
-│   ├── layer/             # Lambda layers
-│   ├── shared/            # Common utilities and types
-│   │   ├── alpine-zip/    # Zip utilities
-│   │   ├── layers/        # Shared Lambda layers
-│   │   ├── types.ts       # TypeScript type definitions
-│   │   └── utils.ts       # Utility functions
-│   └── aca-stack.ts     # Main CDK stack
-├── docs/                  # Documentation and assets
-│   ├── diagrams/          # Architecture diagrams
-│   ├── gifs/              # UX demonstration GIFs
-│   ├── imgs/              # Documentation images
-│   └── src/               # Markdown documentation
-├── test/                  # CDK component tests - not implemented
-├── .gitignore             # Git ignore rules
-├── .pre-commit-config.yaml # Pre-commit hook configuration
-├── cdk.json               # CDK configuration
-├── Makefile               # Build automation
-├── package.json           # Node.js dependencies
-├── pyproject.toml         # Python project configuration
-├── tsconfig.json          # TypeScript configuration
-└── uv.lock                # Python dependency lock file
+├── src/                        # Shared runtime code (Lambda, Docker, React)
+│   ├── agent-core/             # AgentCore runtime containers
+│   │   ├── docker/             # Single agent container
+│   │   ├── docker-agents-as-tools/ # Agents-as-tools container
+│   │   ├── docker-graph/       # Graph agent container
+│   │   ├── docker-swarm/       # Swarm agent container
+│   │   ├── functions/          # AgentCore Lambda functions
+│   │   └── shared/             # Shared agent utilities
+│   ├── api/                    # GraphQL API
+│   │   ├── functions/          # Lambda resolvers
+│   │   ├── schema/             # GraphQL schema definitions
+│   │   └── state-machines/     # Step Functions for agent lifecycle
+│   ├── user-interface/         # React frontend application
+│   │   └── react-app/          # React source code
+│   ├── data-processing/        # Document processing pipeline (optional)
+│   │   ├── functions/          # Processing Lambda functions
+│   │   └── state-machines/     # Step Functions workflows
+│   ├── genai-interface/        # AI service integrations (AgentCore invocation)
+│   ├── knowledge-base/         # Knowledge base management (optional)
+│   ├── cleanup/                # Resource cleanup functions
+│   ├── experiments-batch/      # Batch experiment runner
+│   └── shared/                 # Common utilities and Lambda layers
+│       └── layers/             # Shared Lambda layers (Python SDK)
+├── iac-cdk/                    # CDK infrastructure-as-code
+│   ├── bin/                    # CDK app entry point and configuration
+│   │   ├── aca.ts              # CDK app entry point
+│   │   ├── config.ts           # Default TypeScript configuration
+│   │   └── config.yaml         # YAML configuration override (not Git versioned)
+│   ├── lib/                    # CDK constructs
+│   │   ├── aca-stack.ts        # Main CDK stack
+│   │   ├── agent-core/         # AgentCore construct
+│   │   ├── api/                # API constructs (HTTP, WebSocket, AppSync)
+│   │   ├── authentication/     # Cognito User Pool setup
+│   │   ├── cleanup/            # Cleanup construct
+│   │   ├── data-processing/    # Document processing construct (optional)
+│   │   ├── experiments-batch/  # Experiments construct
+│   │   ├── genai-interface/    # GenAI interface construct
+│   │   ├── knowledge-base/     # Knowledge base construct (optional)
+│   │   ├── layer/              # Lambda layers construct
+│   │   ├── observability/      # Observability construct
+│   │   ├── shared/             # Shared utilities and types
+│   │   └── user-interface/     # Frontend construct (S3/CloudFront)
+│   └── test/                   # CDK tests
+├── iac-terraform/              # Terraform infrastructure-as-code
+│   ├── modules/                # Terraform modules (mirrors CDK constructs)
+│   └── scripts/                # Build scripts
+├── docs/                       # Documentation and assets
+│   ├── diagrams/               # Architecture diagrams
+│   ├── imgs/                   # Documentation images
+│   └── src/                    # Markdown documentation
+├── .pre-commit-config.yaml     # Pre-commit hook configuration
+├── Makefile                    # Build automation
+├── pyproject.toml              # Python project configuration (for dev only)
+└── uv.lock                     # Python dependency lock file
 ```
 
 ## Optional Features
@@ -74,7 +78,7 @@ The Knowledge Base feature includes:
 - **Knowledge Base API** (`iac-cdk/lib/api/knowledge-base.ts`): Dedicated Lambda resolver for KB operations
 - **UI Components**: Navigation items and pages for document and KB management
 
-This feature is enabled when both `knowledgeBaseParameters` and `dataProcessingParameters` are configured in `bin/config.yaml`. When disabled:
+This feature is enabled when both `knowledgeBaseParameters` and `dataProcessingParameters` are configured in `iac-cdk/bin/config.yaml`. When disabled:
 - Related infrastructure is not deployed
 - UI navigation items are hidden
 - Agent runtime wizard skips KB configuration step
@@ -91,7 +95,7 @@ git clone <repository-url>
 cd agentic-chatbot-accelerator
 
 # Install Node.js dependencies
-npm install
+cd iac-cdk && npm install
 
 # Setup Python environment (optional but recommended)
 make init-python-env
@@ -103,7 +107,7 @@ GIT_CONFIG=/dev/null pre-commit install
 
 ### 2. Configuration
 
-Create `bin/config.yaml` to override default settings. See [documentation on CDK deployment](./how-to-deploy.md).
+Create `iac-cdk/bin/config.yaml` to override default settings. See [documentation on CDK deployment](./how-to-deploy.md).
 
 ### The Role of Python
 
@@ -170,7 +174,7 @@ If you are using VSCode as your IDE, you can use the following workspace setting
 The frontend uses AWS AppSync with generated TypeScript types:
 
 ```bash
-# Generate GraphQL types
+# From the iac-cdk/ directory
 npm run gen
 ```
 

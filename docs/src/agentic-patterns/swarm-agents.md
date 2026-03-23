@@ -60,6 +60,8 @@ Select the **Entry Agent** — this is the agent that receives the user's first 
 
 These defaults work well for most use cases. Increase timeouts for complex multi-step workflows.
 
+![Swarm Configuration — Agent references, entry agent, orchestrator settings, and conversation manager](../../imgs/agentic-patterns/swarm-agents01.png)
+
 ### 6. Review and create
 
 Review the configuration summary and click **Create**. The swarm agent will go through the same creation pipeline as single agents (Step Function → AgentCore Runtime).

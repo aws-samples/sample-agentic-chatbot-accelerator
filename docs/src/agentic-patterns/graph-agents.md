@@ -65,6 +65,8 @@ Click the **Set** button next to the node that should receive the initial user m
 
 Add named fields and types for shared state that flows through the graph. If omitted, a default `messages` field is used.
 
+![Graph Design — Step 1: Configuring nodes, entry point, edges, and state schema](../../imgs/agentic-patterns/agents-as-graph01.png)
+
 ### 4. Configure orchestrator settings
 
 | Setting | Default | Description |

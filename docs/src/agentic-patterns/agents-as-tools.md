@@ -48,6 +48,8 @@ In the **Agents as Tools** step:
 3. Enter a **Role** description — this is critical as the orchestrator uses it to decide when to invoke each sub-agent. Be specific and descriptive about what the agent can do.
 4. You can add multiple sub-agents; the orchestrator will reason about which one(s) to call
 
+![Agents as Tools — Step 1: Adding sub-agents with endpoint and role configuration](../../imgs/agentic-patterns/agents-as-tools-01.png)
+
 ### 4. Configure the orchestrator
 
 In the **Orchestrator Configuration** step:
@@ -56,6 +58,8 @@ In the **Orchestrator Configuration** step:
 2. **Instructions**: Write a system prompt that tells the orchestrator how to use its sub-agents. Reference the sub-agents by their roles and explain the delegation strategy.
 3. **Conversation Manager**: Choose how conversation history is managed (Sliding Window is recommended)
 4. **Additional Tools** (optional): Add extra tools, knowledge bases, or MCP servers that the orchestrator can use directly alongside its sub-agent tools
+
+![Orchestrator Configuration — Step 2: Model, instructions, conversation manager, and additional tools](../../imgs/agentic-patterns/agents-as-tools-02.png)
 
 ### 5. Review and create
 
