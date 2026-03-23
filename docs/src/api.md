@@ -13,6 +13,7 @@ The following table documents the [GraphQL API schema](../../src/api/schema/sche
 | deleteSession | Mutation | Delete a specific user session | Yes | User authenticated via Cognito |  |
 | renameSession | Mutation | Modify a session title | Yes | User authenticated via Cognito | By default, a session title is composed of the first 100 characters of the first user message |
 | saveToolActions | Mutation | Save tool actions for a specific message in a session | Yes | User authenticated via Cognito | Persists user friendly description of the agent's tool invocations to the session history |
+| updateMessageExecutionTime | Mutation | Update execution time for a message in a session | Yes | User authenticated via Cognito |  |
 | publishFeedback | Mutation | Publish user's feedback on an agent generated response | Yes | User authenticated via Cognito | Thumbs up/down and free-text form feedback |
 | getPresignedUrl | Query | Get S3 object presigned URL | Yes | User authenticated via Cognito | Used to display the document that corresponds to a reference if the agent is using a knowledge base as data source |
 | listKnowledgeBases | Query | List available Bedrock Knowledge Bases | Yes | User authenticated via Cognito | This filters on AWS tags: stack name and environment |
@@ -52,6 +53,16 @@ The following table documents the [GraphQL API schema](../../src/api/schema/sche
 | listEvaluators | Query | List all evaluation configurations | Yes | User authenticated via Cognito | Returns evaluator metadata including status, progress, and pass rates |
 | getEvaluator | Query | Get a specific evaluator by ID | Yes | User authenticated via Cognito | Includes detailed results if evaluation is completed |
 | createEvaluator | Mutation | Create a new evaluation configuration | Yes | User authenticated via Cognito | Defines test cases, evaluator type, and target agent |
-| updateEvaluator | Mutation | Update an existing evaluator configuration | Yes | User authenticated via Cognito | Cannot update while evaluation is running |
 | deleteEvaluator | Mutation | Delete an evaluator and its results | Yes | User authenticated via Cognito | Removes all associated S3 results |
 | runEvaluation | Mutation | Start an evaluation run | Yes | User authenticated via Cognito | Queues test cases to SQS for processing |
+| publishEvaluationUpdate | Mutation | Publish evaluation status update | No | Lambda Function |  |
+| receiveEvaluationUpdate | Subscription | Receive evaluation status updates | Yes | User authenticated via Cognito | Subscribes to publishEvaluationUpdate |
+| registerMcpServer | Mutation | Register an MCP server | Yes | User authenticated via Cognito |  |
+| deleteMcpServer | Mutation | Delete an MCP server | Yes | User authenticated via Cognito |  |
+| listExperiments | Query | List all experiments | Yes | User authenticated via Cognito |  |
+| getExperiment | Query | Get a specific experiment by ID | Yes | User authenticated via Cognito |  |
+| getExperimentPresignedUrl | Query | Get a presigned URL for experiment S3 objects | Yes | User authenticated via Cognito |  |
+| createExperiment | Mutation | Create a new experiment | Yes | User authenticated via Cognito |  |
+| updateExperiment | Mutation | Update an existing experiment | Yes | User authenticated via Cognito |  |
+| deleteExperiment | Mutation | Delete an experiment | Yes | User authenticated via Cognito |  |
+| runExperiment | Mutation | Run an experiment | Yes | User authenticated via Cognito |  |
