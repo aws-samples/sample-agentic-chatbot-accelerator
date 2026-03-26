@@ -120,3 +120,58 @@ resource "aws_dynamodb_table" "evaluators" {
     Name = "${local.name_prefix}-evaluatorsTable"
   })
 }
+
+# -----------------------------------------------------------------------------
+# Experiments Table
+# Stores experiment configurations and generated test cases
+# -----------------------------------------------------------------------------
+
+resource "aws_dynamodb_table" "experiments" {
+  name         = "${local.name_prefix}-experimentsTable"
+  billing_mode = "PAY_PER_REQUEST"
+
+  hash_key  = "ExperimentId"
+  range_key = "UserId"
+
+  attribute {
+    name = "ExperimentId"
+    type = "S"
+  }
+
+  attribute {
+    name = "UserId"
+    type = "S"
+  }
+
+  attribute {
+    name = "CreatedAt"
+    type = "S"
+  }
+
+  # Global Secondary Index for querying experiments by user, sorted by creation time
+  global_secondary_index {
+    name = "byUserId"
+    key_schema {
+      attribute_name = "UserId"
+      key_type       = "HASH"
+    }
+    key_schema {
+      attribute_name = "CreatedAt"
+      key_type       = "RANGE"
+    }
+    projection_type = "ALL"
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = var.kms_key_arn
+  }
+
+  tags = merge(var.tags, {
+    Name = "${local.name_prefix}-experimentsTable"
+  })
+}

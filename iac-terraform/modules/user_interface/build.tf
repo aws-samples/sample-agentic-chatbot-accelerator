@@ -52,6 +52,13 @@ resource "local_file" "aws_exports" {
         passThreshold   = var.evaluator_config.pass_threshold
         defaultRubrics  = var.evaluator_config.default_rubrics
       }
+    } : {},
+    # Add experiments config for UI navigation and model selection
+    var.experiments_enabled ? {
+      experimentsConfig = {
+        enabled         = true
+        supportedModels = var.supported_models
+      }
     } : {}
   ))
 }

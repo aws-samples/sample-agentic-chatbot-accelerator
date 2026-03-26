@@ -256,6 +256,8 @@ module "http_api_resolver" {
     var.knowledge_base != null && var.data_processing != null ? module.knowledge_base_apis[0].operations : [],
     # Evaluation API operations (always present)
     module.evaluation.operations,
+    # Experiments API operations (when experiments is enabled)
+    var.experiments_config != null ? module.experiments[0].operations : [],
   )
 
   depends_on = [module.appsync, module.api_tables, module.agent_core, module.agent_core_apis, module.evaluation]
@@ -407,6 +409,9 @@ module "user_interface" {
 
   # Evaluator configuration (optional - models, threshold, rubrics for evaluation wizard)
   evaluator_config = var.evaluator_config
+
+  # Experiments feature flag for UI navigation
+  experiments_enabled = var.experiments_config != null
 
   # Geo restrictions (optional)
   enable_geo_restrictions = var.enable_geo_restrictions
@@ -651,6 +656,47 @@ module "evaluation" {
   aws_profile = var.aws_profile
 
   depends_on = [module.appsync, module.api_tables, aws_kms_key.main]
+}
+
+# -----------------------------------------------------------------------------
+# Experiments Module (Optional)
+# Creates Lambda function, AppSync resolvers for experiment CRUD,
+# and optionally VPC + AWS Batch infrastructure for automated generation.
+# Equivalent to: new ExperimentOps(this, "ExperimentOps", {...}) in iac-cdk/lib/api/index.ts
+# -----------------------------------------------------------------------------
+module "experiments" {
+  source = "./modules/experiments"
+  count  = var.experiments_config != null ? 1 : 0
+
+  prefix = local.prefix
+
+  # VPC configuration (null = auto-create, "vpc-xxx" = use existing)
+  vpc_id = try(var.experiments_config.vpc_id, null)
+
+  # Lambda configuration
+  powertools_layer_arn = module.shared.powertools_layer_arn
+  boto3_layer_arn      = module.shared.boto3_layer_arn
+  python_runtime       = module.shared.python_runtime
+  lambda_architecture  = module.shared.lambda_architecture
+
+  # DynamoDB Tables
+  experiments_table_name = module.api_tables.experiments_table_name
+  experiments_table_arn  = module.api_tables.experiments_table_arn
+
+  # S3 (reuse evaluation bucket for experiment data)
+  evaluations_bucket_name = module.evaluation.evaluations_bucket_name
+  evaluations_bucket_arn  = module.evaluation.evaluations_bucket_arn
+
+  # AppSync
+  appsync_api_id = module.appsync.api_id
+
+  # Encryption
+  kms_key_arn = aws_kms_key.main.arn
+
+  # AWS CLI profile for local-exec provisioners
+  aws_profile = var.aws_profile
+
+  depends_on = [module.appsync, module.api_tables, module.evaluation, aws_kms_key.main]
 }
 
 # -----------------------------------------------------------------------------

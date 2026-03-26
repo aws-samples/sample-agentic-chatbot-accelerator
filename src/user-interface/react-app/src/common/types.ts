@@ -11,6 +11,7 @@ export interface EvaluatorConfigType {
 }
 
 export interface ExperimentsConfigType {
+    enabled?: boolean;
     supportedModels: Record<string, string>;
     deployBatchInfrastructure?: boolean;
 }
