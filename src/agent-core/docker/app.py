@@ -186,6 +186,17 @@ async def invoke(payload, context: RequestContext):
         logger.info("Exiting function because the payload is only a heartbeat")
         return
 
+    # Hydrate agent state from payload on every non-heartbeat message.
+    state_json = payload.get("state")
+    if state_json and AGENT:
+        state_data = json.loads(state_json)
+        for key, value in state_data.items():
+            AGENT.state.set(key, value)
+        logger.info(
+            "Agent state hydrated from payload",
+            extra={"stateKeys": list(state_data.keys())},
+        )
+
     logger.info(
         "Calling agent with user message and context",
         extra={
