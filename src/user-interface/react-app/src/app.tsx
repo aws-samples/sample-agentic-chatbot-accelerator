@@ -4,7 +4,9 @@ SPDX-License-Identifier: MIT-0
 ----------------------------------------------------------------------
 
 */
+import { useContext } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { AppContext } from "./common/app-context";
 import GlobalHeader from "./components/global-header";
 import Playground from "./pages/chatbot/playground";
 import NotFound from "./pages/not-found";
@@ -21,6 +23,34 @@ import KnowledgeBaseManagerPage from "./pages/admin/kb-manager";
 import McpServerManagerPage from "./pages/admin/mcp-server-manager-page";
 import SessionPage from "./pages/chatbot/sessions";
 
+function AppRoutes() {
+    const appContext = useContext(AppContext);
+    const experimentsBatchEnabled =
+        appContext?.experimentsConfig?.deployBatchInfrastructure !== false;
+
+    return (
+        <Routes>
+            <Route index path="/" element={<Playground />} />
+            <Route path="/:sessionId" element={<Playground />} />
+            <Route path="/sessions" element={<SessionPage />} />
+            <Route path="/documents" element={<DocumentManagerPage />} />
+            <Route path="/knowledgebase" element={<KnowledgeBaseManagerPage />} />
+            <Route path="/agent-core" element={<AgentCoreManagerPage />} />
+            <Route path="/agent-core/create" element={<AgentCoreWizardPage />} />
+            <Route path="/agent-core/mcp-servers" element={<McpServerManagerPage />} />
+            <Route path="/evaluations" element={<EvaluationsManagerPage />} />
+            <Route path="/evaluations/create" element={<EvaluationsWizardPage />} />
+            {experimentsBatchEnabled && (
+                <>
+                    <Route path="/experiments" element={<ExperimentsManagerPage />} />
+                    <Route path="/experiments/create" element={<CreateExperimentPage />} />
+                </>
+            )}
+            <Route path="*" element={<NotFound />} />
+        </Routes>
+    );
+}
+
 function App() {
     const Router = BrowserRouter;
 
@@ -30,21 +60,7 @@ function App() {
                 <GlobalHeader />
                 <div style={{ height: "56px", backgroundColor: "#000716" }}>&nbsp;</div>
                 <div>
-                    <Routes>
-                        <Route index path="/" element={<Playground />} />
-                        <Route path="/:sessionId" element={<Playground />} />
-                        <Route path="/sessions" element={<SessionPage />} />
-                        <Route path="/documents" element={<DocumentManagerPage />} />
-                        <Route path="/knowledgebase" element={<KnowledgeBaseManagerPage />} />
-                        <Route path="/agent-core" element={<AgentCoreManagerPage />} />
-                        <Route path="/agent-core/create" element={<AgentCoreWizardPage />} />
-                        <Route path="/agent-core/mcp-servers" element={<McpServerManagerPage />} />
-                        <Route path="/evaluations" element={<EvaluationsManagerPage />} />
-                        <Route path="/evaluations/create" element={<EvaluationsWizardPage />} />
-                        <Route path="/experiments" element={<ExperimentsManagerPage />} />
-                        <Route path="/experiments/create" element={<CreateExperimentPage />} />
-                        <Route path="*" element={<NotFound />} />
-                    </Routes>
+                    <AppRoutes />
                 </div>
             </Router>
         </div>

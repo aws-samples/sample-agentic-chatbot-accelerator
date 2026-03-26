@@ -110,7 +110,9 @@ export class HttpApiBackend extends Construct {
             }),
         );
 
-        const schema = parse(readFileSync(path.join(__dirname, "../../../src/api/schema/schema.graphql"), "utf8"));
+        const schema = parse(
+            readFileSync(path.join(__dirname, "../../../src/api/schema/schema.graphql"), "utf8"),
+        );
 
         const functionDataSource = props.api.addLambdaDataSource(
             "proxyResolverFunction",
@@ -162,7 +164,10 @@ export class HttpApiBackend extends Construct {
             typeName: "Mutation",
             fieldName: "updateFavoriteRuntime",
             code: appsync.Code.fromAsset(
-                path.join(__dirname, "../../../src/api/functions/resolvers/favorite-runtime-resolvers/update.js"),
+                path.join(
+                    __dirname,
+                    "../../../src/api/functions/resolvers/favorite-runtime-resolvers/update.js",
+                ),
             ),
             runtime: appsync.FunctionRuntime.JS_1_0_0,
         });
@@ -170,7 +175,10 @@ export class HttpApiBackend extends Construct {
             typeName: "Mutation",
             fieldName: "resetFavoriteRuntime",
             code: appsync.Code.fromAsset(
-                path.join(__dirname, "../../../src/api/functions/resolvers/favorite-runtime-resolvers/delete.js"),
+                path.join(
+                    __dirname,
+                    "../../../src/api/functions/resolvers/favorite-runtime-resolvers/delete.js",
+                ),
             ),
             runtime: appsync.FunctionRuntime.JS_1_0_0,
         });
@@ -178,7 +186,10 @@ export class HttpApiBackend extends Construct {
             typeName: "Query",
             fieldName: "getFavoriteRuntime",
             code: appsync.Code.fromAsset(
-                path.join(__dirname, "../../../src/api/functions/resolvers/favorite-runtime-resolvers/get.js"),
+                path.join(
+                    __dirname,
+                    "../../../src/api/functions/resolvers/favorite-runtime-resolvers/get.js",
+                ),
             ),
             runtime: appsync.FunctionRuntime.JS_1_0_0,
         });

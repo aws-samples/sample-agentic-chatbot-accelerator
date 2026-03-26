@@ -1,8 +1,8 @@
-/* Copyright 2026 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-
-SPDX-License-Identifier: MIT-0
-----------------------------------------------------------------------
-*/
+// ----------------------------------------------------------------------
+// Copyright 2026 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+//
+// SPDX-License-Identifier: MIT-0
+// ----------------------------------------------------------------------
 import * as path from "path";
 
 import * as cdk from "aws-cdk-lib";
@@ -49,7 +49,10 @@ export class WebsocketResolvers extends Construct {
             typeName: "Mutation",
             fieldName: "publishResponse",
             code: appsync.Code.fromAsset(
-                path.join(__dirname, "../../../src/api/functions/resolvers/publish-response-resolver.js"),
+                path.join(
+                    __dirname,
+                    "../../../src/api/functions/resolvers/publish-response-resolver.js",
+                ),
             ),
             runtime: appsync.FunctionRuntime.JS_1_0_0,
             dataSource: noneDataSource,
@@ -101,7 +104,10 @@ export class WebsocketResolvers extends Construct {
             typeName: "Mutation",
             fieldName: "sendQuery",
             code: appsync.Code.fromAsset(
-                path.join(__dirname, "../../../src/api/functions/resolvers/send-query-http-resolver.js"),
+                path.join(
+                    __dirname,
+                    "../../../src/api/functions/resolvers/send-query-http-resolver.js",
+                ),
             ),
             runtime: appsync.FunctionRuntime.JS_1_0_0,
         });

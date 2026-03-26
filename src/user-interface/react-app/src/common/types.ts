@@ -12,6 +12,7 @@ export interface EvaluatorConfigType {
 
 export interface ExperimentsConfigType {
     supportedModels: Record<string, string>;
+    deployBatchInfrastructure?: boolean;
 }
 
 export interface AppConfig {

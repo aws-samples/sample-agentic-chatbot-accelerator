@@ -38,13 +38,17 @@ export default function NavigationPanel() {
                 href: "/evaluations",
                 info: <Icon name="check" />,
             },
-            {
+        ];
+
+        // Only add Experiments Generator if Batch infrastructure is deployed
+        if (appContext?.experimentsConfig?.deployBatchInfrastructure !== false) {
+            baseItems.push({
                 type: "link",
                 text: "Experiments Generator",
                 href: "/experiments",
                 info: <Icon name="status-positive" />,
-            },
-        ];
+            });
+        }
 
         // Only add Document Manager and Knowledge Base Manager if knowledge base is supported
         if (appContext?.knowledgeBaseIsSupported) {
@@ -75,7 +79,7 @@ export default function NavigationPanel() {
         );
 
         return baseItems;
-    }, [appContext?.knowledgeBaseIsSupported]);
+    }, [appContext?.knowledgeBaseIsSupported, appContext?.experimentsConfig?.deployBatchInfrastructure]);
 
     // onChange - updates `navigationPanelState`
     const onChange = ({ detail }: { detail: SideNavigationProps.ChangeDetail }) => {

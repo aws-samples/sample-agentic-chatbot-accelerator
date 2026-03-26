@@ -99,7 +99,9 @@ export class ChatbotApi extends Construct {
 
         const api = new appsync.GraphqlApi(this, "ChatbotApi", {
             name: `${prefix}-api`,
-            definition: appsync.Definition.fromFile(path.join(__dirname, "../../../src/api/schema/schema.graphql")),
+            definition: appsync.Definition.fromFile(
+                path.join(__dirname, "../../../src/api/schema/schema.graphql"),
+            ),
             authorizationConfig: {
                 defaultAuthorization: {
                     authorizationType: appsync.AuthorizationType.USER_POOL,
