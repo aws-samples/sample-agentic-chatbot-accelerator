@@ -121,7 +121,10 @@ export class UserInterface extends Construct {
 
             // Experiments configuration
             ...(props.config.experimentsConfig && {
-                experimentsConfig: props.config.experimentsConfig,
+                experimentsConfig: {
+                    ...props.config.experimentsConfig,
+                    enabled: true,
+                },
             }),
 
             // Feature flags

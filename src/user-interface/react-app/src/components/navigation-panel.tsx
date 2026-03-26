@@ -1,10 +1,8 @@
-/* Copyright 2026 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-
-SPDX-License-Identifier: MIT-0
-----------------------------------------------------------------------
-File:
-    ...
-*/
+// ----------------------------------------------------------------------
+// Copyright 2026 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+//
+// SPDX-License-Identifier: MIT-0
+// ----------------------------------------------------------------------
 import { Icon, SideNavigation, SideNavigationProps } from "@cloudscape-design/components";
 import { useContext, useMemo } from "react";
 import { AppContext } from "../common/app-context";
@@ -41,7 +39,7 @@ export default function NavigationPanel() {
         ];
 
         // Only add Experiments Generator if Batch infrastructure is deployed
-        if (appContext?.experimentsConfig?.deployBatchInfrastructure !== false) {
+        if (appContext?.experimentsConfig?.enabled === true) {
             baseItems.push({
                 type: "link",
                 text: "Experiments Generator",
@@ -79,7 +77,7 @@ export default function NavigationPanel() {
         );
 
         return baseItems;
-    }, [appContext?.knowledgeBaseIsSupported, appContext?.experimentsConfig?.deployBatchInfrastructure]);
+    }, [appContext?.knowledgeBaseIsSupported, appContext?.experimentsConfig?.enabled]);
 
     // onChange - updates `navigationPanelState`
     const onChange = ({ detail }: { detail: SideNavigationProps.ChangeDetail }) => {

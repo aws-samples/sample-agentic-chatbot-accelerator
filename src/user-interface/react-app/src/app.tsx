@@ -1,9 +1,8 @@
-/* Copyright 2026 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-
-SPDX-License-Identifier: MIT-0
-----------------------------------------------------------------------
-
-*/
+// ----------------------------------------------------------------------
+// Copyright 2026 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+//
+// SPDX-License-Identifier: MIT-0
+// ----------------------------------------------------------------------
 import { useContext } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { AppContext } from "./common/app-context";
@@ -26,7 +25,7 @@ import SessionPage from "./pages/chatbot/sessions";
 function AppRoutes() {
     const appContext = useContext(AppContext);
     const experimentsBatchEnabled =
-        appContext?.experimentsConfig?.deployBatchInfrastructure !== false;
+        appContext?.experimentsConfig?.enabled === true;
 
     return (
         <Routes>

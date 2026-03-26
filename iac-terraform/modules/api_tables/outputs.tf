@@ -51,3 +51,17 @@ output "evaluators_table_arn" {
   description = "ARN of the evaluators DynamoDB table"
   value       = aws_dynamodb_table.evaluators.arn
 }
+
+# -----------------------------------------------------------------------------
+# Experiments Table Outputs
+# -----------------------------------------------------------------------------
+
+output "experiments_table_name" {
+  description = "Name of the experiments DynamoDB table"
+  value       = aws_dynamodb_table.experiments.name
+}
+
+output "experiments_table_arn" {
+  description = "ARN of the experiments DynamoDB table"
+  value       = aws_dynamodb_table.experiments.arn
+}

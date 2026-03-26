@@ -258,6 +258,24 @@ ecr_image_tag = "latest"
 # }
 
 # =============================================================================
+# Experiments Configuration (Optional)
+# Synthetic test case generation using AWS Batch (Fargate)
+#
+# Deployment modes:
+#   1. experiments_config = null (default)  → Feature disabled entirely
+#   2. experiments_config = {}              → Enabled, new VPC auto-created
+#   3. experiments_config = { vpc_id = "vpc-xxx" } → Enabled, uses existing VPC
+# =============================================================================
+
+# Uncomment to enable experiments with auto-created VPC:
+# experiments_config = {}
+
+# Or provide an existing VPC (must have private subnets with NAT gateway):
+# experiments_config = {
+#   vpc_id = "vpc-0123456789abcdef0"
+# }
+
+# =============================================================================
 # Evaluator Configuration (Optional)
 # Configures agent evaluation using Strands Eval SDK
 # =============================================================================

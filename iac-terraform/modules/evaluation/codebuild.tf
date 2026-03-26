@@ -192,6 +192,19 @@ resource "aws_codebuild_project" "evaluation_executor" {
 }
 
 # -----------------------------------------------------------------------------
+# IAM Propagation Delay
+# IAM policies can take several seconds to propagate globally. Without this
+# delay, CodeBuild may fail with ACCESS_DENIED when the role policy was
+# created or updated in the same apply.
+# -----------------------------------------------------------------------------
+
+resource "time_sleep" "wait_for_iam_propagation" {
+  depends_on = [aws_iam_role_policy.codebuild_executor]
+
+  create_duration = "15s"
+}
+
+# -----------------------------------------------------------------------------
 # Trigger: Build Evaluation Executor Package (only when source changes)
 # The executor_source_hash changes only when .py source files change.
 # When it changes, Terraform recreates this null_resource → starts a build.
@@ -252,6 +265,7 @@ resource "null_resource" "build_evaluation_executor" {
   depends_on = [
     aws_codebuild_project.evaluation_executor,
     aws_s3_object.executor_source_context,
-    aws_iam_role_policy.codebuild_executor
+    aws_iam_role_policy.codebuild_executor,
+    time_sleep.wait_for_iam_propagation
   ]
 }

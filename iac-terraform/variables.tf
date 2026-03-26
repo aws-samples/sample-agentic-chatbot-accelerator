@@ -240,3 +240,22 @@ variable "evaluator_config" {
   })
   default = null
 }
+
+# -----------------------------------------------------------------------------
+# Experiments Configuration (Optional)
+# Configures synthetic test case generation with AWS Batch (Fargate).
+# Uses supported_models from evaluator_config for model selection.
+#
+# Deployment modes:
+#   1. experiments_config = null                      → Feature disabled entirely
+#   2. experiments_config = {}                        → Enabled, new VPC auto-created
+#   3. experiments_config = { vpc_id = "vpc-xxx" }   → Enabled, uses existing VPC
+# -----------------------------------------------------------------------------
+
+variable "experiments_config" {
+  description = "Optional experiments configuration for synthetic test case generation. Set to {} to enable with an auto-created VPC, or provide vpc_id to use an existing VPC."
+  type = object({
+    vpc_id = optional(string, null)
+  })
+  default = null
+}

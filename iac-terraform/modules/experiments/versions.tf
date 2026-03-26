@@ -2,28 +2,24 @@
 
 SPDX-License-Identifier: MIT-0
 ----------------------------------------------------------------------
-User Interface Module - Terraform Version Constraints
+Experiments Module - Provider Requirements
 */
 
 terraform {
-  required_version = ">= 1.0"
+  required_version = ">= 1.12"
 
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = ">= 5.0"
-    }
-    null = {
-      source  = "hashicorp/null"
-      version = ">= 3.0"
-    }
-    local = {
-      source  = "hashicorp/local"
-      version = ">= 2.0"
+      version = ">= 5.98"
     }
     archive = {
       source  = "hashicorp/archive"
       version = ">= 2.0"
+    }
+    null = {
+      source  = "hashicorp/null"
+      version = ">= 3.0"
     }
     time = {
       source  = "hashicorp/time"

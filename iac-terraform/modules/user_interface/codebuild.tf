@@ -276,6 +276,17 @@ resource "aws_codebuild_project" "react_builder" {
 }
 
 # -----------------------------------------------------------------------------
+# IAM Propagation Delay
+# IAM policies take a few seconds to propagate globally. Without this sleep,
+# CodeBuild builds can fail with ACCESS_DENIED on logs:CreateLogStream.
+# -----------------------------------------------------------------------------
+
+resource "time_sleep" "wait_for_iam_propagation" {
+  depends_on      = [aws_iam_role_policy.codebuild]
+  create_duration = "15s"
+}
+
+# -----------------------------------------------------------------------------
 # Trigger: Build React App
 # Triggers when source OR config changes
 # -----------------------------------------------------------------------------
@@ -333,6 +344,7 @@ resource "null_resource" "build_react_app_codebuild" {
     aws_s3_object.aws_exports,
     aws_s3_bucket.website,
     aws_cloudfront_distribution.website,
-    aws_iam_role_policy.codebuild
+    aws_iam_role_policy.codebuild,
+    time_sleep.wait_for_iam_propagation
   ]
 }

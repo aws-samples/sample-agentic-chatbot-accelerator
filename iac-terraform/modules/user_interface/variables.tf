@@ -85,6 +85,16 @@ variable "evaluator_config" {
 }
 
 # -----------------------------------------------------------------------------
+# Experiments Configuration (Optional)
+# -----------------------------------------------------------------------------
+
+variable "experiments_enabled" {
+  description = "Whether the experiments feature is enabled (controls UI navigation)"
+  type        = bool
+  default     = false
+}
+
+# -----------------------------------------------------------------------------
 # Geo Restrictions (Optional)
 # -----------------------------------------------------------------------------
 
