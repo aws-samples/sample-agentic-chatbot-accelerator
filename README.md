@@ -71,6 +71,8 @@ The accelerator supports flexible deployment configurations:
 
 - **Observability** — X-Ray distributed tracing for agent invocations. Enable by adding `agentCoreObservability` to your configuration. See [Observability & Insights](./docs/src/observability-insights.md).
 
+- **Experiments Generator** — Synthetic test case generation using AWS Batch. Requires a VPC; you can provide an existing one via `vpcId` or disable the feature entirely with `deployBatchInfrastructure: false` if VPC permissions are unavailable. See [Experiments Configuration](./docs/src/how-to-deploy.md#experiments-configuration-vpc--batch).
+
 See [How to Deploy](./docs/src/how-to-deploy.md#deployment-scenarios) for full configuration details.
 
 ## How to Contribute

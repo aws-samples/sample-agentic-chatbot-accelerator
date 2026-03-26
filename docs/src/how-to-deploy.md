@@ -64,7 +64,7 @@ The CDK stack is configured through the `SystemConfig` interface defined in [`ia
 - **agentCoreObservability**: *(Optional)* Configuration for X-Ray distributed tracing of agent invocations, including transaction search and trace indexing percentage. If omitted, observability features are not enabled. See [Observability & Insights](./observability-insights.md).
 - **agentRuntimeConfig**: *(Optional)* Default agent runtime configuration to deploy via CDK. If provided, an AgentCore runtime will be automatically created during deployment with the specified settings. If omitted, agent runtimes must be created manually through the Agent Factory UI.
 - **evaluatorConfig**: *(Optional)* Configuration for the LLM-based evaluation framework, including supported models, pass threshold, and default rubrics. Defaults are provided in `config.ts`.
-- **experimentsConfig**: *(Optional)* Configuration for synthetic data generation, including supported models. Defaults are provided in `config.ts`.
+- **experimentsConfig**: *(Optional)* Configuration for synthetic data generation, including supported models, VPC settings, and Batch infrastructure toggle. See [Experiments Configuration](#experiments-configuration-vpc--batch) for details. Defaults are provided in `config.ts`.
 - **bedrockAccessRoleArn**: *(Optional)* IAM role ARN for cross-account Amazon Bedrock access.
 
 ### Example of Configuration File
@@ -217,6 +217,42 @@ The `agentRuntimeConfig` supports the following properties:
 | `description` | No | Optional description of the runtime |
 | `memoryCfg` | No | Memory persistence configuration with `retentionDays` |
 | `lifecycleCfg` | No | Lifecycle settings with `idleRuntimeSessionTimeoutInMinutes` and `maxLifetimeInHours` |
+
+#### Experiments Configuration (VPC & Batch)
+
+The experiments feature uses AWS Batch (Fargate) to run synthetic test case generation. By default, this creates a new VPC with NAT gateways. If your account has limited VPC permissions, you can either provide an existing VPC or disable Batch infrastructure entirely.
+
+| `deployBatchInfrastructure` | `vpcId` | Result |
+|---|---|---|
+| `true` (default) | omitted | New VPC + Batch created automatically |
+| `true` (default) | provided | Batch uses the **existing VPC**; no new VPC created |
+| `false` | any | Batch infrastructure **not deployed**; experiment CRUD still works but automated generation is disabled; the Experiments page is hidden in the UI |
+
+**Using an existing VPC:**
+
+```yaml
+experimentsConfig:
+    supportedModels:
+        Claude Haiku 4.5: "[REGION-PREFIX].anthropic.claude-haiku-4-5-20251001-v1:0"
+    vpcId: "vpc-0123456789abcdef0"
+```
+
+> ⚠️ The provided VPC must have private subnets with NAT gateway access so Fargate tasks can pull container images and reach AWS APIs.
+
+**Disabling Batch infrastructure:**
+
+```yaml
+experimentsConfig:
+    supportedModels:
+        Claude Haiku 4.5: "[REGION-PREFIX].anthropic.claude-haiku-4-5-20251001-v1:0"
+    deployBatchInfrastructure: false
+```
+
+This configuration:
+- Skips VPC and AWS Batch resource creation entirely
+- Experiment CRUD operations (create, list, update, delete) remain functional
+- The `runExperiment` mutation (automated test case generation) is unavailable
+- The "Experiments Generator" page is hidden from the UI navigation
 
 ## Post-Deployment Steps
 

@@ -145,7 +145,10 @@ export class DataProcessing extends Construct {
         const definitionId = "data-processing";
         const stateMachine = new sfn.StateMachine(this, `${prefix}-${name}-StateMachine`, {
             definitionBody: sfn.DefinitionBody.fromFile(
-                path.join(__dirname, "../../../src/data-processing/state-machines/" + definitionId + ".json"),
+                path.join(
+                    __dirname,
+                    "../../../src/data-processing/state-machines/" + definitionId + ".json",
+                ),
             ),
             definitionSubstitutions: substitutions,
             stateMachineName: `${prefix}-${name}`,

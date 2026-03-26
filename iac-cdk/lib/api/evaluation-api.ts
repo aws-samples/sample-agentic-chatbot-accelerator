@@ -129,7 +129,9 @@ export class EvaluationApi extends Construct {
         const evaluationResolver = new lambda.Function(this, "EvaluationResolver", {
             runtime: lambda.Runtime.PYTHON_3_14,
             handler: "index.handler",
-            code: lambda.Code.fromAsset(path.join(__dirname, "../../../src/api/functions/evaluation-resolver")),
+            code: lambda.Code.fromAsset(
+                path.join(__dirname, "../../../src/api/functions/evaluation-resolver"),
+            ),
             timeout: Duration.seconds(30),
             memorySize: 512,
             logGroup: resolverLogGroup,
@@ -155,18 +157,21 @@ export class EvaluationApi extends Construct {
         // Note: strands-agents-evals is too large for a Lambda layer, so we bundle it directly
         const evaluationExecutor = new lambda.Function(this, "EvaluationExecutor", {
             functionName: `${prefix}-evaluation-executor`,
-            code: lambda.Code.fromAsset(path.join(__dirname, "../../../src/api/functions/evaluation-executor"), {
-                exclude: ["**/__pycache__", "**/*.рус", "**/.pytest_cache"],
-                bundling: {
-                    image: props.shared.pythonRuntime.bundlingImage,
-                    platform: props.shared.lambdaArchitecture.dockerPlatform,
-                    command: [
-                        "bash",
-                        "-c",
-                        "pip install strands-agents-evals -t /asset-output && cp -au . /asset-output",
-                    ],
+            code: lambda.Code.fromAsset(
+                path.join(__dirname, "../../../src/api/functions/evaluation-executor"),
+                {
+                    exclude: ["**/__pycache__", "**/*.рус", "**/.pytest_cache"],
+                    bundling: {
+                        image: props.shared.pythonRuntime.bundlingImage,
+                        platform: props.shared.lambdaArchitecture.dockerPlatform,
+                        command: [
+                            "bash",
+                            "-c",
+                            "pip install strands-agents-evals -t /asset-output && cp -au . /asset-output",
+                        ],
+                    },
                 },
-            }),
+            ),
             handler: "index.handler",
             architecture: props.shared.lambdaArchitecture,
             layers: [props.shared.powerToolsLayer],

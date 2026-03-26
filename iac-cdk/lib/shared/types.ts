@@ -310,9 +310,18 @@ export interface EvaluatorConfig {
 /**
  * Configuration for the experiments (synthetic data generation) feature.
  * @property supportedModels - Record mapping user-friendly model names to their Bedrock model identifiers
+ * @property vpcId - Optional VPC ID to reuse an existing VPC for Batch compute instead of creating a new one.
+ *                   When provided, the construct imports the VPC and skips VPC/flow-log creation.
+ * @property deployBatchInfrastructure - Whether to deploy the AWS Batch infrastructure required for
+ *                                       automated experiment generation. Set to false when VPC creation
+ *                                       permissions are unavailable and no existing VPC can be provided.
+ *                                       Defaults to true. When false, experiment CRUD still works but
+ *                                       the "runExperiment" (generation) capability is disabled.
  */
 export interface ExperimentsConfig {
     supportedModels: Record<string, string>;
+    vpcId?: string;
+    deployBatchInfrastructure?: boolean;
 }
 
 /**
