@@ -4,7 +4,6 @@
 import * as cdk from "aws-cdk-lib";
 import * as batch from "aws-cdk-lib/aws-batch";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
-import { DockerImageAsset, Platform } from "aws-cdk-lib/aws-ecr-assets";
 import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as logs from "aws-cdk-lib/aws-logs";
@@ -12,6 +11,7 @@ import { NagSuppressions } from "cdk-nag";
 import { Construct } from "constructs";
 import * as path from "path";
 
+import { CodeBuildDockerImage } from "../codebuild-builder";
 import { Shared } from "../shared";
 import { SystemConfig } from "../shared/types";
 import { generatePrefix } from "../shared/utils";
@@ -23,25 +23,23 @@ export interface ExperimentsBatchProps {
     readonly evaluationsBucketName: string;
     /** Optional existing VPC to use for Batch compute. If omitted, a new VPC is created. */
     readonly vpc?: ec2.IVpc;
+    /** Pre-built Docker image from BuilderStack */
+    readonly batchImage: CodeBuildDockerImage;
 }
 
 export class ExperimentsBatch extends Construct {
     public readonly jobQueue: batch.IJobQueue;
     public readonly jobDefinition: batch.IJobDefinition;
     public readonly computeEnvironment: batch.IComputeEnvironment;
-    public readonly batchImage: DockerImageAsset;
+    public readonly batchImage: CodeBuildDockerImage;
 
     constructor(scope: Construct, id: string, props: ExperimentsBatchProps) {
         super(scope, id);
 
         const prefix = generatePrefix(this);
 
-        // Build Batch-specific Docker image
-        this.batchImage = new DockerImageAsset(this, "BatchImage", {
-            assetName: `${prefix}-experiments-batch`,
-            directory: path.join(__dirname, "../../../src/experiments-batch/docker"),
-            platform: Platform.LINUX_ARM64,
-        });
+        // Docker image is pre-built in BuilderStack and passed in as prop
+        this.batchImage = props.batchImage;
 
         // Use provided VPC or create a new one for Batch compute environment
         let vpc: ec2.IVpc;
@@ -169,7 +167,10 @@ export class ExperimentsBatch extends Construct {
         // Create Job Definition (Fargate with small compute)
         this.jobDefinition = new batch.EcsJobDefinition(this, "ExperimentJobDef", {
             container: new batch.EcsFargateContainerDefinition(this, "ExperimentContainer", {
-                image: ecs.ContainerImage.fromDockerImageAsset(this.batchImage),
+                image: ecs.ContainerImage.fromEcrRepository(
+                    this.batchImage.repository,
+                    this.batchImage.imageTag,
+                ),
                 memory: cdk.Size.mebibytes(2048), // 2GB
                 cpu: 1, // 1 vCPU
                 jobRole,

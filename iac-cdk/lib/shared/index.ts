@@ -9,13 +9,24 @@ Credits for this file go to the author of https://github.com/aws-samples/aws-gen
 */
 import * as cdk from "aws-cdk-lib";
 import * as lambda from "aws-cdk-lib/aws-lambda";
+import * as s3 from "aws-cdk-lib/aws-s3";
 import { Construct } from "constructs";
 import * as path from "path";
-import { Layer } from "../layer";
 import { SharedAssetBundler } from "./shared-asset-bundler";
 
 const pythonRuntime = lambda.Runtime.PYTHON_3_14;
 const powerToolsLayerVersion = "27";
+
+/**
+ * Properties for the Shared construct.
+ */
+export interface SharedProps {
+    readonly lambdaArchitecture: lambda.Architecture;
+    /** S3 bucket containing the boto3 layer artifact (from BuilderStack). */
+    readonly boto3LayerBucket: s3.IBucket;
+    /** S3 key of the boto3 layer.zip artifact (from BuilderStack). */
+    readonly boto3LayerKey: string;
+}
 
 /**
  * Shared utilities for Lambda functions
@@ -28,10 +39,10 @@ export class Shared extends Construct {
     readonly powerToolsLayer: lambda.ILayerVersion;
     readonly sharedCode: SharedAssetBundler;
 
-    constructor(scope: Construct, id: string, lambdaArchitectureId: lambda.Architecture) {
+    constructor(scope: Construct, id: string, props: SharedProps) {
         super(scope, id);
 
-        this.lambdaArchitecture = lambdaArchitectureId;
+        this.lambdaArchitecture = props.lambdaArchitecture;
 
         this.defaultEnvironmentVariables = {
             POWERTOOLS_DEV: "false",
@@ -61,16 +72,18 @@ export class Shared extends Construct {
             powerToolsArn,
         );
 
-        const boto3Layer = new Layer(this, "Boto3Latest", {
-            runtime: pythonRuntime,
-            architecture: this.lambdaArchitecture,
-            path: path.join(__dirname, "../../../src/shared/layers/boto3-latest"),
+        // Create LayerVersion from the pre-built artifact (built by BuilderStack + build.sh)
+        const boto3Layer = new lambda.LayerVersion(this, "Boto3Layer", {
+            code: lambda.Code.fromBucket(props.boto3LayerBucket, props.boto3LayerKey),
+            compatibleRuntimes: [pythonRuntime],
+            compatibleArchitectures: [props.lambdaArchitecture],
+            removalPolicy: cdk.RemovalPolicy.DESTROY,
         });
 
         this.sharedCode = new SharedAssetBundler(this, "genai-core", [
             path.join(__dirname, "../../../src/shared/layers", "python-sdk", "genai_core"),
         ]);
         this.powerToolsLayer = powerToolsLayer;
-        this.boto3Layer = boto3Layer.layer;
+        this.boto3Layer = boto3Layer;
     } // End of construct
 }

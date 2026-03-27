@@ -8,7 +8,6 @@ import { RuntimeNetworkConfiguration } from "@aws-cdk/aws-bedrock-agentcore-alph
 import * as cdk from "aws-cdk-lib";
 import { CfnOutput } from "aws-cdk-lib";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
-import { DockerImageAsset, Platform } from "aws-cdk-lib/aws-ecr-assets";
 import * as iam from "aws-cdk-lib/aws-iam";
 import { PolicyDocument, PolicyStatement, Role, ServicePrincipal } from "aws-cdk-lib/aws-iam";
 import * as cr from "aws-cdk-lib/custom-resources";
@@ -19,6 +18,7 @@ import * as sns from "aws-cdk-lib/aws-sns";
 import { NagSuppressions } from "cdk-nag";
 import { Construct } from "constructs";
 import * as crypto from "crypto";
+import { CodeBuildDockerImage } from "../codebuild-builder";
 import { Shared } from "../shared";
 
 import { SystemConfig } from "../shared/types";
@@ -28,13 +28,18 @@ interface AcaAgentCoreContainerProps {
     config: SystemConfig;
     readonly shared: Shared;
     readonly knowledgeBaseId: string | undefined;
+    /** Pre-built Docker images from BuilderStack */
+    readonly agentCoreImage: CodeBuildDockerImage;
+    readonly swarmImage: CodeBuildDockerImage;
+    readonly graphImage: CodeBuildDockerImage;
+    readonly agentsAsToolsImage: CodeBuildDockerImage;
 }
 
 export class AcaAgentCoreContainer extends Construct {
-    public readonly imageAsset: DockerImageAsset;
-    public readonly swarmImageAsset: DockerImageAsset;
-    public readonly graphImageAsset: DockerImageAsset;
-    public readonly agentsAsToolsImageAsset: DockerImageAsset;
+    public readonly imageAsset: CodeBuildDockerImage;
+    public readonly swarmImageAsset: CodeBuildDockerImage;
+    public readonly graphImageAsset: CodeBuildDockerImage;
+    public readonly agentsAsToolsImageAsset: CodeBuildDockerImage;
     public readonly executionRole: Role;
     public readonly agentCoreRuntimeTable: dynamodb.Table;
     public readonly toolRegistry: dynamodb.Table;
@@ -272,41 +277,11 @@ export class AcaAgentCoreContainer extends Construct {
             },
         });
 
-        // AgentCore runtime container
-        const imageAsset = new DockerImageAsset(this, "AgentCoreRepository", {
-            assetName: `${prefix}-agent-core`,
-            directory: path.join(__dirname, "../../../src/agent-core"),
-            file: "docker/Dockerfile",
-            platform: Platform.LINUX_ARM64,
-        });
-
-        // Swarm AgentCore runtime container
-        const swarmImageAsset = new DockerImageAsset(this, "SwarmAgentCoreRepository", {
-            assetName: `${prefix}-swarm-agent-core`,
-            directory: path.join(__dirname, "../../../src/agent-core"),
-            file: "docker-swarm/Dockerfile",
-            platform: Platform.LINUX_ARM64,
-        });
-
-        // Graph AgentCore runtime container
-        const graphImageAsset = new DockerImageAsset(this, "GraphAgentCoreRepository", {
-            assetName: `${prefix}-graph-agent-core`,
-            directory: path.join(__dirname, "../../../src/agent-core"),
-            file: "docker-graph/Dockerfile",
-            platform: Platform.LINUX_ARM64,
-        });
-
-        // Agents-as-Tools AgentCore runtime container
-        const agentsAsToolsImageAsset = new DockerImageAsset(
-            this,
-            "AgentsAsToolsAgentCoreRepository",
-            {
-                assetName: `${prefix}-agents-as-tools-agent-core`,
-                directory: path.join(__dirname, "../../../src/agent-core"),
-                file: "docker-agents-as-tools/Dockerfile",
-                platform: Platform.LINUX_ARM64,
-            },
-        );
+        // Docker images are pre-built in BuilderStack and passed in as props
+        const imageAsset = props.agentCoreImage;
+        const swarmImageAsset = props.swarmImage;
+        const graphImageAsset = props.graphImage;
+        const agentsAsToolsImageAsset = props.agentsAsToolsImage;
 
         const statements = [
             new PolicyStatement({
@@ -496,7 +471,7 @@ export class AcaAgentCoreContainer extends Construct {
             const hash = crypto
                 .createHash("sha256")
                 .update(configString)
-                .update(imageAsset.assetHash)
+                .update(imageAsset.imageTag)
                 .digest();
             const createdAt = Number(hash.readBigUInt64BE(0) % BigInt(Number.MAX_SAFE_INTEGER));
 
