@@ -27,12 +27,37 @@ run-ash:
 # CDK Deployment
 # =============================================================================
 
-deploy: copy-graphql-util gen-graphql
-# 	docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-	cd iac-cdk && npx cdk deploy $(if $(PROFILE),--profile $(PROFILE))
+# Three-phase deploy:
+#   1. Deploy BuilderStack (CodeBuild projects, ECR repos, S3 artifact buckets)
+#   2. Run build.sh (triggers all CodeBuild builds in parallel, waits for completion)
+#   3. Deploy AcaStack (application — consumes pre-built artifacts)
+#
+# On first deploy, Phase 2 creates the artifacts that Phase 3 needs.
+# On subsequent deploys, Phase 2 rebuilds only what changed (fast).
 
-deploy-finch: copy-graphql-util gen-graphql
-	cd iac-cdk && CDK_DOCKER=finch npx cdk deploy $(if $(PROFILE),--profile $(PROFILE))
+deploy: copy-graphql-util gen-graphql
+	@echo "═══════════════════════════════════════════════════════════"
+	@echo "Phase 1: Deploying BuilderStack (CodeBuild infrastructure)"
+	@echo "═══════════════════════════════════════════════════════════"
+	cd iac-cdk && npx cdk deploy '*-builder' --require-approval never $(if $(PROFILE),--profile $(PROFILE))
+	@echo ""
+	@echo "═══════════════════════════════════════════════════════════"
+	@echo "Phase 2: Running CodeBuild builds"
+	@echo "═══════════════════════════════════════════════════════════"
+	./iac-cdk/scripts/build.sh $(if $(PROFILE),--profile $(PROFILE)) \
+		$(if $(REGION),--region $(REGION))
+	@echo ""
+	@echo "═══════════════════════════════════════════════════════════"
+	@echo "Phase 3: Deploying AcaStack (application)"
+	@echo "═══════════════════════════════════════════════════════════"
+	cd iac-cdk && npx cdk deploy --all --require-approval never $(if $(PROFILE),--profile $(PROFILE))
+
+# Destroy both stacks (reverse order: AcaStack first, then BuilderStack)
+destroy:
+	@echo "═══════════════════════════════════════════════════════════"
+	@echo "Destroying AcaStack (application)"
+	@echo "═══════════════════════════════════════════════════════════"
+	cd iac-cdk && npx cdk destroy --all --force $(if $(PROFILE),--profile $(PROFILE))
 
 clean-build:
 	git clean -fx iac-cdk/lib/

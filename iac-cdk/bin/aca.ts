@@ -10,6 +10,7 @@ import { AwsSolutionsChecks } from "cdk-nag";
 import { IConstruct } from "constructs";
 import "source-map-support/register";
 import { AcaStack } from "../lib/aca-stack";
+import { BuilderStack } from "../lib/builder-stack";
 import { getConfig } from "./config";
 
 /**
@@ -37,18 +38,33 @@ class LambdaNodejsRuntimeUpgrader implements cdk.IAspect {
 const app = new cdk.App();
 const config = getConfig();
 
-// in principle if the prefix is `dev` the stack should be called dev-aca
-// however, we, treat `dev` as default config. This might be changed if you are starting from scratch in a new account
 const baseName = "aca";
 const stackName = config.prefix == "" ? baseName : `${config.prefix}-${baseName}`;
-const stack = new AcaStack(app, stackName, {
-    config: config,
+const builderStackName = `${stackName}-builder`;
+
+// ── Stack 1: Build infrastructure (CodeBuild projects, ECR repos, S3 buckets) ──
+const builderStack = new BuilderStack(app, builderStackName, {
+    lambdaArchitecture: lambda.Architecture.X86_64,
 });
-cdk.Tags.of(stack).add("Stack", baseName.toLowerCase());
-cdk.Tags.of(stack).add("Team", "genaiic");
-if (config.prefix) {
-    cdk.Tags.of(stack).add("Environment", config.prefix.toLowerCase());
+
+// ── Stack 2: Application (deploys after build.sh runs all builds) ──
+const acaStack = new AcaStack(app, stackName, {
+    config: config,
+    builder: builderStack,
+});
+
+// Explicit dependency: AcaStack requires BuilderStack
+acaStack.addDependency(builderStack);
+
+// Tags
+for (const stack of [builderStack, acaStack]) {
+    cdk.Tags.of(stack).add("Stack", baseName.toLowerCase());
+    cdk.Tags.of(stack).add("Team", "genaiic");
+    if (config.prefix) {
+        cdk.Tags.of(stack).add("Environment", config.prefix.toLowerCase());
+    }
 }
+
 // Register runtime upgrader BEFORE CDK-nag so Lambda runtimes are updated before validation
 cdk.Aspects.of(app).add(new LambdaNodejsRuntimeUpgrader());
 cdk.Aspects.of(app).add(new AwsSolutionsChecks());

@@ -18,7 +18,7 @@ import * as sns from "aws-cdk-lib/aws-sns";
 import { NagSuppressions } from "cdk-nag";
 import { Construct } from "constructs";
 
-import { DockerImageAsset } from "aws-cdk-lib/aws-ecr-assets";
+import { CodeBuildDockerImage } from "../codebuild-builder";
 import { Shared } from "../shared";
 import { SystemConfig } from "../shared/types";
 import { generatePrefix } from "../shared/utils";
@@ -35,16 +35,18 @@ export interface ChatbotApiProps {
     readonly config: SystemConfig;
     readonly userPool: cognito.UserPool;
     // AgentCore Related
-    readonly agentCoreContainer: DockerImageAsset;
-    readonly swarmAgentCoreContainer: DockerImageAsset;
-    readonly graphAgentCoreContainer: DockerImageAsset;
-    readonly agentsAsToolsAgentCoreContainer: DockerImageAsset;
+    readonly agentCoreContainer: CodeBuildDockerImage;
+    readonly swarmAgentCoreContainer: CodeBuildDockerImage;
+    readonly graphAgentCoreContainer: CodeBuildDockerImage;
+    readonly agentsAsToolsAgentCoreContainer: CodeBuildDockerImage;
     readonly agentCoreRuntimeTable: dynamodb.Table;
     readonly toolRegistryTable: dynamodb.Table;
     readonly mcpServerRegistryTable: dynamodb.Table;
     readonly agentCoreSummaryTable: dynamodb.Table;
     readonly agentCoreExecutionRole: iam.Role;
     readonly agentToolsTopic: sns.Topic;
+    // Batch experiments image (from BuilderStack)
+    readonly batchImage?: CodeBuildDockerImage;
     // optional props for document processing
     readonly dataBucket?: s3.Bucket;
     readonly documentTable?: dynamodb.Table;

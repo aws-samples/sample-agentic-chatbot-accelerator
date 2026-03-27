@@ -1,16 +1,14 @@
-/* Copyright 2026 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// -----------------------------------------------------------------------------------
+// Copyright 2026 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+//
+// SPDX-License-Identifier: MIT-0
+// -----------------------------------------------------------------------------------
 
-SPDX-License-Identifier: MIT-0
-----------------------------------------------------------------------
-File:
-    Definition of the class `SharedAssetBundler`
-
-Credits for this file go to the author of https://github.com/aws-samples/aws-genai-llm-chatbot
-*/
 import { AssetHashType, BundlingOutput, DockerImage, aws_s3_assets } from "aws-cdk-lib";
 import { Code, S3Code } from "aws-cdk-lib/aws-lambda";
 import { Asset } from "aws-cdk-lib/aws-s3-assets";
 import { md5hash } from "aws-cdk-lib/core/lib/helpers-internal";
+import { execSync } from "child_process";
 import { Construct } from "constructs";
 import * as fs from "fs";
 import * as path from "path";
@@ -89,6 +87,42 @@ function calculateHash(paths: string[]): string {
 }
 
 /**
+ * Recursively copies a directory and all its contents to a target location.
+ */
+function copyDirRecursive(sourceDir: string, targetDir: string): void {
+    if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true });
+    }
+    for (const entry of fs.readdirSync(sourceDir)) {
+        const srcPath = path.join(sourceDir, entry);
+        const dstPath = path.join(targetDir, entry);
+        if (fs.statSync(srcPath).isDirectory()) {
+            copyDirRecursive(srcPath, dstPath);
+        } else {
+            fs.copyFileSync(srcPath, dstPath);
+        }
+    }
+}
+
+/**
+ * Copies only the files/dirs inside sourceDir into targetDir (not the directory itself).
+ */
+function copyDirContents(sourceDir: string, targetDir: string): void {
+    if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true });
+    }
+    for (const entry of fs.readdirSync(sourceDir)) {
+        const srcPath = path.join(sourceDir, entry);
+        const dstPath = path.join(targetDir, entry);
+        if (fs.statSync(srcPath).isDirectory()) {
+            copyDirRecursive(srcPath, dstPath);
+        } else {
+            fs.copyFileSync(srcPath, dstPath);
+        }
+    }
+}
+
+/**
  * Bundles shared asset files with an asset.
  */
 export class SharedAssetBundler extends Construct {
@@ -119,6 +153,7 @@ export class SharedAssetBundler extends Construct {
      */
     bundleWithAsset(assetPath: string): Asset {
         console.log(`Bundling asset ${assetPath}`);
+        const sharedAssets = this.sharedAssets;
         const asset = new aws_s3_assets.Asset(this, md5hash(assetPath).slice(0, 6), {
             path: assetPath,
             bundling: {
@@ -130,6 +165,41 @@ export class SharedAssetBundler extends Construct {
                 })),
                 workingDirectory: this.WORKING_PATH,
                 outputType: BundlingOutput.ARCHIVED,
+                // --- Local bundling: use the system `zip` command (no Docker needed) ---
+                local: {
+                    tryBundle(outputDir: string): boolean {
+                        try {
+                            // Create a temp working directory that mirrors the Docker layout
+                            const tmpDir = fs.mkdtempSync(path.join(outputDir, ".bundle-"));
+
+                            // Copy the asset files into the temp directory
+                            copyDirContents(assetPath, tmpDir);
+
+                            // Copy each shared asset folder into the temp directory
+                            for (const sharedDir of sharedAssets) {
+                                const destDir = path.join(tmpDir, path.basename(sharedDir));
+                                copyDirRecursive(sharedDir, destDir);
+                            }
+
+                            // Zip everything into the output
+                            const zipPath = path.join(outputDir, "asset.zip");
+                            execSync(`cd "${tmpDir}" && zip -r "${zipPath}" .`, {
+                                stdio: "pipe",
+                            });
+
+                            // Clean up temp directory
+                            fs.rmSync(tmpDir, { recursive: true, force: true });
+
+                            console.log(`  ✅ Local bundling succeeded for ${assetPath}`);
+                            return true;
+                        } catch (e) {
+                            console.warn(
+                                `  ⚠️  Local bundling failed (falling back to Docker): ${e}`,
+                            );
+                            return false;
+                        }
+                    },
+                },
             },
             assetHash: calculateHash([assetPath, ...this.sharedAssets]),
             assetHashType: AssetHashType.CUSTOM,

@@ -14,6 +14,7 @@ import { NagSuppressions } from "cdk-nag";
 import { Construct } from "constructs";
 import * as path from "path";
 
+import { CodeBuildDockerImage } from "../codebuild-builder";
 import { ExperimentsBatch } from "../experiments-batch";
 import { Shared } from "../shared";
 import { SystemConfig } from "../shared/types";
@@ -25,6 +26,8 @@ export interface ExperimentOpsProps {
     readonly config: SystemConfig;
     readonly experimentsTable: dynamodb.Table;
     readonly evaluationsBucket: s3.Bucket;
+    /** Pre-built Docker image from BuilderStack */
+    readonly batchImage?: CodeBuildDockerImage;
 }
 
 export class ExperimentOps extends Construct {
@@ -48,12 +51,16 @@ export class ExperimentOps extends Construct {
             const vpc = vpcId ? ec2.Vpc.fromLookup(this, "ImportedBatchVpc", { vpcId }) : undefined;
 
             // Create AWS Batch infrastructure for experiment generation
+            if (!props.batchImage) {
+                throw new Error("batchImage prop is required when deployBatchInfrastructure is enabled");
+            }
             this.batch = new ExperimentsBatch(this, "Batch", {
                 shared: props.shared,
                 config: props.config,
                 experimentsTableName: props.experimentsTable.tableName,
                 evaluationsBucketName: props.evaluationsBucket.bucketName,
                 vpc,
+                batchImage: props.batchImage,
             });
         }
 
