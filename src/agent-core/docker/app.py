@@ -137,7 +137,15 @@ async def invoke(payload, context: RequestContext):
 
             # Parse optional session state from payload (stringified JSON)
             state_json = payload.get("state")
-            state = json.loads(state_json) if state_json else None
+            state = None
+            if state_json:
+                try:
+                    state = json.loads(state_json)
+                except json.JSONDecodeError:
+                    logger.warning(
+                        "Malformed JSON in state payload; ignoring session state",
+                        extra={"rawState": state_json},
+                    )
 
             AGENT, CALLBACKS = create_agent(
                 configuration,
@@ -189,13 +197,20 @@ async def invoke(payload, context: RequestContext):
     # Hydrate agent state from payload on every non-heartbeat message.
     state_json = payload.get("state")
     if state_json and AGENT:
-        state_data = json.loads(state_json)
-        for key, value in state_data.items():
-            AGENT.state.set(key, value)
-        logger.info(
-            "Agent state hydrated from payload",
-            extra={"stateKeys": list(state_data.keys())},
-        )
+        try:
+            state_data = json.loads(state_json)
+        except json.JSONDecodeError:
+            logger.warning(
+                "Malformed JSON in state payload; skipping state hydration",
+                extra={"rawState": state_json},
+            )
+        else:
+            for key, value in state_data.items():
+                AGENT.state.set(key, value)
+            logger.info(
+                "Agent state hydrated from payload",
+                extra={"stateKeys": list(state_data.keys())},
+            )
 
     logger.info(
         "Calling agent with user message and context",
