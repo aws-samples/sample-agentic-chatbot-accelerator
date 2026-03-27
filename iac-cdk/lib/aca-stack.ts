@@ -12,6 +12,7 @@ import { Construct } from "constructs";
 import { AcaAgentCoreContainer } from "./agent-core";
 import { ChatbotApi } from "./api";
 import { Authentication } from "./authentication";
+import { BuilderStack } from "./builder-stack";
 import { Cleanup } from "./cleanup";
 import { DataProcessing } from "./data-processing";
 import { GenAIInterface } from "./genai-interface";
@@ -23,6 +24,8 @@ import { UserInterface } from "./user-interface";
 
 export interface AcaProps extends cdk.StackProps {
     readonly config: SystemConfig;
+    /** BuilderStack containing pre-built CodeBuild projects. */
+    readonly builder: BuilderStack;
 }
 
 export class AcaStack extends cdk.Stack {
@@ -46,7 +49,11 @@ export class AcaStack extends cdk.Stack {
                 : lambda.Architecture.X86_64;
         process.env.DOCKER_DEFAULT_PLATFORM = lambdaArchitecture.dockerPlatform;
 
-        const shared = new Shared(this, "Shared", lambdaArchitecture);
+        const shared = new Shared(this, "Shared", {
+            lambdaArchitecture,
+            boto3LayerBucket: props.builder.boto3Layer.artifactBucket,
+            boto3LayerKey: props.builder.boto3Layer.artifactKey,
+        });
 
         const dataProcessing = props.config.dataProcessingParameters
             ? new DataProcessing(this, "DataProcessingPipeline", {
@@ -74,6 +81,10 @@ export class AcaStack extends cdk.Stack {
             shared: shared,
             config: props.config,
             knowledgeBaseId: knowledgeBase?.knowledgeBase.knowledgeBaseId,
+            agentCoreImage: props.builder.agentCoreImage,
+            swarmImage: props.builder.swarmImage,
+            graphImage: props.builder.graphImage,
+            agentsAsToolsImage: props.builder.agentsAsToolsImage,
         });
 
         const api = new ChatbotApi(this, "ChatbotApi", {
@@ -97,6 +108,7 @@ export class AcaStack extends cdk.Stack {
             toolRegistryTable: agentCoreInfra.toolRegistry,
             mcpServerRegistryTable: agentCoreInfra.mcpServerRegistry,
             agentToolsTopic: agentCoreInfra.agentToolsTopic,
+            batchImage: props.builder.batchImage,
         });
 
         const genaiInterface = new GenAIInterface(this, "GenAIInterface", {
