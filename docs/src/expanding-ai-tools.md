@@ -380,11 +380,10 @@ class ContextAwareTool(AbstractToolObject):
 
 After implementing new tools:
 
-1. **Build and deploy** the updated Docker container
-2. **Update CDK configuration** with new tool registry entries
-3. **Deploy infrastructure** changes via CDK
-4. **Create a new AgentCore Runtime** through the *Agent Factory*
-5. **Test tools** through the *Chatbot Experience*
+1. **Update CDK configuration** with new tool registry entries
+2. **Deploy infrastructure** changes via `make deploy` (CodeBuild will rebuild the Docker containers automatically)
+3. **Create a new AgentCore Runtime** through the *Agent Factory*
+4. **Test tools** through the *Chatbot Experience*
 
 ## Tool Discovery
 

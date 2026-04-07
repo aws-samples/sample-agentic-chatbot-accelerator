@@ -7,25 +7,12 @@
 - AWS Account Setup:
   - AWS account with appropriate permissions
   - Permissions to CDK bootstrap the account in the deployment region (`cd iac-cdk && cdk bootstrap`)
-- Local Deployment:
+- Local Requirements:
   - Node.js (version 20 recommended)
-  - Docker or Finch installed and running
-  - AWS profile with appropriate authentication tokens
+  - AWS CLI configured with appropriate authentication tokens
+  - `zip` command available (pre-installed on macOS and most Linux distributions)
 
-ℹ️ We heard that some users struggled when using finch instead of docker for deployment. If you find yourself in the same situation:
-
-1. Open ~/.finch/finch.yaml and set rosetta: true
-2. Rebuild the finch VM:
-   - finch vm remove --force
-   - finch vm init
-
-While local deployment is convenient, we recognize that CodeBuild would be a better choice to avoid variance related to local deployment configurations. If local deployment does not work due to environment-specific issues, for the time being, we recommend using the EC2 deployment approach outlined below:
-
-- Create an IAM role for EC2 deployment
-- Launch an Ubuntu instance with 100GB storage
-- Install Node.js, Docker, and AWS CLI
-- Archive the code repository and upload to an S3 bucket in your account
-- Download your stack code from S3 and run the CDK deployment commands.
+> **Note:** Docker and Finch are **not** required. All container image builds, pip layer builds, and the React frontend build run remotely on AWS CodeBuild.
 
 ## Deployment
 
@@ -35,14 +22,20 @@ While local deployment is convenient, we recognize that CodeBuild would be a bet
 
 ⚠️ Use the Makefile shortcuts to make sure that you execute required scripts before deployment:
 
-If you want to use Docker:
 ```bash
 make deploy PROFILE=user-profile
 ```
 
-If you want to use Finch:
+The `make deploy` command runs a three-phase deployment:
+
+1. **Phase 1 — BuilderStack**: Deploys CodeBuild projects, ECR repositories, and S3 artifact buckets
+2. **Phase 2 — CodeBuild builds**: Triggers all CodeBuild builds in parallel (Docker images, pip layers, React frontend) and waits for completion. Only rebuilds projects whose source has changed.
+3. **Phase 3 — AcaStack**: Deploys the application stack, consuming pre-built artifacts from Phase 2
+
+To destroy the stacks:
+
 ```bash
-make deploy-finch PROFILE=user-profile
+make destroy PROFILE=user-profile
 ```
 
 ## CDK Configuration
@@ -93,7 +86,7 @@ knowledgeBaseParameters:
     dataSourcePrefix: knowledge-base-data-source
     description: Knowledge Base that contains resources on AWS services.
 supportedModels:
-    Claude Sonnet 4.5: "[REGION-PREFIX].anthropic.claude-sonnet-4-5-20250929-v1:0"
+    Claude Sonnet 4.6: "[REGION-PREFIX].anthropic.claude-sonnet-4-6"
     Claude Haiku 4.5: "[REGION-PREFIX].anthropic.claude-haiku-4-5-20251001-v1:0"
     Nova 2 Lite: "[REGION-PREFIX].amazon.nova-2-lite-v1:0"
     GPT OSS 20B: "openai.gpt-oss-20b-1:0"

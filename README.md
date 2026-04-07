@@ -20,7 +20,7 @@ The following steps use **CDK** (the default deployment method). For Terraform, 
 
 1. **Install required packages**: Run `cd iac-cdk && npm install`
 2. **Configure features** *(optional)*: Create `iac-cdk/bin/config.yaml` to customize deployment (see [How to Deploy](./docs/src/how-to-deploy.md))
-3. **Deploy Infrastructure**: Run either `make deploy` or `make deploy-finch` to deploy the CDK stack with Docker or Finch, respectively
+3. **Deploy Infrastructure**: Run `make deploy` to deploy the CDK stacks (no local Docker/Finch required — builds run on AWS CodeBuild)
 4. **Create User**: Add a user to the Cognito User Pool (<environment-prefix>-aca-userPool) via AWS Console
 5. **Access Application**: Open the web application using the URL from CDK deployment outputs
 6. **Configure Agent**: Use the Agent Factory to create and configure your first AgentCore runtime
