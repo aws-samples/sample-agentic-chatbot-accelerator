@@ -20,7 +20,7 @@ evaluatorConfig:
     # Models available for LLM-based evaluations
     supportedModels:
         Claude Haiku 4.5: "[REGION-PREFIX].anthropic.claude-haiku-4-5-20251001-v1:0"
-        Claude Sonnet 4.5: "[REGION-PREFIX].anthropic.claude-sonnet-4-5-20250929-v1:0"
+        Claude Sonnet 4.6: "[REGION-PREFIX].anthropic.claude-sonnet-4-6"
         Nova 2 Lite: "[REGION-PREFIX].amazon.nova-2-lite-v1:0"
 
     # Score threshold (0.0-1.0) above which a test case is considered passed

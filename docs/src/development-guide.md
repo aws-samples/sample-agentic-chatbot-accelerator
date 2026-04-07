@@ -39,11 +39,13 @@ agentic-chatbot-accelerator/
 │   │   ├── config.ts           # Default TypeScript configuration
 │   │   └── config.yaml         # YAML configuration override (not Git versioned)
 │   ├── lib/                    # CDK constructs
-│   │   ├── aca-stack.ts        # Main CDK stack
+│   │   ├── aca-stack.ts        # Application CDK stack
+│   │   ├── builder-stack.ts    # BuilderStack (CodeBuild projects, ECR repos, S3 artifact buckets)
 │   │   ├── agent-core/         # AgentCore construct
 │   │   ├── api/                # API constructs (HTTP, WebSocket, AppSync)
 │   │   ├── authentication/     # Cognito User Pool setup
 │   │   ├── cleanup/            # Cleanup construct
+│   │   ├── codebuild-builder/  # CodeBuild constructs (Docker images, pip layers, npm builds)
 │   │   ├── data-processing/    # Document processing construct (optional)
 │   │   ├── experiments-batch/  # Experiments construct
 │   │   ├── genai-interface/    # GenAI interface construct
@@ -52,6 +54,8 @@ agentic-chatbot-accelerator/
 │   │   ├── observability/      # Observability construct
 │   │   ├── shared/             # Shared utilities and types
 │   │   └── user-interface/     # Frontend construct (S3/CloudFront)
+│   ├── scripts/                # Build orchestration scripts
+│   │   └── build.sh            # Triggers CodeBuild builds and waits for completion
 │   └── test/                   # CDK tests
 ├── iac-terraform/              # Terraform infrastructure-as-code
 │   ├── modules/                # Terraform modules (mirrors CDK constructs)
