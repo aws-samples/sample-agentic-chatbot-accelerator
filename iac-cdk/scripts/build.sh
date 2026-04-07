@@ -149,7 +149,8 @@ BUILD_IDS=()
 BUILD_PROJECTS=()
 SKIPPED=0
 
-for PROJECT in $PROJECTS; do
+while IFS= read -r PROJECT; do
+    [[ -z "$PROJECT" ]] && continue
     if needs_rebuild "$PROJECT"; then
         info "Starting build: ${PROJECT}"
 
@@ -168,7 +169,7 @@ for PROJECT in $PROJECTS; do
         skip "Already built (unchanged): ${PROJECT}"
         SKIPPED=$((SKIPPED + 1))
     fi
-done
+done <<< "$PROJECTS"
 
 TOTAL=${#BUILD_IDS[@]}
 
