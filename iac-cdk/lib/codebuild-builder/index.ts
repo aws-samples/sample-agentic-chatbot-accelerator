@@ -10,4 +10,5 @@
 // -----------------------------------------------------------------------------------
 
 export { CodeBuildDockerImage, CodeBuildDockerImageProps } from "./codebuild-docker-image";
+export { CodeBuildNpmBuild, CodeBuildNpmBuildProps } from "./codebuild-npm-build";
 export { CodeBuildPipLayer, CodeBuildPipLayerProps } from "./codebuild-pip-layer";

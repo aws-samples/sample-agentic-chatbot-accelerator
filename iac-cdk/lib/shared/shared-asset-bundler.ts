@@ -157,7 +157,10 @@ export class SharedAssetBundler extends Construct {
         const asset = new aws_s3_assets.Asset(this, md5hash(assetPath).slice(0, 6), {
             path: assetPath,
             bundling: {
-                image: DockerImage.fromBuild(path.posix.join(__dirname, "./alpine-zip")),
+                // Use a registry image instead of fromBuild() to avoid requiring a local
+                // Docker daemon at synth time.  Local bundling (below) runs first and
+                // succeeds — this image is only a CDK-required fallback.
+                image: DockerImage.fromRegistry("public.ecr.aws/docker/library/alpine:latest"),
                 command: ["zip", "-r", path.posix.join("/asset-output", "asset.zip"), "."],
                 volumes: this.sharedAssets.map((f) => ({
                     containerPath: path.posix.join(this.WORKING_PATH, path.basename(f)),
