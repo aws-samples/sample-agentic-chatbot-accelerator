@@ -15,7 +15,7 @@ export function getConfig(): SystemConfig {
     // The default configuration:
     //  - Uses "dev" prefix for all resource names
     //  - Disables geographic restrictions (CloudFront accessible globally)
-    //  - Configures three Bedrock models: Claude Haiku 4.5, Claude Sonnet 4.5, and Nova 2 Lite
+    //  - Configures three Bedrock models: Claude Haiku 4.5, Claude Sonnet 4.6, and Nova 2 Lite
     //  - Does not deploy constructs related to Knowledge Base
     //  - Does not deploy AgentCore runtime meaning that users will have to create those from the application
     //  - Registers only the invoke_subagent tool for sub-agent orchestration
@@ -30,7 +30,7 @@ export function getConfig(): SystemConfig {
 
         supportedModels: {
             "Claude Haiku 4.5": "[REGION-PREFIX].anthropic.claude-haiku-4-5-20251001-v1:0",
-            "Claude Sonnet 4.5": "[REGION-PREFIX].anthropic.claude-sonnet-4-5-20250929-v1:0",
+            "Claude Sonnet 4.6": "[REGION-PREFIX].anthropic.claude-sonnet-4-6",
             "Nova 2 Lite": "[REGION-PREFIX].amazon.nova-2-lite-v1:0",
         },
 
@@ -56,7 +56,7 @@ export function getConfig(): SystemConfig {
             // Models available for LLM-based evaluations
             supportedModels: {
                 "Claude Haiku 4.5": "[REGION-PREFIX].anthropic.claude-haiku-4-5-20251001-v1:0",
-                "Claude Sonnet 4.5": "[REGION-PREFIX].anthropic.claude-sonnet-4-5-20250929-v1:0",
+                "Claude Sonnet 4.6": "[REGION-PREFIX].anthropic.claude-sonnet-4-6",
                 "Nova 2 Lite": "[REGION-PREFIX].amazon.nova-2-lite-v1:0",
             },
             // Score threshold (0.0-1.0) above which a test case is considered passed
@@ -94,7 +94,7 @@ export function getConfig(): SystemConfig {
             // Models available for synthetic data generation
             supportedModels: {
                 "Claude Haiku 4.5": "[REGION-PREFIX].anthropic.claude-haiku-4-5-20251001-v1:0",
-                "Claude Sonnet 4.5": "[REGION-PREFIX].anthropic.claude-sonnet-4-5-20250929-v1:0",
+                "Claude Sonnet 4.6": "[REGION-PREFIX].anthropic.claude-sonnet-4-6",
                 "Nova 2 Lite": "[REGION-PREFIX].amazon.nova-2-lite-v1:0",
             },
         },

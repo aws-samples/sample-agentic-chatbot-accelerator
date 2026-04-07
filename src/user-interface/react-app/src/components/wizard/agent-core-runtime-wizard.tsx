@@ -221,8 +221,8 @@ export default function AgentCoreRuntimeCreatorWizard({
                 const defaultModel = models.find(
                     (m) =>
                         m.label.toLowerCase().includes("claude") &&
-                        m.label.toLowerCase().includes("haiku") &&
-                        m.label.toLowerCase().includes("4.5"),
+                        m.label.toLowerCase().includes("sonnet") &&
+                        m.label.toLowerCase().includes("4.6"),
                 );
                 if (defaultModel) {
                     setConfig((prev) => ({

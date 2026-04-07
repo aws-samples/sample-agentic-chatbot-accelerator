@@ -144,6 +144,7 @@ export class AcaStack extends cdk.Stack {
             identityPool: auth.identityPool,
             api: api,
             dataBucket: dataProcessing?.dataBucket,
+            reactAppBuild: props.builder.reactAppBuild,
         });
 
         new Cleanup(this, "Cleanup", {

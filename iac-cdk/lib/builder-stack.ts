@@ -6,7 +6,7 @@
 //   BuilderStack — CodeBuild build infrastructure.
 //
 //   Deployed BEFORE AcaStack.  Contains only:
-//     • CodeBuild projects (Docker images + pip layers)
+//     • CodeBuild projects (Docker images + pip layers + npm builds)
 //     • ECR repositories
 //     • S3 artifact buckets
 //
@@ -19,6 +19,7 @@ import { Construct } from "constructs";
 import * as path from "path";
 
 import { CodeBuildDockerImage } from "./codebuild-builder";
+import { CodeBuildNpmBuild } from "./codebuild-builder";
 import { CodeBuildPipLayer } from "./codebuild-builder";
 
 const pythonRuntime = lambda.Runtime.PYTHON_3_14;
@@ -41,6 +42,9 @@ export class BuilderStack extends cdk.Stack {
 
     // Pip layer
     public readonly boto3Layer: CodeBuildPipLayer;
+
+    // Npm build — React app
+    public readonly reactAppBuild: CodeBuildNpmBuild;
 
     constructor(scope: Construct, id: string, props: BuilderStackProps) {
         super(scope, id, {
@@ -100,6 +104,14 @@ export class BuilderStack extends cdk.Stack {
             runtime: pythonRuntime,
             architecture: props.lambdaArchitecture,
             requirementsDir: path.join(__dirname, "../../src/shared/layers/boto3-latest"),
+        });
+
+        // -----------------------------------------------------------------
+        // Npm build — React web app
+        // -----------------------------------------------------------------
+        this.reactAppBuild = new CodeBuildNpmBuild(this, "ReactAppBuild", {
+            directory: path.join(__dirname, "../../src/user-interface/react-app"),
+            excludes: ["node_modules", ".git", "dist", "*.pyc", "__pycache__"],
         });
 
         // -----------------------------------------------------------------

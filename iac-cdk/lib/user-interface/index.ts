@@ -11,12 +11,10 @@ import * as s3deploy from "aws-cdk-lib/aws-s3-deployment";
 import { NagSuppressions } from "cdk-nag";
 import { Construct } from "constructs";
 
-import { execSync, ExecSyncOptionsWithBufferEncoding } from "node:child_process";
-import * as path from "node:path";
-
 import { ChatbotApi } from "../api";
+import { CodeBuildNpmBuild } from "../codebuild-builder";
 import { SystemConfig } from "../shared/types";
-import { generatePrefix, Utils } from "../shared/utils";
+import { generatePrefix } from "../shared/utils";
 import { PublicWebsite } from "./public-website";
 
 /**
@@ -29,6 +27,8 @@ export interface UserInterfaceProps {
     readonly identityPool: cognitoIdentityPool.IdentityPool;
     readonly api: ChatbotApi;
     readonly dataBucket?: s3.Bucket;
+    /** Pre-built React app artifact from CodeBuild (BuilderStack). */
+    readonly reactAppBuild: CodeBuildNpmBuild;
 }
 
 /**
@@ -47,9 +47,6 @@ export class UserInterface extends Construct {
      */
     constructor(scope: Construct, id: string, props: UserInterfaceProps) {
         super(scope, id);
-
-        const pathToApp = path.join(__dirname, "../../../src/user-interface/react-app");
-        const pathToBuild = path.join(pathToApp, "dist");
 
         const prefix = generatePrefix(this);
         const account = cdk.Stack.of(this).account;
@@ -162,42 +159,11 @@ export class UserInterface extends Construct {
             });
         }
 
-        const asset = s3deploy.Source.asset(pathToApp, {
-            bundling: {
-                image: cdk.DockerImage.fromRegistry("public.ecr.aws/sam/build-nodejs18.x:latest"),
-                command: [
-                    "sh",
-                    "-c",
-                    [
-                        "npm --cache /tmp/.npm install",
-                        `npm --cache /tmp/.npm run build`,
-                        "cp -aur /asset-input/dist/* /asset-output/",
-                    ].join(" && "),
-                ],
-                local: {
-                    tryBundle(outputDir: string) {
-                        try {
-                            const options: ExecSyncOptionsWithBufferEncoding = {
-                                stdio: "inherit",
-                                env: {
-                                    ...process.env,
-                                },
-                            };
-
-                            // Safe because the command is not user provided
-                            execSync(`npm --silent --prefix "${pathToApp}" ci`, options); //NOSONAR Needed for the build process.
-                            execSync(`npm --silent --prefix "${pathToApp}" run build`, options); //NOSONAR
-                            Utils.copyDirRecursive(pathToBuild, outputDir);
-                        } catch (e) {
-                            console.error(e);
-                            return false;
-                        }
-
-                        return true;
-                    },
-                },
-            },
-        });
+        // Use pre-built React app artifact from CodeBuild (built during Phase 2 by build.sh)
+        const asset = s3deploy.Source.bucket(
+            props.reactAppBuild.artifactBucket,
+            props.reactAppBuild.artifactKey,
+        );
 
         new s3deploy.BucketDeployment(this, "UserInterfaceDeployment", {
             prune: false,
