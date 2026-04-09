@@ -1,7 +1,7 @@
 langgraph==1.0.10
 strands-agents==1.21.0
 bedrock-agentcore==1.1.4
-mcp-proxy-for-aws==1.1.6
+mcp-proxy-for-aws==1.2.0
 pydantic==2.12.3
 boto3==1.42.26
 aws-opentelemetry-distro==0.14.1
