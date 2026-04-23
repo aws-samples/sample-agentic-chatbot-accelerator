@@ -42,7 +42,7 @@
         "remark-gfm": "^4.0.0",
         "stream-browserify": "^3.0.0",
         "util": "^0.12.5",
-        "uuid": "^11.0.5"
+        "uuid": "^14.0.0"
     },
     "devDependencies": {
         "@types/luxon": "^3.4.2",
