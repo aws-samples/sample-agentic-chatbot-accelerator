@@ -277,10 +277,15 @@ module "websocket_backend" {
   appsync_api_id = module.appsync.api_id
   graphql_url    = module.appsync.graphql_url
 
+  # Pre-built Lambda artifacts (S3) - built by CodeBuild in shared module
+  outgoing_message_handler_s3_bucket   = module.shared.outgoing_message_handler_s3_bucket
+  outgoing_message_handler_s3_key      = module.shared.outgoing_message_handler_s3_key
+  outgoing_message_handler_source_hash = module.shared.outgoing_message_handler_source_hash
+
   # Encryption
   kms_key_arn = aws_kms_key.main.arn
 
-  depends_on = [module.appsync, aws_kms_key.main]
+  depends_on = [module.appsync, module.shared, aws_kms_key.main]
 }
 
 # -----------------------------------------------------------------------------

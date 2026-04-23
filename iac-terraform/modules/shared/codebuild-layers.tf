@@ -11,6 +11,7 @@ Creates:
 - S3 bucket for build context and output artifacts
 - CodeBuild project for boto3 Lambda layer (Python)
 - CodeBuild project for notify-runtime-update Lambda (TypeScript)
+- CodeBuild project for outgoing-message-handler Lambda (TypeScript)
 - IAM role for CodeBuild
 - Triggers that rebuild only when source files change
 
@@ -34,16 +35,18 @@ locals {
   boto3_requirements_path = "${path.module}/../../../src/shared/layers/boto3-latest/requirements.txt"
   genai_core_source_path  = "${path.module}/../../../src/shared/layers/python-sdk/genai_core"
 
-  # Source path for TypeScript Lambda
-  notify_runtime_update_path = "${path.module}/../../../src/api/functions/notify-runtime-update"
+  # Source paths for TypeScript Lambdas
+  notify_runtime_update_path    = "${path.module}/../../../src/api/functions/notify-runtime-update"
+  outgoing_message_handler_path = "${path.module}/../../../src/api/functions/outgoing-message-handler"
 
   # Content-based tags for change detection
   boto3_content_hash     = filesha256(local.boto3_requirements_path)
   boto3_content_tag      = substr(local.boto3_content_hash, 0, 12)
   genai_core_content_tag = substr(sha256(join("", [for f in fileset(local.genai_core_source_path, "**/*.py") : filesha256("${local.genai_core_source_path}/${f}")])), 0, 12)
 
-  # TypeScript Lambda content hash
-  notify_runtime_update_content_tag = substr(sha256(join("", [for f in fileset(local.notify_runtime_update_path, "*.ts") : filesha256("${local.notify_runtime_update_path}/${f}")])), 0, 12)
+  # TypeScript Lambda content hashes
+  notify_runtime_update_content_tag    = substr(sha256(join("", [for f in fileset(local.notify_runtime_update_path, "*.ts") : filesha256("${local.notify_runtime_update_path}/${f}")])), 0, 12)
+  outgoing_message_handler_content_tag = substr(sha256(join("", [for f in fileset(local.outgoing_message_handler_path, "*.ts") : filesha256("${local.outgoing_message_handler_path}/${f}")])), 0, 12)
 
   # Python version without 'python' prefix for buildspec
   python_version_short = replace(var.python_runtime, "python", "")
@@ -440,6 +443,127 @@ resource "null_resource" "build_notify_runtime_update" {
   depends_on = [
     aws_codebuild_project.notify_runtime_update_builder,
     aws_s3_object.notify_runtime_update_source,
+    aws_iam_role_policy.layer_builder
+  ]
+}
+
+# -----------------------------------------------------------------------------
+# TypeScript Lambda — outgoing-message-handler
+# Built via CodeBuild using esbuild (same pattern as notify-runtime-update)
+# -----------------------------------------------------------------------------
+
+# Upload TypeScript source files to S3
+data "archive_file" "outgoing_message_handler_source" {
+  type        = "zip"
+  source_dir  = local.outgoing_message_handler_path
+  output_path = "${path.module}/../../../iac-terraform/build/.outgoing-message-handler-source.zip"
+
+  excludes = ["node_modules", "dist", "package-lock.json"]
+}
+
+resource "aws_s3_object" "outgoing_message_handler_source" {
+  bucket = aws_s3_bucket.layer_builds.id
+  key    = "outgoing-message-handler/input/${local.outgoing_message_handler_content_tag}/source.zip"
+  source = data.archive_file.outgoing_message_handler_source.output_path
+  etag   = data.archive_file.outgoing_message_handler_source.output_md5
+
+  depends_on = [data.archive_file.outgoing_message_handler_source]
+}
+
+# CodeBuild project for TypeScript Lambda
+resource "aws_codebuild_project" "outgoing_message_handler_builder" {
+  name         = "${local.name_prefix}-outgoing-msg-handler-builder"
+  description  = "Builds the outgoing-message-handler TypeScript Lambda"
+  service_role = aws_iam_role.layer_builder.arn
+
+  build_timeout = 10 # minutes
+
+  source {
+    type     = "S3"
+    location = "${aws_s3_bucket.layer_builds.id}/outgoing-message-handler/input/${local.outgoing_message_handler_content_tag}/source.zip"
+    buildspec = templatefile("${path.module}/buildspec-ts.yml.tpl", {
+      output_bucket = aws_s3_bucket.layer_builds.id
+      output_key    = "outgoing-message-handler/output/${local.outgoing_message_handler_content_tag}/lambda.zip"
+    })
+  }
+
+  artifacts {
+    type = "NO_ARTIFACTS"
+  }
+
+  environment {
+    compute_type    = "BUILD_GENERAL1_SMALL"
+    image           = "aws/codebuild/amazonlinux-x86_64-standard:5.0"
+    type            = "LINUX_CONTAINER"
+    privileged_mode = false
+
+    environment_variable {
+      name  = "LAMBDA_TAG"
+      value = local.outgoing_message_handler_content_tag
+    }
+  }
+
+  logs_config {
+    cloudwatch_logs {
+      group_name = "/aws/codebuild/${local.name_prefix}-outgoing-msg-handler-builder"
+    }
+  }
+
+  tags = {
+    Name = "${local.name_prefix}-outgoing-msg-handler-builder"
+  }
+}
+
+# Trigger: Build TypeScript Lambda (only when source changes)
+resource "null_resource" "build_outgoing_message_handler" {
+  triggers = {
+    source_hash = local.outgoing_message_handler_content_tag
+  }
+
+  provisioner "local-exec" {
+    interpreter = ["/bin/bash", "-c"]
+    environment = {
+      AWS_PROFILE = var.aws_profile
+    }
+    command = <<-EOT
+      set -euo pipefail
+
+      echo "Starting CodeBuild for outgoing-message-handler Lambda (tag: ${local.outgoing_message_handler_content_tag})..."
+
+      BUILD_ID=$(aws codebuild start-build \
+        --project-name "${aws_codebuild_project.outgoing_message_handler_builder.name}" \
+        --query 'build.id' --output text)
+
+      echo "Build started: $BUILD_ID"
+      echo "Waiting for build to complete..."
+
+      while true; do
+        STATUS=$(aws codebuild batch-get-builds --ids "$BUILD_ID" \
+          --query 'builds[0].buildStatus' --output text)
+        case "$STATUS" in
+          SUCCEEDED)
+            echo "✅ outgoing-message-handler Lambda build succeeded!"
+            break
+            ;;
+          FAILED|FAULT|STOPPED|TIMED_OUT)
+            echo "❌ Build failed with status: $STATUS"
+            LOG_URL=$(aws codebuild batch-get-builds --ids "$BUILD_ID" \
+              --query 'builds[0].logs.deepLink' --output text)
+            echo "Build logs: $LOG_URL"
+            exit 1
+            ;;
+          *)
+            echo "  Build status: $STATUS (waiting...)"
+            sleep 10
+            ;;
+        esac
+      done
+    EOT
+  }
+
+  depends_on = [
+    aws_codebuild_project.outgoing_message_handler_builder,
+    aws_s3_object.outgoing_message_handler_source,
     aws_iam_role_policy.layer_builder
   ]
 }
