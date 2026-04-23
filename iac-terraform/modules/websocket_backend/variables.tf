@@ -38,3 +38,23 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+# -----------------------------------------------------------------------------
+# Pre-built Lambda Artifacts (S3)
+# outgoing-message-handler is built by CodeBuild in the shared module
+# -----------------------------------------------------------------------------
+
+variable "outgoing_message_handler_s3_bucket" {
+  description = "S3 bucket containing the outgoing-message-handler Lambda zip"
+  type        = string
+}
+
+variable "outgoing_message_handler_s3_key" {
+  description = "S3 key for the outgoing-message-handler Lambda zip"
+  type        = string
+}
+
+variable "outgoing_message_handler_source_hash" {
+  description = "Content hash for change detection"
+  type        = string
+}

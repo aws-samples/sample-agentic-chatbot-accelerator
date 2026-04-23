@@ -55,45 +55,8 @@ resource "aws_cloudwatch_log_group" "outgoing_message_handler" {
 # Subscribes to SNS and publishes to AppSync (publishResponse mutation)
 # -----------------------------------------------------------------------------
 
-# Build TypeScript Lambda using esbuild
-# This compiles index.ts to dist/index.js with all dependencies bundled
-resource "null_resource" "build_outgoing_message_handler" {
-  triggers = {
-    # Rebuild when source files change
-    index_hash   = filemd5("${local.lambda_function_dir}/index.ts")
-    graphql_hash = filemd5("${local.lambda_function_dir}/graphql.ts")
-    always_run   = timestamp() # Force rebuild on each apply for now
-  }
-
-  provisioner "local-exec" {
-    working_dir = local.lambda_function_dir
-    command     = <<-EOT
-      # Install esbuild if not present
-      npm install --save-dev esbuild 2>/dev/null || true
-
-      # Bundle TypeScript to JavaScript
-      npx esbuild index.ts \
-        --bundle \
-        --platform=node \
-        --target=node20 \
-        --outfile=dist/index.js \
-        --external:@aws-sdk/* \
-        --minify
-
-      echo "TypeScript build complete: dist/index.js"
-    EOT
-  }
-}
-
-# Archive the compiled JavaScript
-data "archive_file" "outgoing_message_handler" {
-  type        = "zip"
-  source_dir  = "${local.lambda_function_dir}/dist"
-  output_path = "${path.module}/../../../iac-terraform/build/outgoing-message-handler.zip"
-
-  depends_on = [null_resource.build_outgoing_message_handler]
-}
-
+# Lambda Function for Outgoing Messages
+# Source from S3 (built by CodeBuild in shared module)
 resource "aws_lambda_function" "outgoing_message_handler" {
   # checkov:skip=CKV_AWS_116:DLQ handled by SNS subscription retry policy
   # checkov:skip=CKV_AWS_117:VPC not required for this function
@@ -103,8 +66,10 @@ resource "aws_lambda_function" "outgoing_message_handler" {
   function_name = "${local.name_prefix}-outgoingMessageHandler"
   description   = "Handles outgoing messages and publishes to AppSync"
 
-  filename         = data.archive_file.outgoing_message_handler.output_path
-  source_code_hash = data.archive_file.outgoing_message_handler.output_base64sha256
+  # Source from S3 (built by CodeBuild)
+  s3_bucket        = var.outgoing_message_handler_s3_bucket
+  s3_key           = var.outgoing_message_handler_s3_key
+  source_code_hash = base64sha256(var.outgoing_message_handler_source_hash)
   handler          = "index.handler"
   runtime          = "nodejs22.x"
   architectures    = ["arm64"]

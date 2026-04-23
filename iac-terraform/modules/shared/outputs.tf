@@ -87,6 +87,21 @@ output "notify_runtime_update_source_hash" {
   value       = local.notify_runtime_update_content_tag
 }
 
+output "outgoing_message_handler_s3_bucket" {
+  description = "S3 bucket containing the outgoing-message-handler Lambda zip"
+  value       = aws_s3_bucket.layer_builds.id
+}
+
+output "outgoing_message_handler_s3_key" {
+  description = "S3 key for the outgoing-message-handler Lambda zip"
+  value       = "outgoing-message-handler/output/${local.outgoing_message_handler_content_tag}/lambda.zip"
+}
+
+output "outgoing_message_handler_source_hash" {
+  description = "Content hash of the outgoing-message-handler Lambda source (for change detection)"
+  value       = local.outgoing_message_handler_content_tag
+}
+
 output "layer_builds_bucket" {
   description = "S3 bucket for layer and Lambda builds"
   value       = aws_s3_bucket.layer_builds.id
