@@ -6,19 +6,18 @@
 import asyncio
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime
 
-from bedrock_agentcore.runtime import BedrockAgentCoreApp, RequestContext
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from opentelemetry import baggage
 from opentelemetry.context import attach
-from shared.stream_types import ChatbotAction
 from src.data_source import parse_configuration
 from src.factory import compile_graph
 
-logger = logging.getLogger("bedrock_agentcore.app")
+logger = logging.getLogger("agentcore.app")
 logger.setLevel(logging.INFO)
 
-app = BedrockAgentCoreApp()
+app = FastAPI()
 
 COMPILED_GRAPH = None
 CURRENT_SESSION_ID: str | None = None
@@ -28,151 +27,187 @@ MEMORY_ID = os.environ.get("memoryId")
 AWS_REGION = os.environ.get("AWS_REGION")
 
 
-@app.entrypoint
-async def invoke(payload, context: RequestContext):
+# ============================================================
+# Health Check (required by AgentCore)
+# ============================================================
+@app.get("/ping")
+async def ping():
+    return {"status": "Healthy", "time_of_last_update": int(datetime.now().timestamp())}
+
+
+# ============================================================
+# TEXT MODE: WebSocket endpoint (complete response, no streaming)
+# ============================================================
+@app.websocket("/ws")
+async def graph_text_chat(websocket: WebSocket):
+    """
+    Text WebSocket for Graph — sends complete response (no token streaming).
+    Graph execution is blocking; voice mode is NOT supported.
+    """
     global COMPILED_GRAPH, CURRENT_SESSION_ID, CONFIGURATION
 
-    user_message = payload.get("prompt", "Hello")
-    user_id = payload.get("userId")
-    message_id = payload.get("messageId")
-    session_id = context.session_id
-
-    ctx = baggage.set_baggage("session.id", session_id)
-    attach(ctx)
-
-    if COMPILED_GRAPH is None or CURRENT_SESSION_ID != session_id:
-        logger.info(
-            "Initializing graph for session",
-            extra={
-                "context": {
-                    "sessionId": session_id,
-                    "userId": user_id,
-                }
-            },
-        )
-
-        try:
-            CONFIGURATION = parse_configuration(logger)
-            logger.info(
-                "Graph configuration loaded",
-                extra={
-                    "nodeCount": len(CONFIGURATION.nodes),
-                    "edgeCount": len(CONFIGURATION.edges),
-                    "entryPoint": CONFIGURATION.entryPoint,
-                },
-            )
-
-            if MEMORY_ID and session_id:
-                logger.warning(
-                    "Memory/session persistence is not yet supported for Graph agents. "
-                    "Skipping session manager creation.",
-                    extra={"context": {"memoryId": MEMORY_ID}},
-                )
-
-            COMPILED_GRAPH = compile_graph(
-                configuration=CONFIGURATION,
-                logger=logger,
-                session_id=session_id,
-                user_id=user_id,
-            )
-            CURRENT_SESSION_ID = session_id
-
-            logger.info(
-                "Graph initialized successfully",
-                extra={
-                    "nodeIds": [n.id for n in CONFIGURATION.nodes],
-                    "entryPoint": CONFIGURATION.entryPoint,
-                },
-            )
-
-        except Exception as err:
-            logger.error(
-                "Failed to initialize graph", extra={"rawErrorMessage": str(err)}
-            )
-            raise err
-
-    if payload.get("isHeartbeat"):
-        logger.info("Exiting function because the payload is only a heartbeat")
-        return
-
-    logger.info(
-        "Calling graph with user message and context",
-        extra={
-            "prompt": user_message,
-            "context": {"sessionId": context.session_id, "userId": user_id},
-        },
-    )
+    await websocket.accept()
+    logger.info("Graph Text WebSocket connection accepted")
 
     try:
-        input_state = {"messages": [user_message]}
+        while True:
+            message = await websocket.receive_json()
+            msg_type = message.get("type")
 
-        invoke_config = {
-            "recursion_limit": CONFIGURATION.orchestrator.maxIterations,
-        }
+            if msg_type == "text_input":
+                user_message = message.get("text", "Hello")
+                user_id = message.get("userId")
+                message_id = message.get("messageId")
+                session_id = message.get("sessionId")
 
-        timeout_seconds = CONFIGURATION.orchestrator.executionTimeoutSeconds
+                ctx = baggage.set_baggage("session.id", session_id)
+                attach(ctx)
 
-        result = await asyncio.wait_for(
-            COMPILED_GRAPH.ainvoke(input_state, config=invoke_config),
-            timeout=timeout_seconds,
-        )
+                if COMPILED_GRAPH is None or CURRENT_SESSION_ID != session_id:
+                    logger.info(
+                        "Initializing graph for session",
+                        extra={
+                            "context": {
+                                "sessionId": session_id,
+                                "userId": user_id,
+                            }
+                        },
+                    )
 
-        logger.info(
-            "Graph completed",
-            extra={
-                "resultKeys": list(result.keys()) if isinstance(result, dict) else None,
-            },
-        )
+                    try:
+                        CONFIGURATION = parse_configuration(logger)
+                        logger.info(
+                            "Graph configuration loaded",
+                            extra={
+                                "nodeCount": len(CONFIGURATION.nodes),
+                                "edgeCount": len(CONFIGURATION.edges),
+                                "entryPoint": CONFIGURATION.entryPoint,
+                            },
+                        )
 
-        final_content = ""
-        if isinstance(result, dict):
-            messages = result.get("messages", "")
-            if isinstance(messages, str):
-                # LangGraph state replacement: messages is the content string directly
-                final_content = messages
-            elif isinstance(messages, list) and messages:
-                last_message = messages[-1]
-                final_content = (
-                    str(last_message)
-                    if not isinstance(last_message, str)
-                    else last_message
+                        if MEMORY_ID and session_id:
+                            logger.warning(
+                                "Memory/session persistence is not yet supported for Graph agents. "
+                                "Skipping session manager creation.",
+                                extra={"context": {"memoryId": MEMORY_ID}},
+                            )
+
+                        COMPILED_GRAPH = compile_graph(
+                            configuration=CONFIGURATION,
+                            logger=logger,
+                            session_id=session_id,
+                            user_id=user_id,
+                        )
+                        CURRENT_SESSION_ID = session_id
+
+                        logger.info(
+                            "Graph initialized successfully",
+                            extra={
+                                "nodeIds": [n.id for n in CONFIGURATION.nodes],
+                                "entryPoint": CONFIGURATION.entryPoint,
+                            },
+                        )
+
+                    except Exception as err:
+                        logger.error(
+                            "Failed to initialize graph",
+                            extra={"rawErrorMessage": str(err)},
+                        )
+                        await websocket.send_json(
+                            {"type": "error", "message": str(err)}
+                        )
+                        continue
+
+                logger.info(
+                    "Calling graph with user message and context",
+                    extra={
+                        "prompt": user_message,
+                        "context": {
+                            "sessionId": session_id,
+                            "userId": user_id,
+                        },
+                    },
                 )
-            else:
-                final_content = str(result)
-        else:
-            final_content = str(result)
 
-        final_answer_data = {
-            "content": final_content,
-            "sessionId": session_id,
-            "messageId": message_id,
-            "type": "text",
-        }
+                try:
+                    input_state = {"messages": [user_message]}
 
-        final_answer_payload = {
-            "action": ChatbotAction.FINAL_RESPONSE.value,
-            "userId": user_id,
-            "timestamp": int(round(datetime.now(timezone.utc).timestamp())),
-            "type": "text",
-            "framework": "AGENT_CORE",
-            "data": final_answer_data,
-        }
+                    invoke_config = {
+                        "recursion_limit": CONFIGURATION.orchestrator.maxIterations,
+                    }
 
-        yield final_answer_payload
+                    timeout_seconds = CONFIGURATION.orchestrator.executionTimeoutSeconds
 
-    except asyncio.TimeoutError:
-        timeout_msg = (
-            f"Graph execution timed out after "
-            f"{CONFIGURATION.orchestrator.executionTimeoutSeconds}s"
-        )
-        logger.error(timeout_msg)
-        yield {"error": timeout_msg, "action": "error"}
+                    result = await asyncio.wait_for(
+                        COMPILED_GRAPH.ainvoke(input_state, config=invoke_config),
+                        timeout=timeout_seconds,
+                    )
 
-    except Exception as err:
-        logger.error("Failed graph call", extra={"rawErrorMessage": str(err)})
-        logger.exception(err)
-        yield {"error": str(err), "action": "error"}
+                    logger.info(
+                        "Graph completed",
+                        extra={
+                            "resultKeys": list(result.keys())
+                            if isinstance(result, dict)
+                            else None,
+                        },
+                    )
+
+                    final_content = ""
+                    if isinstance(result, dict):
+                        messages = result.get("messages", "")
+                        if isinstance(messages, str):
+                            final_content = messages
+                        elif isinstance(messages, list) and messages:
+                            last_message = messages[-1]
+                            final_content = (
+                                str(last_message)
+                                if not isinstance(last_message, str)
+                                else last_message
+                            )
+                        else:
+                            final_content = str(result)
+                    else:
+                        final_content = str(result)
+
+                    final_data: dict = {
+                        "type": "final_response",
+                        "content": final_content,
+                        "sessionId": session_id,
+                        "messageId": message_id,
+                    }
+
+                    await websocket.send_json(final_data)
+
+                except asyncio.TimeoutError:
+                    timeout_msg = (
+                        f"Graph execution timed out after "
+                        f"{CONFIGURATION.orchestrator.executionTimeoutSeconds}s"
+                    )
+                    logger.error(timeout_msg)
+                    await websocket.send_json({"type": "error", "message": timeout_msg})
+
+                except Exception as err:
+                    logger.error(
+                        "Failed graph call",
+                        extra={"rawErrorMessage": str(err)},
+                    )
+                    logger.exception(err)
+                    await websocket.send_json({"type": "error", "message": str(err)})
+
+            elif msg_type == "heartbeat":
+                await websocket.send_json({"type": "heartbeat_ack"})
+
+    except WebSocketDisconnect:
+        logger.info("Graph WebSocket client disconnected")
+    except Exception as e:
+        logger.error(f"Graph WebSocket error: {e}")
 
 
+# ============================================================
+# Entry point
+# ============================================================
 if __name__ == "__main__":
-    app.run()
+    import uvicorn
+
+    host = "0.0.0.0" if os.getenv("DOCKER_CONTAINER") else "127.0.0.1"
+    uvicorn.run(app, host=host, port=8080)

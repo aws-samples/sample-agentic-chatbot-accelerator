@@ -18,12 +18,13 @@ dev = [
     "opensearch-py>=2.8.0",
     "pydantic>=2.10.5",
     "requests>=2.32.3",
-    "strands-agents>=1.21.0",
+    "strands-agents[bidi]>=1.37.0",
     "bedrock-agentcore>=1.1.0",
     "mcp-proxy-for-aws>=1.2.0",
     "retry>=0.9.2",
     "strands-agents-evals>=0.1.8",
     "langgraph>=1.0.10",
+    "fastapi>=0.136.1",
 ]
 
 [tool.uv]

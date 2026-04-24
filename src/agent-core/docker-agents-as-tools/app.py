@@ -7,250 +7,313 @@ import json
 import logging
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from bedrock_agentcore.runtime import BedrockAgentCoreApp, RequestContext
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from shared.agentcore_memory import create_session_manager
 from shared.mcp_client import MCPClientManager
 from shared.utils import enrich_trajectory
 from src.data_source import parse_configuration
 from src.factory import create_orchestrator
 from src.registry import AVAILABLE_MCPS
-from src.types import ChatbotAction
 from strands_evals.mappers import StrandsInMemorySessionMapper
 from strands_evals.telemetry import StrandsEvalsTelemetry
 
 if TYPE_CHECKING:
     from strands.agent import AgentResult
 
-logger = logging.getLogger("bedrock_agentcore.app")
+logger = logging.getLogger("agentcore.app")
 logger.setLevel(logging.INFO)
 
-app = BedrockAgentCoreApp()
-
-# ------------------------------------------------------------------------ #
-ORCHESTRATOR = None
-SESSION_ID: str | None = None
-CALLBACKS = None
-MCP_CLIENT_MANAGER: MCPClientManager | None = None
-
-TELEMETRY = StrandsEvalsTelemetry().setup_in_memory_exporter()
-MEMORY_EXPORTER = TELEMETRY.in_memory_exporter
+app = FastAPI()
 
 MEMORY_ID = os.environ.get("memoryId")
 AWS_REGION = os.environ.get("AWS_REGION")
-# ------------------------------------------------------------------------ #
 
 
-@app.entrypoint
-async def invoke(payload: dict, context: RequestContext):
-    """Process user input and return a response"""
-    global ORCHESTRATOR, SESSION_ID, CALLBACKS
+# ============================================================
+# Health Check (required by AgentCore)
+# ============================================================
+@app.get("/ping")
+async def ping():
+    return {"status": "Healthy", "time_of_last_update": int(datetime.now().timestamp())}
 
-    user_message = payload.get("prompt", "Hello")
-    user_id, session_id = _get_context(payload, context)
-    message_id = payload.get("messageId")
-    include_trajectory = payload.get("includeTrajectory", False)
 
-    if include_trajectory:
-        MEMORY_EXPORTER.clear()
-        logger.info("Trajectory capture enabled for this request")
+# ============================================================
+# TEXT MODE: WebSocket endpoint for text streaming
+# ============================================================
+@app.websocket("/ws")
+async def text_chat(websocket: WebSocket):
+    """
+    WebSocket endpoint for Agents-as-Tools text-based chat with real-time token streaming.
+    """
+    await websocket.accept()
+    logger.info("Agents-as-Tools Text WebSocket connection accepted")
 
-    # Parse optional session state from payload (stringified JSON)
-    state_json = payload.get("state")
-    state = json.loads(state_json) if state_json else None
+    orchestrator = None
+    callbacks = None
+    mcp_client_manager: MCPClientManager | None = None
+    current_session_id: str | None = None
 
-    if ORCHESTRATOR is None or SESSION_ID != session_id:
-        _initialize(user_id, session_id, include_trajectory, state=state)
+    telemetry = StrandsEvalsTelemetry().setup_in_memory_exporter()
+    memory_exporter = telemetry.in_memory_exporter
 
-    _reset(include_trajectory)
+    try:
+        while True:
+            message = await websocket.receive_json()
+            msg_type = message.get("type")
 
-    if payload.get("isHeartbeat"):
-        logger.info("Exiting function because the payload is only a heartbeat")
-        return
+            if msg_type == "text_input":
+                user_message = message.get("text", "")
+                session_id = message.get("sessionId", str(uuid.uuid4()))
+                user_id = message.get("userId", "")
+                message_id = message.get("messageId", str(uuid.uuid4()))
+                include_trajectory = message.get("includeTrajectory", False)
 
-    logger.info(
-        "Calling agent with user message and context",
-        extra={
-            "prompt": user_message,
-            "context": {"sessionId": context.session_id, "userId": user_id},
+                if not user_id:
+                    await websocket.send_json(
+                        {"type": "error", "message": "User identifier must be present"}
+                    )
+                    continue
+
+                if include_trajectory:
+                    memory_exporter.clear()
+
+                # Parse optional session state from message (stringified JSON)
+                state_json = message.get("state")
+                state = (
+                    json.loads(state_json)
+                    if state_json and isinstance(state_json, str)
+                    else state_json
+                )
+
+                # Initialize orchestrator once per session (or if session changes)
+                if orchestrator is None or current_session_id != session_id:
+                    if mcp_client_manager and current_session_id != session_id:
+                        mcp_client_manager.cleanup_connections()
+
+                    logger.info(
+                        "Initializing agent for session",
+                        extra={
+                            "context": {
+                                "sessionId": session_id,
+                                "userId": user_id,
+                            }
+                        },
+                    )
+
+                    try:
+                        configuration = parse_configuration(logger)
+                        logger.info(
+                            f"Agent configuration: {configuration.model_dump_json()}"
+                        )
+
+                        # Init MCP Clients if provided in agent config
+                        if configuration.mcpServers:
+                            mcp_client_manager = MCPClientManager(
+                                mcp_servers=configuration.mcpServers,
+                                logger=logger,
+                                mcp_registry=AVAILABLE_MCPS,
+                            )
+                            mcp_client_manager.init_mcp_clients()
+
+                        # Create session manager if memory is enabled
+                        session_manager = None
+                        if MEMORY_ID and session_id:
+                            logger.info(
+                                "Creating session manager with AgentCore Memory",
+                                extra={"context": {"memoryId": MEMORY_ID}},
+                            )
+                            session_manager = create_session_manager(
+                                memory_id=MEMORY_ID,
+                                session_id=session_id,
+                                user_id=user_id,
+                                region_name=AWS_REGION,
+                            )
+
+                        # Trace attributes for trajectory capture
+                        trace_attrs = None
+                        if include_trajectory:
+                            trace_attrs = {
+                                "gen_ai.conversation.id": session_id,
+                                "session.id": session_id,
+                            }
+
+                        orchestrator, callbacks = create_orchestrator(
+                            configuration,
+                            logger,
+                            session_id,
+                            user_id,
+                            mcp_client_manager,
+                            session_manager,
+                            trace_attributes=trace_attrs,
+                            state=state,
+                        )
+                        current_session_id = session_id
+
+                    except Exception as err:
+                        logger.error(
+                            "Failed to initialize agent",
+                            extra={"rawErrorMessage": str(err)},
+                        )
+                        if mcp_client_manager:
+                            mcp_client_manager.cleanup_connections()
+                        await websocket.send_json(
+                            {"type": "error", "message": str(err)}
+                        )
+                        continue
+
+                # Reset metadata for new turn
+                if include_trajectory:
+                    memory_exporter.clear()
+                if callbacks:
+                    callbacks.reset_metadata()
+
+                logger.info(
+                    "Calling agent with user message and context",
+                    extra={
+                        "prompt": user_message,
+                        "context": {
+                            "sessionId": session_id,
+                            "userId": user_id,
+                        },
+                    },
+                )
+
+                # Stream response tokens
+                try:
+                    run_id = str(uuid.uuid4())
+                    token_id = 0
+
+                    async for event in orchestrator.stream_async(
+                        user_message,
+                        invocation_state={
+                            "userId": user_id,
+                            "sessionId": session_id,
+                        },
+                    ):
+                        if "data" in event:
+                            await websocket.send_json(
+                                {
+                                    "type": "text_token",
+                                    "data": event["data"],
+                                    "sequenceNumber": token_id,
+                                    "runId": f"t-{run_id}",
+                                }
+                            )
+                            token_id += 1
+
+                        elif "result" in event:
+                            final_data = _build_final_response(
+                                session_id,
+                                message_id,
+                                event["result"],
+                                include_trajectory,
+                                callbacks,
+                                memory_exporter,
+                            )
+                            await websocket.send_json(final_data)
+
+                except Exception as err:
+                    logger.exception(f"Error streaming response: {err}")
+                    await websocket.send_json({"type": "error", "message": str(err)})
+
+            elif msg_type == "heartbeat":
+                await websocket.send_json({"type": "heartbeat_ack"})
+
+    except WebSocketDisconnect:
+        logger.info("Agents-as-Tools WebSocket client disconnected")
+    except Exception as e:
+        logger.error(f"Agents-as-Tools WebSocket error: {e}")
+    finally:
+        if mcp_client_manager:
+            mcp_client_manager.cleanup_connections()
+
+
+# ============================================================
+# VOICE MODE: WebSocket endpoint for bidirectional audio
+# ============================================================
+@app.websocket("/ws/voice")
+async def voice_chat(websocket: WebSocket):
+    """
+    WebSocket endpoint for bidirectional voice streaming via Nova Sonic.
+    Agents-as-Tools supports voice because the orchestrator is a single Agent
+    with sub-agents invoked as tools.
+    """
+    from strands.experimental.bidi import BidiAgent
+    from strands.experimental.bidi.models import BidiNovaSonicModel
+    from strands.experimental.bidi.tools import stop_conversation
+
+    MODEL_ID = os.getenv("VOICE_MODEL_ID", "amazon.nova-2-sonic-v1:0")
+    BEDROCK_REGION = os.getenv("BEDROCK_REGION", AWS_REGION or "us-east-1")
+
+    sonic_model = BidiNovaSonicModel(
+        model_id=MODEL_ID,
+        provider_config={
+            "audio": {
+                "voice": "tiffany",
+                "input_rate": 16000,
+                "output_rate": 16000,
+                "channels": 1,
+                "format": "pcm",
+            },
+            "inference": {},
         },
+        client_config={"region": BEDROCK_REGION},
+    )
+
+    configuration = parse_configuration(logger)
+    tools = _initialize_voice_tools(configuration)
+
+    voice_agent = BidiAgent(
+        model=sonic_model,
+        tools=tools + [stop_conversation],
+        system_prompt=configuration.instructions,
     )
 
     try:
-        run_id = str(uuid.uuid4())
-        token_id = 0
-        if ORCHESTRATOR is None:
-            raise AssertionError("Orchestrator must be initialized at this point.")
-        async for event in ORCHESTRATOR.stream_async(
-            user_message,
-            invocation_state={"userId": user_id, "sessionId": session_id},
-        ):
-            if "data" in event:
-                payload = _build_token_payload(
-                    user_id, session_id, run_id, token_id, event["data"]
-                )
-                logger.debug("Sending a token", extra={"dataToSend": payload})
-                yield payload
-                token_id += 1
+        await websocket.accept()
+        logger.info("Voice WebSocket connection accepted")
 
-            elif "result" in event:
-                yield _build_final_response_payload(
-                    user_id,
-                    session_id,
-                    message_id,
-                    event["result"],
-                    include_trajectory,
-                )
-    except Exception as err:
-        logger.exception(err)
-        yield {"error": str(err), "action": "error"}
+        await voice_agent.run(
+            inputs=[websocket.receive_json],
+            outputs=[websocket.send_json],
+        )
+    except WebSocketDisconnect:
+        logger.info("Voice WebSocket client disconnected")
+    except Exception as e:
+        logger.error(f"Voice WebSocket error: {e}")
+        import traceback
+
+        traceback.print_exc()
+    finally:
+        try:
+            await websocket.close()
+            await voice_agent.stop()
+        except Exception:
+            pass
+
+
+def _initialize_voice_tools(configuration):
+    """Initialize tools from agent configuration for voice mode."""
+    from src.registry import AVAILABLE_TOOLS
+
+    tools = []
+    for tool_name in configuration.tools:
+        if tool_name in AVAILABLE_TOOLS:
+            record = AVAILABLE_TOOLS[tool_name]
+            params = configuration.toolParameters.get(tool_name, {})
+            params.pop("invokesSubAgent", None)
+            tools.append(record["factory"](**params))
+    return tools
 
 
 # --- private helpers ---
 
 
-def _get_context(payload: dict, context: RequestContext) -> tuple[str, str]:
-    """Fetch mandatory user_id and session_id
-
-    Raise an exception if any of those is missing
-    """
-    user_id = payload.get("userId")
-    session_id = context.session_id
-
-    if user_id is None:
-        raise ValueError("User identifier must be present")
-    if session_id is None:
-        raise ValueError("Session identifier must be present")
-
-    return user_id, session_id
-
-
-def _initialize(
-    user_id: str,
-    session_id: str,
-    include_trajectory: bool,
-    state: dict | None = None,
-):
-    """initialize a new agent once for each runtime container session
-
-    Conversation state will be persisted in both local memory and remote agentcore memory.
-    For resumed sessions, AgentCoreMemorySessionManager will rehydrate state from agentcore memory.
-    """
-    global ORCHESTRATOR, CALLBACKS, MCP_CLIENT_MANAGER, SESSION_ID
-
-    if MCP_CLIENT_MANAGER and SESSION_ID != session_id:
-        MCP_CLIENT_MANAGER.cleanup_connections()
-
-    logger.info(
-        "Initializing agent for session",
-        extra={
-            "context": {
-                "sessionId": session_id,
-                "userId": user_id,
-            }
-        },
-    )
-
-    try:
-        configuration = parse_configuration(logger)
-        logger.info(f"Agent configuration: {configuration.model_dump_json()}")
-
-        # Init MCP Clients if provided in agent config
-        if configuration.mcpServers:
-            MCP_CLIENT_MANAGER = MCPClientManager(
-                mcp_servers=configuration.mcpServers,
-                logger=logger,
-                mcp_registry=AVAILABLE_MCPS,
-            )
-            MCP_CLIENT_MANAGER.init_mcp_clients()
-
-        # Create session manager if memory is enabled
-        session_manager = None
-        if MEMORY_ID and session_id:
-            logger.info(
-                "Creating session manager with AgentCore Memory",
-                extra={"context": {"memoryId": MEMORY_ID}},
-            )
-            session_manager = create_session_manager(
-                memory_id=MEMORY_ID,
-                session_id=session_id,
-                user_id=user_id,
-                region_name=AWS_REGION,
-            )
-
-        # Trace attributes for trajectory capture
-        # These link OpenTelemetry spans to this session for evaluation
-        trace_attrs = None
-        if include_trajectory:
-            trace_attrs = {
-                "gen_ai.conversation.id": session_id,
-                "session.id": session_id,
-            }
-            logger.info("Agent configured with trace attributes for trajectory capture")
-
-        ORCHESTRATOR, CALLBACKS = create_orchestrator(
-            configuration,
-            logger,
-            session_id,  # type: ignore
-            user_id,
-            MCP_CLIENT_MANAGER,
-            session_manager,
-            trace_attributes=trace_attrs,  # type: ignore
-            state=state,
-        )
-        SESSION_ID = session_id
-
-    except Exception as err:
-        logger.error("Failed to initialize agent", extra={"rawErrorMessage": str(err)})
-        if MCP_CLIENT_MANAGER:
-            MCP_CLIENT_MANAGER.cleanup_connections()  # cleanup mcp connection if agent creation fails
-        raise err
-
-
-def _reset(include_trajectory: bool):
-    global MEMORY_EXPORTER, CALLBACKS
-
-    if include_trajectory:
-        MEMORY_EXPORTER.clear()
-        logger.info("Trajectory capture enabled for this request")
-
-    if CALLBACKS:
-        CALLBACKS.reset_metadata()
-
-
-def _build_token_payload(
-    user_id: str,
-    session_id: str,
-    run_id: str,
-    token_id: int,
-    token_value: str,
-) -> dict:
-    """Build an ``ON_NEW_LLM_TOKEN`` streaming event payload."""
-    return {
-        "action": ChatbotAction.ON_NEW_LLM_TOKEN.value,
-        "userId": user_id,
-        "timestamp": int(round(datetime.now(timezone.utc).timestamp())),
-        "type": "text",
-        "framework": "AGENT_CORE",
-        "data": {
-            "sessionId": session_id,
-            "token": {
-                "runId": f"t-{run_id}",
-                "sequenceNumber": token_id,
-                "value": token_value,
-            },
-        },
-    }
-
-
 def _extract_reasoning_content(agent_result: "AgentResult") -> str:
-    """Extract concatenated reasoning text from an agent result message.
-
-    Walks the nested ``reasoningContent → reasoningText → text`` structure
-    and returns the combined string (empty when no reasoning is present).
-    """
+    """Extract concatenated reasoning text from an agent result message."""
     parts: list[str] = []
     for item in agent_result.message.get("content", []):
         if not isinstance(item, dict) or "reasoningContent" not in item:
@@ -264,30 +327,25 @@ def _extract_reasoning_content(agent_result: "AgentResult") -> str:
     return "\n".join(parts)
 
 
-def _capture_trajectory(session_id: str) -> Any | None:
-    """Capture an evaluation trajectory from in-memory OpenTelemetry spans.
-
-    Returns the trajectory (dict or Session object) on success, or ``None``
-    if spans are unavailable or an error occurs.
-    """
+def _capture_trajectory(
+    session_id: str, callbacks: Any, memory_exporter: Any
+) -> Any | None:
+    """Capture an evaluation trajectory from in-memory OpenTelemetry spans."""
     try:
-        finished_spans = MEMORY_EXPORTER.get_finished_spans()
+        finished_spans = memory_exporter.get_finished_spans()
         if not finished_spans:
             logger.warning("No spans captured for trajectory")
             return None
 
         mapper = StrandsInMemorySessionMapper()
         trajectory_session = mapper.map_to_session(
-            finished_spans, session_id=session_id  # type: ignore
+            finished_spans, session_id=session_id
         )
 
-        # Post-process trajectory to inject captured tool arguments.
-        # The OpenTelemetry spans don't capture MCP tool arguments properly,
-        # so we enrich the trajectory with data captured in callbacks.
-        if CALLBACKS and hasattr(CALLBACKS, "tool_executions"):
+        if callbacks and hasattr(callbacks, "tool_executions"):
             trajectory_session = enrich_trajectory(
                 trajectory_session,
-                CALLBACKS.tool_executions,
+                callbacks.tool_executions,
                 logger,
             )
 
@@ -304,18 +362,15 @@ def _capture_trajectory(session_id: str) -> Any | None:
         return None
 
 
-def _build_final_response_payload(
-    user_id: str,
+def _build_final_response(
     session_id: str,
     message_id: str | None,
     agent_result: "AgentResult",
     include_trajectory: bool,
+    callbacks: Any,
+    memory_exporter: Any,
 ) -> dict:
-    """Build a ``FINAL_RESPONSE`` event payload from an agent result.
-
-    Assembles the final answer data including optional reasoning content,
-    reference metadata, and evaluation trajectory.
-    """
+    """Build a final_response WebSocket message from an agent result."""
     logger.info(
         "Agent result event",
         extra={
@@ -327,11 +382,11 @@ def _build_final_response_payload(
         },
     )
 
-    final_answer_data: dict = {
+    final_data: dict = {
+        "type": "final_response",
         "content": str(agent_result),
         "sessionId": session_id,
         "messageId": message_id,
-        "type": "text",
     }
 
     # Reasoning content
@@ -341,38 +396,34 @@ def _build_final_response_payload(
             "Model reasoning process",
             extra={"modelReasoning": {"content": reasoning_content}},
         )
-        final_answer_data["reasoningContent"] = reasoning_content
+        final_data["reasoningContent"] = reasoning_content
 
     # References from callbacks
-    if CALLBACKS and CALLBACKS.metadata.get("references"):
-        final_answer_data["references"] = json.dumps(CALLBACKS.metadata["references"])
+    if callbacks and callbacks.metadata.get("references"):
+        final_data["references"] = json.dumps(callbacks.metadata["references"])
 
     # Trajectory for evaluation
     if include_trajectory:
-        trajectory = _capture_trajectory(session_id)
+        trajectory = _capture_trajectory(session_id, callbacks, memory_exporter)
         if trajectory is not None:
-            final_answer_data["trajectory"] = trajectory
+            final_data["trajectory"] = trajectory
 
     logger.info(
         "Sending the final answer",
         extra={
             "finalAnswerData": {
-                k: v for k, v in final_answer_data.items() if k != "trajectory"
+                k: v for k, v in final_data.items() if k != "trajectory"
             }
         },
     )
 
-    return {
-        "action": ChatbotAction.FINAL_RESPONSE.value,
-        "userId": user_id,
-        "timestamp": int(round(datetime.now(timezone.utc).timestamp())),
-        "type": "text",
-        "framework": "AGENT_CORE",
-        "data": final_answer_data,
-    }
+    return final_data
 
 
 # --- entry point ---
 
 if __name__ == "__main__":
-    app.run()
+    import uvicorn
+
+    host = "0.0.0.0" if os.getenv("DOCKER_CONTAINER") else "127.0.0.1"
+    uvicorn.run(app, host=host, port=8080)
