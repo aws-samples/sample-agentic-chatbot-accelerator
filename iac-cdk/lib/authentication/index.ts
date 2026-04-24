@@ -84,7 +84,10 @@ export class Authentication extends Construct {
         identityPool.authenticatedRole.addToPrincipalPolicy(
             new iam.PolicyStatement({
                 effect: iam.Effect.ALLOW,
-                actions: ["bedrock-agentcore:InvokeAgentRuntime"],
+                actions: [
+                    "bedrock-agentcore:InvokeAgentRuntime",
+                    "bedrock-agentcore:InvokeAgentRuntimeWithWebSocketStream",
+                ],
                 resources: [
                     `arn:aws:bedrock-agentcore:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:runtime/*`,
                 ],
