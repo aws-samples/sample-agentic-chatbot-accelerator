@@ -210,6 +210,7 @@ def handler(event: InputModel, _) -> dict:
             "createdAt": str(created_at),
             "accountId": ACCOUNT_ID,
             "agentToolsTopicArn": AGENT_TOOLS_TOPIC_ARN,
+            "sessionsTableName": os.environ.get("SESSIONS_TABLE_NAME", ""),
         },
     }
 

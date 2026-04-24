@@ -15,6 +15,7 @@ from opentelemetry import baggage
 from opentelemetry.context import attach
 from shared.agentcore_memory import create_session_manager
 from shared.mcp_client import MCPClientManager
+from shared.session_history import save_conversation_exchange
 from shared.utils import enrich_trajectory
 from src.data_source import parse_configuration
 from src.factory import create_agent
@@ -207,9 +208,10 @@ async def text_chat(websocket: WebSocket):
                         )
                         continue
 
-                # Reset metadata for new turn
+                # Reset metadata for new turn and pass WebSocket reference
                 if callbacks:
                     callbacks.reset_metadata()
+                    callbacks._websocket = websocket
 
                 # Hydrate agent state from message on every non-heartbeat message
                 state_json = message.get("state")
@@ -377,6 +379,32 @@ async def text_chat(websocket: WebSocket):
                             )
 
                             await websocket.send_json(final_data)
+
+                            # Save conversation to session history (DynamoDB)
+                            try:
+                                save_conversation_exchange(
+                                    session_id=session_id,
+                                    user_id=user_id,
+                                    message_id=message_id,
+                                    user_message=user_message,
+                                    ai_response=final_data.get("content", ""),
+                                    references=final_data.get("references"),
+                                    reasoning_content=final_data.get(
+                                        "reasoningContent"
+                                    ),
+                                    structured_output=final_data.get(
+                                        "structuredOutput"
+                                    ),
+                                    runtime_id=message.get(
+                                        "agentRuntimeId",
+                                        os.environ.get("agentName", ""),
+                                    ),
+                                    endpoint_name=message.get("qualifier", "DEFAULT"),
+                                )
+                            except Exception as hist_err:
+                                logger.warning(
+                                    f"Failed to save session history: {hist_err}"
+                                )
 
                 except Exception as err:
                     logger.exception(f"Error streaming response: {err}")

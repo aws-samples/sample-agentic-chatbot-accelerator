@@ -628,6 +628,7 @@ export class AgentCoreApis extends Construct {
                 ENVIRONMENT_TAG: transformedTags.Environment,
                 STACK_TAG: transformedTags.Stack,
                 AGENT_TOOLS_TOPIC_ARN: props.agentToolsTopic.topicArn,
+                SESSIONS_TABLE_NAME: `${prefix}-sessionsTable`,
                 AGENTS_TABLE_NAME: props.agentCoreRuntimeTable.tableName,
                 AGENTS_SUMMARY_TABLE_NAME: props.agentCoreSummaryTable.tableName,
                 ...(props.config.bedrockAccessRoleArn && {

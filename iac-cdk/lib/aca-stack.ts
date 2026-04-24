@@ -77,6 +77,10 @@ export class AcaStack extends cdk.Stack {
         const auth = new Authentication(this, "Authentication", props.config);
 
         // temp below
+        // Sessions table name follows the {prefix}-sessionsTable convention
+        // (prefix = stackName.toLowerCase(), same as generatePrefix)
+        const sessionsTableName = `${this.stackName.toLowerCase()}-sessionsTable`;
+
         const agentCoreInfra = new AcaAgentCoreContainer(this, "AgentCoreInfra", {
             shared: shared,
             config: props.config,
@@ -85,6 +89,7 @@ export class AcaStack extends cdk.Stack {
             swarmImage: props.builder.swarmImage,
             graphImage: props.builder.graphImage,
             agentsAsToolsImage: props.builder.agentsAsToolsImage,
+            sessionsTableName: sessionsTableName,
         });
 
         const api = new ChatbotApi(this, "ChatbotApi", {
@@ -110,6 +115,17 @@ export class AcaStack extends cdk.Stack {
             agentToolsTopic: agentCoreInfra.agentToolsTopic,
             batchImage: props.builder.batchImage,
         });
+
+        // Grant AgentCore containers permission to write session history to DynamoDB
+        // (for direct WebSocket architecture — sessions are saved from the container)
+        agentCoreInfra.executionRole.addToPolicy(
+            new cdk.aws_iam.PolicyStatement({
+                sid: "WriteSessionHistory",
+                effect: cdk.aws_iam.Effect.ALLOW,
+                actions: ["dynamodb:PutItem", "dynamodb:UpdateItem"],
+                resources: [api.sessionsTable.tableArn],
+            }),
+        );
 
         const genaiInterface = new GenAIInterface(this, "GenAIInterface", {
             shared: shared,

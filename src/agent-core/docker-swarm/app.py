@@ -12,6 +12,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from opentelemetry import baggage
 from opentelemetry.context import attach
 from shared.mcp_client import MCPClientManager
+from shared.session_history import save_conversation_exchange
 from src.data_source import parse_configuration
 from src.factory import create_swarm
 from src.registry import AVAILABLE_MCPS
@@ -254,6 +255,23 @@ async def swarm_text_chat(websocket: WebSocket):
                             }
 
                     await websocket.send_json(final_data)
+
+                    # Save conversation to session history
+                    try:
+                        save_conversation_exchange(
+                            session_id=session_id,
+                            user_id=user_id,
+                            message_id=message_id,
+                            user_message=user_message,
+                            ai_response=final_data.get("content", ""),
+                            reasoning_content=final_data.get("reasoningContent"),
+                            runtime_id=message.get(
+                                "agentRuntimeId", os.environ.get("agentName", "")
+                            ),
+                            endpoint_name=message.get("qualifier", "DEFAULT"),
+                        )
+                    except Exception as hist_err:
+                        logger.warning(f"Failed to save session history: {hist_err}")
 
                 except Exception as err:
                     logger.error(

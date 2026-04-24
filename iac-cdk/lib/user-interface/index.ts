@@ -88,6 +88,7 @@ export class UserInterface extends Construct {
 
         const exportsAsset = s3deploy.Source.jsonData("aws-exports.json", {
             aws_project_region: cdk.Aws.REGION,
+            aws_account_id: cdk.Aws.ACCOUNT_ID,
             aws_cognito_region: cdk.Aws.REGION,
             aws_user_pools_id: props.userPoolId,
             aws_user_pools_web_client_id: props.userPoolClientId,

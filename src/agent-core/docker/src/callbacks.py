@@ -87,10 +87,35 @@ class AgentCallbacks(BaseAgentCallbacks):
         # Extract parameters using base class helper
         parameters = self._extract_tool_parameters(event, specs)
 
-        # Publish tool invocation using base class helper
+        # Publish tool invocation using base class helper (SNS)
         tool_name = event.tool_use.get("name", "unknown")
         tool_description = specs.get("description", "") if specs else ""
         self._publish_tool_invocation(tool_name, tool_description, parameters)
+
+        # Send tool action directly via WebSocket for instant UI feedback
+        if self._websocket:
+            import asyncio
+
+            try:
+                coro = self._websocket.send_json(
+                    {
+                        "type": "tool_action",
+                        "toolName": tool_name,
+                        "description": tool_description,
+                        "parameters": [p["name"] for p in parameters],
+                        "invocationNumber": self._nb_tool_invocations,
+                    }
+                )
+                # Schedule the coroutine on the running event loop
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.ensure_future(coro)
+                else:
+                    loop.run_until_complete(coro)
+            except Exception as ws_err:
+                self._logger.warning(
+                    f"Failed to send tool action via WebSocket: {ws_err}"
+                )
 
     def log_tool_results(self, event: AfterToolCallEvent) -> None:
         """Logs tool results and stores them for trajectory enrichment.
