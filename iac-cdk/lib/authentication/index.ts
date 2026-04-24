@@ -5,6 +5,7 @@ SPDX-License-Identifier: MIT-0
 import * as cognitoIdentityPool from "@aws-cdk/aws-cognito-identitypool-alpha";
 import * as cdk from "aws-cdk-lib";
 import * as cognito from "aws-cdk-lib/aws-cognito";
+import * as iam from "aws-cdk-lib/aws-iam";
 import { NagSuppressions } from "cdk-nag";
 import { Construct } from "constructs";
 import { SystemConfig } from "../shared/types";
@@ -78,6 +79,17 @@ export class Authentication extends Construct {
                 ],
             },
         });
+
+        // Grant authenticated users permission to invoke AgentCore runtimes via WebSocket
+        identityPool.authenticatedRole.addToPrincipalPolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: ["bedrock-agentcore:InvokeAgentRuntime"],
+                resources: [
+                    `arn:aws:bedrock-agentcore:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:runtime/*`,
+                ],
+            }),
+        );
 
         this.userPool = userPool;
         this.userPoolClient = userPoolClient;

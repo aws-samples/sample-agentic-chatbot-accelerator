@@ -12,6 +12,10 @@
         "format": "npx prettier --ignore-path .gitignore --write \"**/*.+(tsx|js|ts|json)\""
     },
     "dependencies": {
+        "@aws-crypto/sha256-js": "^5.2.0",
+        "@aws-sdk/client-cognito-identity": "^3.600.0",
+        "@smithy/protocol-http": "^4.1.0",
+        "@smithy/signature-v4": "^4.1.0",
         "@aws-amplify/ui-react": "^6.8.1",
         "@cloudscape-design/chat-components": "^1.0.91",
         "@cloudscape-design/code-view": "^3.0.98",
