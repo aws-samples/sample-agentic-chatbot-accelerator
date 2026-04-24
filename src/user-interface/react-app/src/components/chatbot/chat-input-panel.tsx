@@ -10,6 +10,7 @@ import { generateClient } from "aws-amplify/api";
 import { Dispatch, SetStateAction, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ReadyState } from "react-use-websocket";
 
+import { fetchUserAttributes } from "aws-amplify/auth";
 import { AppContext } from "../../common/app-context";
 import { Utils } from "../../common/utils";
 import { saveToolActions, updateMessageExecutionTime } from "../../graphql/mutations";
@@ -255,12 +256,9 @@ export default function ChatInputPanel(props: ChatInputPanelProps) {
 
         setReadyState(ReadyState.CONNECTING);
 
-        // Look up the agent runtime ARN from the selected runtimeId
-        // The agentRuntimeId IS the ARN in this context (from listRuntimeAgents)
-        const agentRuntimeArn = agentRuntimeId;
-
         connectToAgent({
-            agentRuntimeArn,
+            agentRuntimeId: agentRuntimeId,
+            accountId: appContext.aws_account_id,
             qualifier,
             mode: "text",
             config: {
@@ -391,23 +389,27 @@ export default function ChatInputPanel(props: ChatInputPanelProps) {
 
             onError: (errorMessage: string) => {
                 console.error("WebSocket error:", errorMessage);
-                const response: ChatBotMessageResponse = {
-                    action: ChatBotAction.Error,
-                    data: {
-                        sessionId: props.session.id,
-                        messageId: "",
-                        content: `**Error**: ${errorMessage}`,
-                    },
-                };
-                updateMessageHistoryRef(
-                    props.session.id,
-                    messageHistoryRef.current,
-                    response,
-                    messageTokens,
-                    toolActions,
-                );
-                props.setMessageHistory([...messageHistoryRef.current]);
-                props.setRunning(false);
+                // Only write errors to the message history if we're actively running
+                // (not during initial connection or session restore)
+                if (props.running) {
+                    const response: ChatBotMessageResponse = {
+                        action: ChatBotAction.Error,
+                        data: {
+                            sessionId: props.session.id,
+                            messageId: "",
+                            content: `**Error**: ${errorMessage}`,
+                        },
+                    };
+                    updateMessageHistoryRef(
+                        props.session.id,
+                        messageHistoryRef.current,
+                        response,
+                        messageTokens,
+                        toolActions,
+                    );
+                    props.setMessageHistory([...messageHistoryRef.current]);
+                    props.setRunning(false);
+                }
             },
         })
             .then((conn) => {
@@ -520,12 +522,23 @@ export default function ChatInputPanel(props: ChatInputPanelProps) {
         props.setMessageHistory(messageHistoryRef.current);
 
         try {
+            // Get Cognito user ID (sub) for session history persistence
+            let userId = "";
+            try {
+                const attrs = await fetchUserAttributes();
+                userId = attrs.sub || "";
+            } catch {
+                console.warn("Could not fetch user attributes for userId");
+            }
+
             wsConnectionRef.current.send({
                 type: "text_input",
                 text: value,
                 sessionId: props.session.id,
-                userId: "", // Will be extracted from SigV4 credentials on server side
+                userId,
                 messageId: message_id,
+                agentRuntimeId: agentRuntimeId,
+                qualifier: qualifier,
             });
         } catch (err) {
             console.log(Utils.getErrorMessage(err));

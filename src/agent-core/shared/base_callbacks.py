@@ -138,6 +138,7 @@ class BaseAgentCallbacks:
         _nb_tool_invocations (int): Counter for the number of tool invocations in current turn.
         _session_id (str): Current session identifier.
         _user_id (str): Current user identifier.
+        _websocket: Optional WebSocket reference for direct tool action delivery.
     """
 
     def __init__(self, logger: Logger, session_id: str, user_id: str) -> None:
@@ -153,6 +154,7 @@ class BaseAgentCallbacks:
         self._nb_tool_invocations = 0
         self._session_id = session_id
         self._user_id = user_id
+        self._websocket = None  # Optional WebSocket for direct tool action delivery
 
     @property
     def metadata(self) -> dict:

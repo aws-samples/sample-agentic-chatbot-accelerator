@@ -33,6 +33,8 @@ interface AcaAgentCoreContainerProps {
     readonly swarmImage: CodeBuildDockerImage;
     readonly graphImage: CodeBuildDockerImage;
     readonly agentsAsToolsImage: CodeBuildDockerImage;
+    /** Sessions table name for container-side history persistence (optional) */
+    readonly sessionsTableName?: string;
 }
 
 export class AcaAgentCoreContainer extends Construct {
@@ -514,6 +516,11 @@ export class AcaAgentCoreContainer extends Construct {
                     toolRegistry: toolRegistry.tableName,
                     mcpServerRegistry: mcpServerRegistry.tableName,
                     agentToolsTopicArn: agentToolsTopic.topicArn,
+                    // Sessions table name for container-side history persistence
+                    // (follows the same {prefix}-sessionsTable naming convention)
+                    ...(props.sessionsTableName && {
+                        sessionsTableName: props.sessionsTableName,
+                    }),
                     ...(memory && {
                         memoryId: memory.memoryId,
                     }),

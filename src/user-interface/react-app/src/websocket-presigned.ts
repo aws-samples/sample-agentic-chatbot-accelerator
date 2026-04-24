@@ -27,8 +27,10 @@ export interface WebSocketAgentConnection {
 }
 
 export interface ConnectOptions {
-    /** AgentCore runtime ARN */
-    agentRuntimeArn: string;
+    /** AgentCore runtime ID (e.g. "my_agent-abc123") — will be converted to full ARN */
+    agentRuntimeId: string;
+    /** AWS Account ID for constructing the runtime ARN */
+    accountId: string;
     /** Qualifier / endpoint name (e.g. "DEFAULT") */
     qualifier: string;
     /** Connection mode — "text" for `/ws`, "voice" for `/ws/voice` */
@@ -82,8 +84,10 @@ async function createPresignedUrl(
     const region = config.aws_project_region;
     const credentials = await getAWSCredentials(config);
 
-    const encodedArn = encodeURIComponent(agentRuntimeArn);
     const wsPath = mode === "voice" ? "ws/voice" : "ws";
+    // URL format per AWS docs: wss://bedrock-agentcore.<region>.amazonaws.com/runtimes/<agentRuntimeArn>/ws
+    // The ARN must be URI-encoded in the path
+    const encodedArn = encodeURIComponent(agentRuntimeArn);
     const baseUrl = `https://bedrock-agentcore.${region}.amazonaws.com/runtimes/${encodedArn}/${wsPath}`;
     const url = new URL(baseUrl);
 
@@ -131,8 +135,12 @@ async function createPresignedUrl(
  */
 export async function connectToAgent(options: ConnectOptions): Promise<WebSocketAgentConnection> {
     const sessionId = options.sessionId || crypto.randomUUID();
+    // Construct full ARN from runtime ID + account ID + region
+    const region = options.config.aws_project_region;
+    const agentRuntimeArn = `arn:aws:bedrock-agentcore:${region}:${options.accountId}:runtime/${options.agentRuntimeId}`;
+
     const presignedUrl = await createPresignedUrl(
-        options.agentRuntimeArn,
+        agentRuntimeArn,
         options.qualifier,
         sessionId,
         options.mode,
