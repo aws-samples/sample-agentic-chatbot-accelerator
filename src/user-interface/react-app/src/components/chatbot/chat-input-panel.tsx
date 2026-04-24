@@ -7,28 +7,29 @@ import { Button, FormField, Select, SpaceBetween } from "@cloudscape-design/comp
 import type { IconProps } from "@cloudscape-design/components/icon";
 import PromptInput from "@cloudscape-design/components/prompt-input";
 import { generateClient } from "aws-amplify/api";
-import { Dispatch, SetStateAction, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Dispatch, SetStateAction, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ReadyState } from "react-use-websocket";
 
+import { AppContext } from "../../common/app-context";
 import { Utils } from "../../common/utils";
-import { saveToolActions, sendQuery, updateMessageExecutionTime } from "../../graphql/mutations";
+import { saveToolActions, updateMessageExecutionTime } from "../../graphql/mutations";
 import {
     getFavoriteRuntime as getFavoriteRuntimeQuery,
     listAgentEndpoints as listAgentEndpointsQuery,
     listRuntimeAgents as listRuntimeAgentsQuery,
 } from "../../graphql/queries";
 
-import { receiveMessages } from "../../graphql/subscriptions";
+import {
+    connectToAgent,
+    FinalResponsePayload,
+    WebSocketAgentConnection,
+} from "../../websocket-presigned";
 
 import {
     ChatBotAction,
-    ChatBotHeartbeatRequest,
     ChatBotHistoryItem,
     ChatBotMessageResponse,
     ChatBotMessageType,
-    ChatBotRunRequest,
-    ChatInputState,
-    Framework,
     LLMToken,
     ToolActionItem,
 } from "./types";
@@ -57,7 +58,8 @@ export abstract class ChatScrollState {
 }
 
 export default function ChatInputPanel(props: ChatInputPanelProps) {
-    const [state, setState] = useState<ChatInputState>({
+    const appContext = useContext(AppContext);
+    const [state, setState] = useState<{ value: string }>({
         value: "",
     });
     const [readyState, setReadyState] = useState<ReadyState>(ReadyState.UNINSTANTIATED);
@@ -76,6 +78,7 @@ export default function ChatInputPanel(props: ChatInputPanelProps) {
     const messageHistoryRef = useRef<ChatBotHistoryItem[]>([]);
     const favoriteQualifierRef = useRef<string | null>(null);
     const sessionEndpointRef = useRef<string | null>(null);
+    const wsConnectionRef = useRef<WebSocketAgentConnection | null>(null);
     const client = generateClient();
 
     useEffect(() => {
@@ -197,11 +200,9 @@ export default function ChatInputPanel(props: ChatInputPanelProps) {
 
                 // Check if there's a preserved qualifier from session or favorite
                 if (sessionEndpointRef.current) {
-                    // Check if the session endpoint exists in available endpoints
                     if (endpointOptions.some((e) => e.value === sessionEndpointRef.current)) {
                         setQualifier(sessionEndpointRef.current);
                     } else {
-                        // Session endpoint doesn't exist, fall back to auto-selection
                         if (endpointOptions.some((e) => e.value === "QUALIFIER")) {
                             setQualifier("QUALIFIER");
                         } else if (endpointOptions.length > 0) {
@@ -210,13 +211,11 @@ export default function ChatInputPanel(props: ChatInputPanelProps) {
                             setQualifier("DEFAULT");
                         }
                     }
-                    sessionEndpointRef.current = null; // Clear the flag after use
+                    sessionEndpointRef.current = null;
                 } else if (favoriteQualifierRef.current) {
-                    // Check if the favorite qualifier exists in available endpoints
                     if (endpointOptions.some((e) => e.value === favoriteQualifierRef.current)) {
                         setQualifier(favoriteQualifierRef.current);
                     } else {
-                        // Favorite endpoint doesn't exist, fall back to auto-selection
                         if (endpointOptions.some((e) => e.value === "QUALIFIER")) {
                             setQualifier("QUALIFIER");
                         } else if (endpointOptions.length > 0) {
@@ -225,9 +224,8 @@ export default function ChatInputPanel(props: ChatInputPanelProps) {
                             setQualifier("DEFAULT");
                         }
                     }
-                    favoriteQualifierRef.current = null; // Clear the flag after use
+                    favoriteQualifierRef.current = null;
                 } else {
-                    // No favorite, use auto-selection for runtime switching
                     if (endpointOptions.some((e) => e.value === "QUALIFIER")) {
                         setQualifier("QUALIFIER");
                     } else if (endpointOptions.length > 0) {
@@ -241,164 +239,207 @@ export default function ChatInputPanel(props: ChatInputPanelProps) {
                 console.error("Failed to load endpoints:", err);
                 setAvailableEndpoints([{ label: "DEFAULT", value: "DEFAULT" }]);
                 setQualifier("DEFAULT");
-                favoriteQualifierRef.current = null; // Clear on error
+                favoriteQualifierRef.current = null;
             })
             .finally(() => setEndpointsLoading(false));
     }, [agentRuntimeId]);
 
+    // ================================================================
+    // Direct WebSocket connection to AgentCore (replaces AppSync sub)
+    // ================================================================
     useEffect(() => {
-        async function subscribe() {
-            console.log("Subscribing to AppSync");
-            const messageTokens: { [key: string]: LLMToken[] } = {};
-            const toolActions: { [key: string]: ToolActionItem[] } = {};
-            // const thinkingTokens: { [key: string]: LLMToken[] } = {};
+        if (!agentRuntimeId || !qualifier || !appContext) return;
 
-            setReadyState(ReadyState.CONNECTING);
+        const messageTokens: { [key: string]: LLMToken[] } = {};
+        const toolActions: { [key: string]: ToolActionItem[] } = {};
 
-            const sub = await client
-                .graphql({
-                    query: receiveMessages,
-                    variables: {
+        setReadyState(ReadyState.CONNECTING);
+
+        // Look up the agent runtime ARN from the selected runtimeId
+        // The agentRuntimeId IS the ARN in this context (from listRuntimeAgents)
+        const agentRuntimeArn = agentRuntimeId;
+
+        connectToAgent({
+            agentRuntimeArn,
+            qualifier,
+            mode: "text",
+            config: {
+                aws_project_region: appContext.aws_project_region,
+                aws_user_pools_id: appContext.aws_user_pools_id,
+                aws_cognito_identity_pool_id: appContext.aws_cognito_identity_pool_id,
+            },
+            sessionId: props.session.id,
+
+            onConnected: () => {
+                setReadyState(ReadyState.OPEN);
+                console.log(`WebSocket connected for session ${props.session.id}`);
+            },
+
+            onDisconnected: () => {
+                setReadyState(ReadyState.CLOSED);
+                console.log(`WebSocket disconnected for session ${props.session.id}`);
+                wsConnectionRef.current = null;
+            },
+
+            onTextToken: (data: string, sequenceNumber: number, runId?: string) => {
+                const response: ChatBotMessageResponse = {
+                    action: ChatBotAction.LLMNewToken,
+                    data: {
                         sessionId: props.session.id,
+                        messageId: "",
+                        token: {
+                            sequenceNumber,
+                            value: data,
+                            runId: runId || "",
+                        },
                     },
-                    authMode: "userPool",
-                })
-                .subscribe({
-                    next: (message) => {
-                        const data = message.data!.receiveMessages?.data;
-                        if (data !== undefined && data !== null) {
-                            const response: ChatBotMessageResponse = JSON.parse(data);
-                            console.log("message data: ", response.data);
-                            if (response.action === ChatBotAction.Heartbeat) {
-                                console.log("Heartbeat pong!");
-                                return;
-                            }
+                };
+                updateMessageHistoryRef(
+                    props.session.id,
+                    messageHistoryRef.current,
+                    response,
+                    messageTokens,
+                    toolActions,
+                );
+                props.setMessageHistory([...messageHistoryRef.current]);
+            },
 
-                            updateMessageHistoryRef(
-                                props.session.id,
-                                messageHistoryRef.current,
-                                response,
-                                messageTokens,
-                                toolActions,
-                                // thinkingTokens,
+            onFinalResponse: (finalResponse: FinalResponsePayload) => {
+                const response: ChatBotMessageResponse = {
+                    action: ChatBotAction.FinalResponse,
+                    data: {
+                        sessionId: finalResponse.sessionId,
+                        content: finalResponse.content,
+                        messageId: finalResponse.messageId,
+                        references: finalResponse.references,
+                        reasoningContent: finalResponse.reasoningContent,
+                        structuredOutput: finalResponse.structuredOutput,
+                    },
+                };
+                updateMessageHistoryRef(
+                    props.session.id,
+                    messageHistoryRef.current,
+                    response,
+                    messageTokens,
+                    toolActions,
+                );
+                props.setMessageHistory([...messageHistoryRef.current]);
+
+                // Mark response as complete and save execution time
+                console.log("Final message received");
+                const lastMessage = messageHistoryRef.current[messageHistoryRef.current.length - 1];
+                if (lastMessage && lastMessage.type === ChatBotMessageType.AI) {
+                    lastMessage.complete = true;
+                    if (lastMessage.startTime) {
+                        lastMessage.endTime = Date.now();
+                        lastMessage.executionTimeMs = lastMessage.endTime - lastMessage.startTime;
+                    }
+
+                    if (lastMessage.executionTimeMs) {
+                        client
+                            .graphql({
+                                query: updateMessageExecutionTime,
+                                variables: {
+                                    sessionId: props.session.id,
+                                    messageId: lastMessage.messageId,
+                                    executionTimeMs: lastMessage.executionTimeMs,
+                                },
+                            })
+                            .catch((err) =>
+                                console.error("Failed to save execution time:", err),
                             );
+                    }
 
-                            props.setMessageHistory([...messageHistoryRef.current]);
+                    // Save tool actions if any were performed
+                    const messageIndex = messageHistoryRef.current.length - 1;
+                    if (toolActions[messageIndex] && toolActions[messageIndex].length > 0) {
+                        client
+                            .graphql({
+                                query: saveToolActions,
+                                variables: {
+                                    sessionId: props.session.id,
+                                    messageId: lastMessage.messageId,
+                                    toolActions: JSON.stringify(toolActions[messageIndex]),
+                                },
+                            })
+                            .catch((err) => console.error("Failed to save tool actions:", err));
+                    }
+                }
+                props.setRunning(false);
+            },
 
-                            if (
-                                response.action === ChatBotAction.FinalResponse ||
-                                response.action === ChatBotAction.Error
-                            ) {
-                                console.log("Final message received");
-                                const lastMessage =
-                                    messageHistoryRef.current[messageHistoryRef.current.length - 1];
-                                if (lastMessage && lastMessage.type === ChatBotMessageType.AI) {
-                                    lastMessage.complete = true;
-                                    if (lastMessage.startTime) {
-                                        lastMessage.endTime = Date.now();
-                                        lastMessage.executionTimeMs =
-                                            lastMessage.endTime - lastMessage.startTime;
-                                    }
-
-                                    if (lastMessage.executionTimeMs) {
-                                        client
-                                            .graphql({
-                                                query: updateMessageExecutionTime,
-                                                variables: {
-                                                    sessionId: props.session.id,
-                                                    messageId: lastMessage.messageId,
-                                                    executionTimeMs: lastMessage.executionTimeMs,
-                                                },
-                                            })
-                                            .catch((err) =>
-                                                console.error(
-                                                    "Failed to save execution time:",
-                                                    err,
-                                                ),
-                                            );
-                                    }
-
-                                    // Save tool actions if any were performed
-                                    const messageIndex = messageHistoryRef.current.length - 1;
-                                    if (
-                                        toolActions[messageIndex] &&
-                                        toolActions[messageIndex].length > 0
-                                    ) {
-                                        client
-                                            .graphql({
-                                                query: saveToolActions,
-                                                variables: {
-                                                    sessionId: props.session.id,
-                                                    messageId: lastMessage.messageId,
-                                                    toolActions: JSON.stringify(
-                                                        toolActions[messageIndex],
-                                                    ),
-                                                },
-                                            })
-                                            .catch((err) =>
-                                                console.error("Failed to save tool actions:", err),
-                                            );
-                                    }
-                                }
-                                props.setRunning(false);
-                            }
-                        }
+            onToolAction: (toolName: string, description: string, invocationNumber: number) => {
+                const response: ChatBotMessageResponse = {
+                    action: ChatBotAction.ToolAction,
+                    data: {
+                        sessionId: props.session.id,
+                        messageId: "",
+                        toolAction: description,
+                        toolName,
+                        invocationNumber,
                     },
-                    error: (error) => console.warn(error),
-                });
-            return sub;
-        }
+                };
+                updateMessageHistoryRef(
+                    props.session.id,
+                    messageHistoryRef.current,
+                    response,
+                    messageTokens,
+                    toolActions,
+                );
+                props.setMessageHistory([...messageHistoryRef.current]);
+            },
 
-        const sub = subscribe();
-
-        sub.then(() => {
-            setReadyState(ReadyState.OPEN);
-            console.log(`Subscribed to session ${props.session.id}`);
-        }).catch((err) => {
-            console.log(err);
-            setReadyState(ReadyState.CLOSED);
-        });
+            onError: (errorMessage: string) => {
+                console.error("WebSocket error:", errorMessage);
+                const response: ChatBotMessageResponse = {
+                    action: ChatBotAction.Error,
+                    data: {
+                        sessionId: props.session.id,
+                        messageId: "",
+                        content: `**Error**: ${errorMessage}`,
+                    },
+                };
+                updateMessageHistoryRef(
+                    props.session.id,
+                    messageHistoryRef.current,
+                    response,
+                    messageTokens,
+                    toolActions,
+                );
+                props.setMessageHistory([...messageHistoryRef.current]);
+                props.setRunning(false);
+            },
+        })
+            .then((conn) => {
+                wsConnectionRef.current = conn;
+                console.log(`WebSocket connected to AgentCore for session ${props.session.id}`);
+            })
+            .catch((err) => {
+                console.error("Failed to establish WebSocket connection:", err);
+                setReadyState(ReadyState.CLOSED);
+            });
 
         return () => {
-            sub.then((s) => {
-                console.log(`Unsubscribing from ${props.session.id}`);
-                s.unsubscribe();
-            }).catch((err) => console.log(err));
+            if (wsConnectionRef.current) {
+                console.log(`Closing WebSocket for session ${props.session.id}`);
+                wsConnectionRef.current.close();
+                wsConnectionRef.current = null;
+            }
         };
-    }, [props.session.id]);
+    }, [props.session.id, agentRuntimeId, qualifier, appContext]);
 
+    // Send heartbeat when a new session is initialized (no messages yet)
     useEffect(() => {
-        console.log("Heartbeat effect triggered:", {
-            agentRuntimeId,
-            qualifier,
-            readyState,
-            messageCount: props.messageHistory.length,
-        });
-
-        // Only send heartbeat for new sessions (no messages yet)
-        if (!agentRuntimeId || readyState !== ReadyState.OPEN || props.messageHistory.length > 0)
+        if (
+            !wsConnectionRef.current ||
+            readyState !== ReadyState.OPEN ||
+            props.messageHistory.length > 0
+        )
             return;
 
-        const request: ChatBotHeartbeatRequest = {
-            action: ChatBotAction.Heartbeat,
-            framework: Framework.AGENT_CORE,
-            data: {
-                sessionId: props.session.id,
-                agentRuntimeId: agentRuntimeId,
-                qualifier: qualifier,
-            },
-        };
-
-        client
-            .graphql({
-                query: sendQuery,
-                variables: {
-                    data: JSON.stringify(request),
-                },
-            })
-            .then((x) => console.log("Heartbeat sent", x))
-            .catch((err) => console.log(Utils.getErrorMessage(err)));
-    }, [props.session.id, agentRuntimeId, qualifier, readyState, props.messageHistory.length]);
+        console.log("Sending heartbeat via WebSocket");
+        wsConnectionRef.current.send({ type: "heartbeat" });
+    }, [readyState, props.messageHistory.length]);
 
     useEffect(() => {
         const onWindowScroll = () => {
@@ -428,8 +469,6 @@ export default function ChatInputPanel(props: ChatInputPanelProps) {
 
     // NOTE: Window-level auto-scroll on messageHistory change has been removed.
     // Scroll management is now handled entirely by the container-level logic in chat.tsx.
-    // The user's message is scrolled to the top on send, and during streaming
-    // we intentionally do NOT scroll — letting the user read from the top.
     useLayoutEffect(() => {
         if (ChatScrollState.skipNextHistoryUpdate) {
             ChatScrollState.skipNextHistoryUpdate = false;
@@ -443,29 +482,20 @@ export default function ChatInputPanel(props: ChatInputPanelProps) {
         return `msg-${messageNumber}-${uuid}`;
     };
 
+    // ================================================================
+    // Send message via direct WebSocket (replaces AppSync sendQuery)
+    // ================================================================
     const handleSendMessage = async (value: string): Promise<void> => {
         if (props.running) return;
         if (readyState !== ReadyState.OPEN) return;
         if (!agentRuntimeId) return;
+        if (!wsConnectionRef.current) return;
 
         ChatScrollState.userHasScrolled = false;
         ChatScrollState.scrollToUserMessage = true;
 
         const message_id = generateMessageId(messageHistoryRef.current.length);
 
-        const request: ChatBotRunRequest = {
-            action: ChatBotAction.Run,
-            framework: Framework.AGENT_CORE,
-            data: {
-                sessionId: props.session.id,
-                messageId: message_id,
-                text: value,
-                agentRuntimeId: agentRuntimeId,
-                qualifier: qualifier,
-            },
-        };
-
-        console.log(request);
         setState((state) => ({
             ...state,
             value: "",
@@ -490,11 +520,12 @@ export default function ChatInputPanel(props: ChatInputPanelProps) {
         props.setMessageHistory(messageHistoryRef.current);
 
         try {
-            await client.graphql({
-                query: sendQuery,
-                variables: {
-                    data: JSON.stringify(request),
-                },
+            wsConnectionRef.current.send({
+                type: "text_input",
+                text: value,
+                sessionId: props.session.id,
+                userId: "", // Will be extracted from SigV4 credentials on server side
+                messageId: message_id,
             });
         } catch (err) {
             console.log(Utils.getErrorMessage(err));
