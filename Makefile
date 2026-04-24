@@ -58,6 +58,7 @@ destroy:
 	@echo "Destroying AcaStack (application)"
 	@echo "═══════════════════════════════════════════════════════════"
 	cd iac-cdk && npx cdk destroy --all --force $(if $(PROFILE),--profile $(PROFILE))
+	cd ..
 
 clean-build:
 	git clean -fx iac-cdk/lib/
