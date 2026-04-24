@@ -6,13 +6,12 @@
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime
 
-from bedrock_agentcore.runtime import BedrockAgentCoreApp, RequestContext
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from opentelemetry import baggage
 from opentelemetry.context import attach
 from shared.mcp_client import MCPClientManager
-from shared.stream_types import ChatbotAction
 from src.data_source import parse_configuration
 from src.factory import create_swarm
 from src.registry import AVAILABLE_MCPS
@@ -20,10 +19,10 @@ from strands import Agent
 from strands.multiagent import Swarm
 from strands_evals.extractors import swarm_extractor
 
-logger = logging.getLogger("bedrock_agentcore.app")
+logger = logging.getLogger("agentcore.app")
 logger.setLevel(logging.INFO)
 
-app = BedrockAgentCoreApp()
+app = FastAPI()
 
 # Global swarm variable - initialized once per session
 SWARM: Swarm | None = None
@@ -36,211 +35,248 @@ MEMORY_ID = os.environ.get("memoryId")
 AWS_REGION = os.environ.get("AWS_REGION")
 
 
-@app.entrypoint
-async def invoke(payload, context: RequestContext):
-    """Process user input and return a response from the swarm"""
+# ============================================================
+# Health Check (required by AgentCore)
+# ============================================================
+@app.get("/ping")
+async def ping():
+    return {"status": "Healthy", "time_of_last_update": int(datetime.now().timestamp())}
+
+
+# ============================================================
+# TEXT MODE: WebSocket endpoint (complete response, no streaming)
+# ============================================================
+@app.websocket("/ws")
+async def swarm_text_chat(websocket: WebSocket):
+    """
+    Text WebSocket for Swarm — sends complete response (no token streaming).
+    Swarm execution is blocking; voice mode is NOT supported.
+    """
     global SWARM, AGENTS, CURRENT_SESSION_ID, CALLBACKS, MCP_CLIENT_MANAGER
 
-    user_message = payload.get("prompt", "Hello")
-    user_id = payload.get("userId")
-    message_id = payload.get("messageId")
-    session_id = context.session_id
-
-    # Trajectory capture flag for evaluation features
-    # When true, swarm interactions and trajectory are captured and returned
-    include_trajectory = payload.get("includeTrajectory", False)
-
-    # Propagate session ID for observability
-    ctx = baggage.set_baggage("session.id", session_id)
-    attach(ctx)
-
-    # Initialize swarm once per session (or if session changes)
-    if SWARM is None or CURRENT_SESSION_ID != session_id:
-        # Clean up previous session's MCP connections if session changed
-        if MCP_CLIENT_MANAGER and CURRENT_SESSION_ID != session_id:
-            MCP_CLIENT_MANAGER.cleanup_connections()
-
-        logger.info(
-            "Initializing swarm for session",
-            extra={
-                "context": {
-                    "sessionId": session_id,
-                    "userId": user_id,
-                }
-            },
-        )
-
-        try:
-            configuration = parse_configuration(logger)
-            logger.info(
-                "Swarm configuration loaded",
-                extra={
-                    "agentCount": len(configuration.agents),
-                    "entryAgent": configuration.entryAgent,
-                },
-            )
-
-            # Collect all MCP servers from all agents
-            all_mcp_servers = set()
-            for agent_def in configuration.agents:
-                all_mcp_servers.update(agent_def.mcpServers)
-
-            # Init MCP Clients if any agent has MCP servers configured
-            if all_mcp_servers:
-                MCP_CLIENT_MANAGER = MCPClientManager(
-                    mcp_servers=list(all_mcp_servers),
-                    logger=logger,
-                    mcp_registry=AVAILABLE_MCPS,
-                )
-                MCP_CLIENT_MANAGER.init_mcp_clients()
-
-            # Create session manager if memory is enabled
-            # NOTE: Session persistence is not yet supported for Swarm agents in Strands SDK
-            # Keeping the code here for future support, but not passing to create_swarm
-            if MEMORY_ID and session_id:
-                logger.warning(
-                    "Memory/session persistence is not yet supported for Swarm agents. "
-                    "Skipping session manager creation.",
-                    extra={"context": {"memoryId": MEMORY_ID}},
-                )
-
-            # Parse optional session state from payload (stringified JSON)
-            state_json = payload.get("state")
-            state = json.loads(state_json) if state_json else None
-
-            SWARM, CALLBACKS, AGENTS = create_swarm(
-                configuration,
-                logger,
-                session_id=session_id,  # type: ignore
-                user_id=user_id,
-                mcp_client_manager=MCP_CLIENT_MANAGER,
-                session_manager=None,
-                state=state,
-            )
-            CURRENT_SESSION_ID = session_id
-
-            logger.info(
-                "Swarm initialized successfully",
-                extra={
-                    "agentNames": list(AGENTS.keys()),
-                    "entryAgent": configuration.entryAgent,
-                },
-            )
-
-        except Exception as err:
-            logger.error(
-                "Failed to initialize swarm", extra={"rawErrorMessage": str(err)}
-            )
-            if MCP_CLIENT_MANAGER:
-                MCP_CLIENT_MANAGER.cleanup_connections()
-            raise err
-
-    # Clean up metadata from previous message in the same session
-    if CALLBACKS:
-        CALLBACKS.reset_metadata()
-
-    if payload.get("isHeartbeat"):
-        logger.info("Exiting function because the payload is only a heartbeat")
-        return
-
-    logger.info(
-        "Calling swarm with user message and context",
-        extra={
-            "prompt": user_message,
-            "context": {"sessionId": context.session_id, "userId": user_id},
-        },
-    )
+    await websocket.accept()
+    logger.info("Swarm Text WebSocket connection accepted")
 
     try:
-        result = SWARM(user_message)
+        while True:
+            message = await websocket.receive_json()
+            msg_type = message.get("type")
 
-        logger.info(
-            "Swarm completed",
-            extra={
-                "resultMetadata": {
-                    "status": result.status.value,
-                    "nodeHistory": [node.node_id for node in result.node_history],
-                    "totalIterations": result.execution_count,
-                    "executionTime": result.execution_time,
-                    "tokenUsage": result.accumulated_usage,
-                }
-            },
-        )
+            if msg_type == "text_input":
+                user_message = message.get("text", "Hello")
+                user_id = message.get("userId")
+                message_id = message.get("messageId")
+                session_id = message.get("sessionId")
 
-        reasoning_content = [
-            "# Intermediate Swarm node results",
-        ]
-        for agent_call_order, node in enumerate(result.node_history[:-1]):
-            node_res = str(result.results[node.node_id].result)
-            reasoning_content.append(
-                f"## Agent {agent_call_order + 1} [{node.node_id}]"
-            )
-            reasoning_content.append(node_res)
+                # Trajectory capture flag for evaluation features
+                include_trajectory = message.get("includeTrajectory", False)
 
-        final_answer_data = {
-            "content": str(result.results[result.node_history[-1].node_id].result),
-            "sessionId": session_id,
-            "messageId": message_id,
-            "type": "text",
-        }
-        if len(reasoning_content) > 1:
-            final_answer_data["reasoningContent"] = "\n\n".join(reasoning_content)
+                # Propagate session ID for observability
+                ctx = baggage.set_baggage("session.id", session_id)
+                attach(ctx)
 
-        # Capture trajectory and interactions for evaluation features if requested
-        if include_trajectory:
-            try:
-                # Extract trajectory (sequence of agent nodes)
-                trajectory = [node.node_id for node in result.node_history]
+                # Initialize swarm once per session (or if session changes)
+                if SWARM is None or CURRENT_SESSION_ID != session_id:
+                    # Clean up previous session's MCP connections if session changed
+                    if MCP_CLIENT_MANAGER and CURRENT_SESSION_ID != session_id:
+                        MCP_CLIENT_MANAGER.cleanup_connections()
 
-                # Extract interactions using swarm_extractor for InteractionsEvaluator
-                interaction_info = swarm_extractor.extract_swarm_interactions(result)
+                    logger.info(
+                        "Initializing swarm for session",
+                        extra={
+                            "context": {
+                                "sessionId": session_id,
+                                "userId": user_id,
+                            }
+                        },
+                    )
 
-                final_answer_data["trajectory"] = {
-                    "session_id": session_id,
-                    "trajectory": trajectory,
-                    "interactions": interaction_info,
-                    "status": result.status.value,
-                    "execution_count": result.execution_count,
-                    "execution_time": result.execution_time,
-                }
+                    try:
+                        configuration = parse_configuration(logger)
+                        logger.info(
+                            "Swarm configuration loaded",
+                            extra={
+                                "agentCount": len(configuration.agents),
+                                "entryAgent": configuration.entryAgent,
+                            },
+                        )
+
+                        # Collect all MCP servers from all agents
+                        all_mcp_servers = set()
+                        for agent_def in configuration.agents:
+                            all_mcp_servers.update(agent_def.mcpServers)
+
+                        # Init MCP Clients if any agent has MCP servers configured
+                        if all_mcp_servers:
+                            MCP_CLIENT_MANAGER = MCPClientManager(
+                                mcp_servers=list(all_mcp_servers),
+                                logger=logger,
+                                mcp_registry=AVAILABLE_MCPS,
+                            )
+                            MCP_CLIENT_MANAGER.init_mcp_clients()
+
+                        # Session persistence not yet supported for Swarm agents
+                        if MEMORY_ID and session_id:
+                            logger.warning(
+                                "Memory/session persistence is not yet supported for Swarm agents. "
+                                "Skipping session manager creation.",
+                                extra={"context": {"memoryId": MEMORY_ID}},
+                            )
+
+                        # Parse optional session state from message
+                        state_json = message.get("state")
+                        state = (
+                            json.loads(state_json)
+                            if state_json and isinstance(state_json, str)
+                            else state_json
+                        )
+
+                        SWARM, CALLBACKS, AGENTS = create_swarm(
+                            configuration,
+                            logger,
+                            session_id=session_id,
+                            user_id=user_id,
+                            mcp_client_manager=MCP_CLIENT_MANAGER,
+                            session_manager=None,
+                            state=state,
+                        )
+                        CURRENT_SESSION_ID = session_id
+
+                        logger.info(
+                            "Swarm initialized successfully",
+                            extra={
+                                "agentNames": list(AGENTS.keys()),
+                                "entryAgent": configuration.entryAgent,
+                            },
+                        )
+
+                    except Exception as err:
+                        logger.error(
+                            "Failed to initialize swarm",
+                            extra={"rawErrorMessage": str(err)},
+                        )
+                        if MCP_CLIENT_MANAGER:
+                            MCP_CLIENT_MANAGER.cleanup_connections()
+                        await websocket.send_json(
+                            {"type": "error", "message": str(err)}
+                        )
+                        continue
+
+                # Clean up metadata from previous message in the same session
+                if CALLBACKS:
+                    CALLBACKS.reset_metadata()
 
                 logger.info(
-                    "Trajectory and interactions captured for evaluation",
+                    "Calling swarm with user message and context",
                     extra={
-                        "trajectory": trajectory,
-                        "interactionCount": len(interaction_info)
-                        if interaction_info
-                        else 0,
+                        "prompt": user_message,
+                        "context": {
+                            "sessionId": session_id,
+                            "userId": user_id,
+                        },
                     },
                 )
-            except Exception as traj_err:
-                logger.warning(
-                    f"Failed to capture trajectory/interactions: {traj_err}",
-                    extra={"error": str(traj_err)},
-                )
-                # Still return empty trajectory on error for evaluator
-                final_answer_data["trajectory"] = {
-                    "session_id": session_id,
-                    "trajectory": [],
-                    "interactions": [],
-                }
 
-        final_answer_payload = {
-            "action": ChatbotAction.FINAL_RESPONSE.value,
-            "userId": user_id,
-            "timestamp": int(round(datetime.now(timezone.utc).timestamp())),
-            "type": "text",
-            "framework": "AGENT_CORE",
-            "data": final_answer_data,
-        }
+                try:
+                    result = SWARM(user_message)
 
-        yield final_answer_payload
+                    logger.info(
+                        "Swarm completed",
+                        extra={
+                            "resultMetadata": {
+                                "status": result.status.value,
+                                "nodeHistory": [
+                                    node.node_id for node in result.node_history
+                                ],
+                                "totalIterations": result.execution_count,
+                                "executionTime": result.execution_time,
+                                "tokenUsage": result.accumulated_usage,
+                            }
+                        },
+                    )
 
-    except Exception as err:
-        logger.error("Failed swarm call", extra={"rawErrorMessage": str(err)})
-        logger.exception(err)
-        yield {"error": str(err), "action": "error"}
+                    reasoning_content = [
+                        "# Intermediate Swarm node results",
+                    ]
+                    for agent_call_order, node in enumerate(result.node_history[:-1]):
+                        node_res = str(result.results[node.node_id].result)
+                        reasoning_content.append(
+                            f"## Agent {agent_call_order + 1} [{node.node_id}]"
+                        )
+                        reasoning_content.append(node_res)
+
+                    final_data: dict = {
+                        "type": "final_response",
+                        "content": str(
+                            result.results[result.node_history[-1].node_id].result
+                        ),
+                        "sessionId": session_id,
+                        "messageId": message_id,
+                    }
+                    if len(reasoning_content) > 1:
+                        final_data["reasoningContent"] = "\n\n".join(reasoning_content)
+
+                    # Capture trajectory and interactions for evaluation features
+                    if include_trajectory:
+                        try:
+                            trajectory = [node.node_id for node in result.node_history]
+                            interaction_info = (
+                                swarm_extractor.extract_swarm_interactions(result)
+                            )
+
+                            final_data["trajectory"] = {
+                                "session_id": session_id,
+                                "trajectory": trajectory,
+                                "interactions": interaction_info,
+                                "status": result.status.value,
+                                "execution_count": result.execution_count,
+                                "execution_time": result.execution_time,
+                            }
+
+                            logger.info(
+                                "Trajectory and interactions captured for evaluation",
+                                extra={
+                                    "trajectory": trajectory,
+                                    "interactionCount": len(interaction_info)
+                                    if interaction_info
+                                    else 0,
+                                },
+                            )
+                        except Exception as traj_err:
+                            logger.warning(
+                                f"Failed to capture trajectory/interactions: {traj_err}",
+                                extra={"error": str(traj_err)},
+                            )
+                            final_data["trajectory"] = {
+                                "session_id": session_id,
+                                "trajectory": [],
+                                "interactions": [],
+                            }
+
+                    await websocket.send_json(final_data)
+
+                except Exception as err:
+                    logger.error(
+                        "Failed swarm call",
+                        extra={"rawErrorMessage": str(err)},
+                    )
+                    logger.exception(err)
+                    await websocket.send_json({"type": "error", "message": str(err)})
+
+            elif msg_type == "heartbeat":
+                await websocket.send_json({"type": "heartbeat_ack"})
+
+    except WebSocketDisconnect:
+        logger.info("Swarm WebSocket client disconnected")
+    except Exception as e:
+        logger.error(f"Swarm WebSocket error: {e}")
 
 
+# ============================================================
+# Entry point
+# ============================================================
 if __name__ == "__main__":
-    app.run()
+    import uvicorn
+
+    host = "0.0.0.0" if os.getenv("DOCKER_CONTAINER") else "127.0.0.1"
+    uvicorn.run(app, host=host, port=8080)
