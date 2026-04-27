@@ -180,6 +180,19 @@ mcp_server_registry = []
 # }
 
 # =============================================================================
+# Supported Models Configuration
+# Bedrock models available in the UI model selector
+# Format: "Display Name" = "model-id"
+# Use [REGION-PREFIX] placeholder for cross-region inference (replaced at runtime)
+# =============================================================================
+
+# supported_models = {
+#   "Claude Sonnet 4.6" = "[REGION-PREFIX].anthropic.claude-sonnet-4-6"
+#   "Claude Haiku 4.5"  = "[REGION-PREFIX].anthropic.claude-haiku-4-5-20251001-v1:0"
+#   "Nova 2 Lite"       = "[REGION-PREFIX].amazon.nova-2-lite-v1:0"
+# }
+
+# =============================================================================
 # ECR Image Configuration
 # =============================================================================
 
