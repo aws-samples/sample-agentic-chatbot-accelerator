@@ -207,7 +207,6 @@ type EvaluationNotification @aws_iam @aws_cognito_user_pools {
 
 type Mutation {
     # Messages
-    sendQuery(data: String): String @aws_cognito_user_pools
     publishResponse(sessionId: String, userId: String, data: String): Channel @aws_iam
     # Sessions
     deleteUserSessions: [DeleteSessionResult!] @aws_cognito_user_pools

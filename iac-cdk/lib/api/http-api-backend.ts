@@ -130,7 +130,7 @@ export class HttpApiBackend extends Construct {
 
             for (const fieldName of fieldNames) {
                 // These resolvers are added by the Realtime API
-                if (fieldName == "sendQuery" || fieldName == "publishResponse") {
+                if (fieldName == "publishResponse") {
                     continue;
                 }
                 // These resolvers are directly added to DynamoDB data source
