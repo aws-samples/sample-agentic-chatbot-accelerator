@@ -50,6 +50,8 @@ export interface ConnectOptions {
     // --- Voice mode callbacks ---
     onAudioChunk?: (audio: string, format: string, sampleRate: number) => void;
     onTranscript?: (text: string, isFinal: boolean, role: "assistant" | "user") => void;
+    onToolEvent?: (toolName: string, eventType: string, description?: string) => void;
+    onResponseComplete?: (stopReason: string) => void;
     onInterruption?: (reason: string) => void;
 
     // --- Common callbacks ---
@@ -224,14 +226,33 @@ export async function connectToAgent(options: ConnectOptions): Promise<WebSocket
                     case "bidi_interruption":
                         options.onInterruption?.(data.reason || "interrupted");
                         break;
+                    case "bidi_response_complete":
+                        // Agent finished its response — signal to reveal text
+                        console.log("Voice WS: bidi_response_complete received", data);
+                        options.onResponseComplete?.(data.stop_reason || "complete");
+                        break;
 
-                    // --- Voice: tool stream events (informational) ---
+                    // --- Voice: tool stream events ---
                     case "tool_use_stream":
                     case "tool_result":
                     case "tool_result_message":
                     case "tool_stream":
-                        // Tool events during voice mode — logged but not displayed
                         console.debug("Voice tool event:", data.type, data);
+                        options.onToolEvent?.(
+                            data.tool_name || data.toolName || data.name || "tool",
+                            data.type,
+                            data.content || data.input || data.text || undefined,
+                        );
+                        break;
+
+                    // --- Voice: AI-rephrased tool description (from Mistral via container) ---
+                    case "tool_description":
+                        console.debug("Voice tool description:", data);
+                        options.onToolEvent?.(
+                            data.tool_name || "tool",
+                            "tool_description",
+                            data.description,
+                        );
                         break;
 
                     // --- Common ---
