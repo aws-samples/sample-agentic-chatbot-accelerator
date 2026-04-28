@@ -14,6 +14,7 @@ import { fetchUserAttributes } from "aws-amplify/auth";
 import { AppContext } from "../../common/app-context";
 import { Utils } from "../../common/utils";
 import { saveToolActions, updateMessageExecutionTime } from "../../graphql/mutations";
+import { receiveMessages } from "../../graphql/subscriptions";
 import {
     getFavoriteRuntime as getFavoriteRuntimeQuery,
     listAgentEndpoints as listAgentEndpointsQuery,
@@ -348,43 +349,46 @@ export default function ChatInputPanel(props: ChatInputPanelProps) {
                             );
                     }
 
-                    // Save tool actions if any were performed
-                    const messageIndex = messageHistoryRef.current.length - 1;
-                    if (toolActions[messageIndex] && toolActions[messageIndex].length > 0) {
-                        client
-                            .graphql({
-                                query: saveToolActions,
-                                variables: {
-                                    sessionId: props.session.id,
-                                    messageId: lastMessage.messageId,
-                                    toolActions: JSON.stringify(toolActions[messageIndex]),
-                                },
-                            })
-                            .catch((err) => console.error("Failed to save tool actions:", err));
-                    }
+                    // Save tool actions with a delay — they arrive via the AppSync
+                    // side-channel and the DynamoDB session record needs time to be
+                    // written by the container before we can update it.
+                    const saveToolActionsWithRetry = (attempt: number) => {
+                        const currentMsg =
+                            messageHistoryRef.current[messageHistoryRef.current.length - 1];
+                        if (currentMsg?.toolActions && currentMsg.toolActions.length > 0) {
+                            client
+                                .graphql({
+                                    query: saveToolActions,
+                                    variables: {
+                                        sessionId: props.session.id,
+                                        messageId: currentMsg.messageId,
+                                        toolActions: JSON.stringify(currentMsg.toolActions),
+                                    },
+                                })
+                                .catch((err) => {
+                                    console.warn(`Save tool actions attempt ${attempt} failed:`, err);
+                                    if (attempt < 3) {
+                                        setTimeout(() => saveToolActionsWithRetry(attempt + 1), 3000);
+                                    }
+                                });
+                        } else if (attempt < 3) {
+                            // Tool actions haven't arrived yet — retry later
+                            setTimeout(() => saveToolActionsWithRetry(attempt + 1), 3000);
+                        }
+                    };
+                    // First attempt after 3s delay (allows container DynamoDB write + side-channel delivery)
+                    setTimeout(() => saveToolActionsWithRetry(1), 3000);
                 }
                 props.setRunning(false);
             },
 
-            onToolAction: (toolName: string, description: string, invocationNumber: number) => {
-                const response: ChatBotMessageResponse = {
-                    action: ChatBotAction.ToolAction,
-                    data: {
-                        sessionId: props.session.id,
-                        messageId: "",
-                        toolAction: description,
-                        toolName,
-                        invocationNumber,
-                    },
-                };
-                updateMessageHistoryRef(
-                    props.session.id,
-                    messageHistoryRef.current,
-                    response,
-                    messageTokens,
-                    toolActions,
+            // Raw tool descriptions from WebSocket are suppressed — we only show
+            // the AI-rephrased descriptions that arrive via the AppSync side-channel.
+            // The raw description is logged for debugging but not displayed.
+            onToolAction: (toolName: string, _description: string, invocationNumber: number) => {
+                console.debug(
+                    `Raw tool action #${invocationNumber} (${toolName}) — waiting for AI-rephrased version`,
                 );
-                props.setMessageHistory([...messageHistoryRef.current]);
             },
 
             onError: (errorMessage: string) => {
@@ -442,6 +446,77 @@ export default function ChatInputPanel(props: ChatInputPanelProps) {
         console.log("Sending heartbeat via WebSocket");
         wsConnectionRef.current.send({ type: "heartbeat" });
     }, [readyState, props.messageHistory.length]);
+
+    // ================================================================
+    // AppSync side-channel: receive AI-rephrased tool descriptions
+    // A Lambda function publishes to the Messages SNS Topic, which triggers
+    // the outbound handler Lambda → AppSync publishResponse → this subscription.
+    // We only process tool_action events here; all other events come via WebSocket.
+    // ================================================================
+    useEffect(() => {
+        const sideChannelToolActions: { [key: string]: ToolActionItem[] } = {};
+
+        const sub = client
+            .graphql({
+                query: receiveMessages,
+                variables: { sessionId: props.session.id },
+                authMode: "userPool",
+            })
+            .subscribe({
+                next: (message) => {
+                    const data = message.data?.receiveMessages?.data;
+                    if (!data) return;
+
+                    try {
+                        const response: ChatBotMessageResponse = JSON.parse(data);
+
+                        // Only process tool_action events from this side channel
+                        // (all other events are handled via direct WebSocket)
+                        if (response.action === ChatBotAction.ToolAction) {
+                            console.log("AI-rephrased tool action via AppSync:", response.data);
+
+                            // Add the AI-rephrased tool action to the message history
+                            // using the same mechanism as the original code
+                            updateMessageHistoryRef(
+                                props.session.id,
+                                messageHistoryRef.current,
+                                response,
+                                {}, // no token tracking needed for tool actions
+                                sideChannelToolActions,
+                            );
+                            props.setMessageHistory([...messageHistoryRef.current]);
+
+                            // Persist accumulated tool actions to DynamoDB
+                            // (saves on each tool action arrival so the latest state is always persisted)
+                            const lastMsg =
+                                messageHistoryRef.current[messageHistoryRef.current.length - 1];
+                            if (lastMsg?.toolActions && lastMsg.toolActions.length > 0) {
+                                client
+                                    .graphql({
+                                        query: saveToolActions,
+                                        variables: {
+                                            sessionId: props.session.id,
+                                            messageId: lastMsg.messageId,
+                                            toolActions: JSON.stringify(lastMsg.toolActions),
+                                        },
+                                    })
+                                    .catch((err) =>
+                                        console.error("Failed to save tool actions:", err),
+                                    );
+                            }
+                        }
+                        // Ignore all non-tool_action events (they come via WebSocket)
+                    } catch (err) {
+                        console.warn("Failed to parse AppSync side-channel message:", err);
+                    }
+                },
+                error: (error) => console.warn("AppSync side-channel subscription error:", error),
+            });
+
+        return () => {
+            sub.unsubscribe();
+        };
+    }, [props.session.id]);
 
     useEffect(() => {
         const onWindowScroll = () => {
