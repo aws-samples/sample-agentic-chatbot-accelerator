@@ -37,7 +37,6 @@ import {
     ToolActionItem,
 } from "./types";
 import { updateMessageHistoryRef } from "./utils";
-import VoiceModeToggle from "./VoiceModeToggle";
 
 export interface ChatInputPanelProps {
     running: boolean;
@@ -51,6 +50,8 @@ export interface ChatInputPanelProps {
     messageHistory: ChatBotHistoryItem[];
     setMessageHistory: (history: ChatBotHistoryItem[]) => void;
     onAgentsAvailable?: (available: boolean) => void;
+    /** Called when the user clicks the voice button — passes agent info for VoiceConversationView */
+    onVoiceStart?: (info: { agentRuntimeId: string; qualifier: string; agentName: string }) => void;
 }
 
 export abstract class ChatScrollState {
@@ -780,14 +781,22 @@ export default function ChatInputPanel(props: ChatInputPanelProps) {
                         </>
                     )}
                 </SpaceBetween>
-                {/* Voice mode — available for Single Agent and Agents-as-Tools patterns */}
-                {agentRuntimeId && isSelectedAgentReady() && (
-                    <VoiceModeToggle
-                        agentRuntimeId={agentRuntimeId}
-                        qualifier={qualifier}
-                        sessionId={props.session.id}
-                        voiceSupported={voiceSupported}
-                    />
+                {/* Voice mode — available for Single Agent and Agents-as-Tools with Nova Sonic */}
+                {voiceSupported && agentRuntimeId && isSelectedAgentReady() && props.onVoiceStart && (
+                    <Button
+                        iconName="microphone"
+                        onClick={() => {
+                            const selectedAgent = availableAgents.find((a) => a.value === agentRuntimeId);
+                            props.onVoiceStart!({
+                                agentRuntimeId,
+                                qualifier,
+                                agentName: selectedAgent?.label || "Voice Agent",
+                            });
+                        }}
+                        disabled={props.running}
+                    >
+                        🎙 Start Voice
+                    </Button>
                 )}
             </SpaceBetween>
         </SpaceBetween>

@@ -85,8 +85,11 @@ async def text_chat(websocket: WebSocket):
 
             # Voice mode: if the first message is voice_init, switch to BidiAgent
             if msg_type == "voice_init":
-                logger.info("Switching to voice mode (BidiAgent)")
-                await _handle_voice_mode(websocket, logger)
+                voice_session_id = message.get("sessionId", str(uuid.uuid4()))
+                logger.info(
+                    f"Switching to voice mode (BidiAgent) for session {voice_session_id}"
+                )
+                await _handle_voice_mode(websocket, logger, voice_session_id)
                 return  # voice mode takes over the connection
 
             if msg_type == "text_input":
@@ -217,7 +220,7 @@ async def text_chat(websocket: WebSocket):
                 # Reset metadata for new turn and pass WebSocket reference
                 if callbacks:
                     callbacks.reset_metadata()
-                    callbacks._websocket = websocket
+                    callbacks._websocket = websocket  # type: ignore
 
                 # Hydrate agent state from message on every non-heartbeat message
                 state_json = message.get("state")
@@ -348,7 +351,7 @@ async def text_chat(websocket: WebSocket):
                                     if finished_spans:
                                         mapper = StrandsInMemorySessionMapper()
                                         trajectory_session = mapper.map_to_session(
-                                            finished_spans, session_id=session_id
+                                            finished_spans, session_id=session_id  # type: ignore
                                         )
                                         if callbacks and hasattr(
                                             callbacks, "tool_executions"
@@ -428,16 +431,18 @@ async def text_chat(websocket: WebSocket):
             mcp_client_manager.cleanup_connections()
 
 
-async def _handle_voice_mode(websocket: WebSocket, log) -> None:
+async def _handle_voice_mode(websocket: WebSocket, log, session_id: str = "") -> None:
     """Handle voice mode using BidiAgent with Nova Sonic.
 
     Called when the /ws handler receives a voice_init message.
     Takes over the WebSocket connection for bidirectional audio streaming.
     """
     from shared.bidi_ws_adapter import WebSocketBidiInput, WebSocketBidiOutput
+    from src.callbacks import AgentCallbacks
     from strands.experimental.bidi import BidiAgent
     from strands.experimental.bidi.models import BidiNovaSonicModel
     from strands.experimental.bidi.tools import stop_conversation
+    from strands.hooks.events import AfterToolCallEvent, BeforeToolCallEvent
 
     MODEL_ID = os.getenv("VOICE_MODEL_ID", "amazon.nova-2-sonic-v1:0")
     BEDROCK_REGION = os.getenv("BEDROCK_REGION", AWS_REGION or "us-east-1")
@@ -483,12 +488,19 @@ async def _handle_voice_mode(websocket: WebSocket, log) -> None:
         system_prompt=configuration.instructions,
     )
 
+    # Attach callbacks for AI-rephrased tool descriptions (SNS → Mistral → AppSync)
+    # Same callbacks as text mode — publishes tool invocations to Agent Tools SNS topic
+    callbacks = AgentCallbacks(logger=log, session_id=session_id, user_id="")
+    voice_agent.hooks.add_callback(BeforeToolCallEvent, callbacks.log_tool_entries)
+    voice_agent.hooks.add_callback(AfterToolCallEvent, callbacks.log_tool_results)
+    log.info(f"Voice mode callbacks attached for session {session_id}")
+
     try:
         ws_input = WebSocketBidiInput(websocket)
-        ws_output = WebSocketBidiOutput(websocket)
+        ws_output = WebSocketBidiOutput(websocket, session_id=session_id)
 
         await voice_agent.run(
-            inputs=[ws_input],
+            inputs=[ws_input],  # type: ignore
             outputs=[ws_output],
         )
     except WebSocketDisconnect:
@@ -575,7 +587,7 @@ async def voice_chat(websocket: WebSocket):
         ws_output = WebSocketBidiOutput(websocket)
 
         await voice_agent.run(
-            inputs=[ws_input],
+            inputs=[ws_input],  # type: ignore
             outputs=[ws_output],
         )
 
