@@ -5,8 +5,6 @@
 // ----------------------------------------------------------------------
 import * as cdk from "aws-cdk-lib";
 import * as lambda from "aws-cdk-lib/aws-lambda";
-import * as sns from "aws-cdk-lib/aws-sns";
-import * as subscriptions from "aws-cdk-lib/aws-sns-subscriptions";
 import { NagSuppressions } from "cdk-nag";
 import { Construct } from "constructs";
 import { AcaAgentCoreContainer } from "./agent-core";
@@ -19,7 +17,7 @@ import { GenAIInterface } from "./genai-interface";
 import { VectorKnowledgeBase } from "./knowledge-base";
 import { Observability } from "./observability";
 import { Shared } from "./shared";
-import { Direction, Framework, SystemConfig } from "./shared/types";
+import { SystemConfig } from "./shared/types";
 import { UserInterface } from "./user-interface";
 
 export interface AcaProps extends cdk.StackProps {
@@ -127,31 +125,16 @@ export class AcaStack extends cdk.Stack {
             }),
         );
 
+        // GenAIInterface: only the agent-tools-handler Lambda is still needed
+        // (for AI-rephrased tool descriptions via the AppSync side-channel).
+        // The invokeAgentCoreRuntime Lambda was removed — the frontend now
+        // communicates directly with AgentCore via WebSocket.
         const genaiInterface = new GenAIInterface(this, "GenAIInterface", {
             shared: shared,
             config: props.config,
-            sessionsTable: api.sessionsTable,
-            byUserIdIndex: api.byUserIndex,
             messagesTopic: api.messagesTopic,
             agentToolsTopic: agentCoreInfra.agentToolsTopic,
         });
-
-        api.messagesTopic.addSubscription(
-            new subscriptions.LambdaSubscription(genaiInterface.invokeAgentCoreRuntime, {
-                filterPolicyWithMessageBody: {
-                    direction: sns.FilterOrPolicy.filter(
-                        sns.SubscriptionFilter.stringFilter({
-                            allowlist: [Direction.In],
-                        }),
-                    ),
-                    framework: sns.FilterOrPolicy.filter(
-                        sns.SubscriptionFilter.stringFilter({
-                            allowlist: [Framework.AGENT_CORE],
-                        }),
-                    ),
-                },
-            }),
-        );
 
         new UserInterface(this, "UserInterface", {
             config: props.config,
