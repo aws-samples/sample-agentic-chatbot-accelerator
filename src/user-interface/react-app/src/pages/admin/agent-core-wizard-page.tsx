@@ -101,7 +101,7 @@ export default function AgentCoreWizardPage() {
                         agentName: fromAgentName,
                         architectureType: "AGENTS_AS_TOOLS",
                         agentsAsToolsConfig: rawConfig,
-                        useMemory: rawConfig.useMemory || false,
+                        useMemory: rawConfig.useMemory ?? true,
                         instructions: "",
                         tools: [],
                         toolParameters: {},

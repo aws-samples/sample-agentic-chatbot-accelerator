@@ -240,11 +240,17 @@ export function AgentConfigSection({
                     >
                         Enable AgentCore Memory
                     </Checkbox>
-                    {useMemory && (
+                    {useMemory ? (
                         <Alert type="info">
                             AgentCore Memory will be created and attached to your agent Runtime,
-                            allowing it to maintain conversation context even when sessions are
-                            terminated.
+                            allowing it to persist conversation context across sessions — even when
+                            the underlying container is recycled.
+                        </Alert>
+                    ) : (
+                        <Alert type="warning">
+                            Without AgentCore Memory, the agent will not remember previous messages
+                            when a session is reopened or the container is recycled. Session
+                            continuity requires Memory to be enabled.
                         </Alert>
                     )}
                 </SpaceBetween>

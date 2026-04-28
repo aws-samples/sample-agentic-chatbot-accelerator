@@ -157,7 +157,7 @@ export default function AgentCoreRuntimeCreatorWizard({
         toolParameters: initialData?.toolParameters || {},
         mcpServers: initialData?.mcpServers || [],
         conversationManager: initialData?.conversationManager || "sliding_window",
-        useMemory: initialData?.useMemory || false,
+        useMemory: initialData?.useMemory ?? true,
         modelInferenceParameters: initialData?.modelInferenceParameters || {
             modelId: "",
             parameters: { temperature: 0.2, maxTokens: 3000 },
