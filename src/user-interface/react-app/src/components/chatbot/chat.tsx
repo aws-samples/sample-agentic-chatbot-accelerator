@@ -5,17 +5,20 @@
 // ----------------------------------------------------------------------
 import { Alert, Button, SpaceBetween, StatusIndicator } from "@cloudscape-design/components";
 import { generateClient } from "aws-amplify/api";
+import { fetchUserAttributes } from "aws-amplify/auth";
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { v4 as uuidv4 } from "uuid";
 
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { AppContext } from "../../common/app-context";
+import { VoiceConversationTurn } from "../../common/hooks/useVoiceAgent";
 import { CHATBOT_NAME } from "../../common/constants";
 import { getSession } from "../../graphql/queries";
 import styles from "../../styles/chat.module.scss";
 import ChatInputPanel, { ChatScrollState } from "./chat-input-panel";
 import ChatMessage from "./chat-message";
+import VoiceConversationView from "./VoiceConversationView";
 import { ChatBotHistoryItem, ChatBotMessageType, Feedback, ToolActionItem } from "./types";
 
 /**
@@ -81,6 +84,20 @@ export default function Chat(props: { sessionId?: string }) {
     const [scrollPaused, setScrollPaused] = useState(false);
     const [agentsAvailable, setAgentsAvailable] = useState<boolean | null>(null);
     const navigate = useNavigate();
+
+    // ================================================================
+    // Voice mode state
+    // ================================================================
+    const [voiceMode, setVoiceMode] = useState(false);
+    const [voiceAgentInfo, setVoiceAgentInfo] = useState<{
+        agentRuntimeId: string;
+        qualifier: string;
+        agentName: string;
+    } | null>(null);
+    /** Restored voice turns for read-only session display */
+    const [restoredVoiceTurns, setRestoredVoiceTurns] = useState<VoiceConversationTurn[] | undefined>(undefined);
+    /** User display name from Cognito (for voice bubble labels) */
+    const [userName, setUserName] = useState<string | undefined>(undefined);
     const chatContainerRef = useRef<HTMLDivElement>(null);
     const messagesContainerRef = useRef<HTMLDivElement>(null);
     const lastUserMessageRef = useRef<HTMLDivElement>(null);
@@ -256,13 +273,139 @@ export default function Chat(props: { sessionId?: string }) {
         })();
     }, [appContext, props.sessionId]);
 
+    // Fetch user display name from Cognito for voice bubble labels
+    useEffect(() => {
+        fetchUserAttributes()
+            .then((attrs) => {
+                // Prefer name, then given_name, then email, then sub
+                const displayName = attrs.name || attrs.given_name || attrs.email || attrs.sub;
+                if (displayName) setUserName(displayName);
+            })
+            .catch(() => {
+                // Fallback — leave as undefined (will show "You")
+            });
+    }, []);
+
+    // ================================================================
+    // Voice mode handlers
+    // ================================================================
+
+    /** Called from ChatInputPanel when user clicks "Start Voice" */
+    const handleVoiceStart = (info: { agentRuntimeId: string; qualifier: string; agentName: string }) => {
+        setVoiceAgentInfo(info);
+        setVoiceMode(true);
+        setRestoredVoiceTurns(undefined);
+    };
+
+    /** Called when a live voice session ends — convert voice turns to text chat format */
+    const handleVoiceConversationEnd = async (turns: VoiceConversationTurn[]) => {
+        if (turns.length === 0) return;
+
+        try {
+            // Convert voice turns into the text chat history format.
+            // Each user→assistant exchange gets a unique messageId (paired).
+            const historyItems: ChatBotHistoryItem[] = [];
+            let currentUserText = "";
+            let currentAssistantText = "";
+            let pairCount = 0;
+
+            const flushPair = () => {
+                if (!currentUserText && !currentAssistantText) return;
+                pairCount++;
+                const pairId = `voice-${pairCount}-${crypto.randomUUID().slice(0, 8)}`;
+
+                if (currentUserText) {
+                    historyItems.push({
+                        type: ChatBotMessageType.Human,
+                        content: currentUserText.trim(),
+                        messageId: pairId,
+                    });
+                }
+                if (currentAssistantText) {
+                    historyItems.push({
+                        type: ChatBotMessageType.AI,
+                        content: currentAssistantText.trim(),
+                        messageId: pairId,
+                        complete: true,
+                        tokens: [{ sequenceNumber: 0, value: "", runId: "voice" }],
+                    });
+                }
+                currentUserText = "";
+                currentAssistantText = "";
+            };
+
+            for (const turn of turns) {
+                if (!turn.isFinal) continue;
+
+                if (turn.role === "user") {
+                    // If we already have assistant text, flush the current pair first
+                    if (currentAssistantText) {
+                        flushPair();
+                    }
+                    currentUserText += (currentUserText ? " " : "") + turn.text;
+                } else if (turn.role === "assistant") {
+                    currentAssistantText += (currentAssistantText ? " " : "") + turn.text;
+                } else if (turn.role === "tool") {
+                    currentAssistantText += (currentAssistantText ? "\n" : "") + `🔧 ${turn.text}`;
+                }
+            }
+
+            // Flush final pair
+            flushPair();
+
+            // Update local message history
+            setMessageHistory(historyItems);
+            console.log(`Voice conversation rendered: ${historyItems.length} messages (${pairCount} pairs)`);
+        } catch (err) {
+            console.error("Failed to process voice conversation:", err);
+        }
+    };
+
+    /** Called when user exits voice mode */
+    const handleVoiceExit = () => {
+        setVoiceMode(false);
+        setVoiceAgentInfo(null);
+        setRestoredVoiceTurns(undefined);
+    };
+
+    // ================================================================
+    // Render: Voice mode vs Text mode
+    // ================================================================
+    if (voiceMode && voiceAgentInfo) {
+        return (
+            <div
+                style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr",
+                    width: "100%",
+                    height: "100%",
+                }}
+            >
+                <div className={styles.chat_meta_container}>
+                    <div className={styles.chat_container}>
+                        <VoiceConversationView
+                            agentRuntimeId={voiceAgentInfo.agentRuntimeId}
+                            qualifier={voiceAgentInfo.qualifier}
+                            sessionId={session.id}
+                            agentName={voiceAgentInfo.agentName}
+                            userName={userName}
+                            onExit={handleVoiceExit}
+                            onConversationEnd={handleVoiceConversationEnd}
+                            restoredTurns={restoredVoiceTurns}
+                        />
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div
             style={{
                 display: "grid",
                 gridTemplateColumns: annex ? "1fr 2fr" : "1fr",
                 width: "100%",
-                height: "100%", // Adjust as needed
+                height: "100%",
             }}
         >
             <div className={styles.chat_meta_container} ref={chatContainerRef}>
@@ -352,6 +495,7 @@ export default function Chat(props: { sessionId?: string }) {
                             messageHistory={messageHistory}
                             setMessageHistory={(history) => setMessageHistory(history)}
                             onAgentsAvailable={setAgentsAvailable}
+                            onVoiceStart={handleVoiceStart}
                         />
                     </div>
                 </div>

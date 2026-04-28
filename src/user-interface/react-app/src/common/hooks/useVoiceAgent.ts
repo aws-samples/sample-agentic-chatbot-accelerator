@@ -13,10 +13,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { connectToAgent, ConnectOptions, WebSocketAgentConnection } from "../../websocket-presigned";
 
-export interface VoiceTranscript {
-    role: "user" | "assistant";
+/** A single turn in a voice conversation (user speech, assistant speech, or tool use). */
+export interface VoiceConversationTurn {
+    role: "user" | "assistant" | "tool";
     text: string;
+    timestamp: number;
     isFinal: boolean;
+    toolName?: string;
 }
 
 export interface UseVoiceAgentOptions {
@@ -30,7 +33,10 @@ export interface UseVoiceAgentOptions {
 export interface UseVoiceAgentReturn {
     isRecording: boolean;
     isConnected: boolean;
-    transcripts: VoiceTranscript[];
+    /** All conversation turns (transcripts + tool events) in chronological order */
+    conversationTurns: VoiceConversationTurn[];
+    /** Who is currently speaking — stays set until the OTHER actor starts speaking */
+    activeSpeaker: "user" | "assistant" | "tool" | null;
     startVoice: () => Promise<void>;
     stopVoice: () => void;
     error: string | null;
@@ -42,11 +48,15 @@ export interface UseVoiceAgentReturn {
  * Captures microphone audio via AudioWorklet, encodes to base64 PCM,
  * sends to AgentCore via WebSocket, receives audio responses,
  * and plays them back via AudioContext.
+ *
+ * Accumulates all conversation turns (user transcripts, assistant transcripts,
+ * and tool use events) for display in VoiceConversationView.
  */
 export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentReturn {
     const [isRecording, setIsRecording] = useState(false);
     const [isConnected, setIsConnected] = useState(false);
-    const [transcripts, setTranscripts] = useState<VoiceTranscript[]>([]);
+    const [conversationTurns, setConversationTurns] = useState<VoiceConversationTurn[]>([]);
+    const [activeSpeaker, setActiveSpeaker] = useState<"user" | "assistant" | "tool" | null>(null);
     const [error, setError] = useState<string | null>(null);
 
     const connectionRef = useRef<WebSocketAgentConnection | null>(null);
@@ -56,6 +66,9 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
     const playbackContextRef = useRef<AudioContext | null>(null);
     const audioQueueRef = useRef<Float32Array[]>([]);
     const isPlayingRef = useRef(false);
+    // Keep a ref to conversationTurns so stopVoice can access latest value
+    const conversationTurnsRef = useRef<VoiceConversationTurn[]>([]);
+    conversationTurnsRef.current = conversationTurns;
 
     // Convert Int16 PCM buffer to base64 string
     const int16ToBase64 = useCallback((buffer: Int16Array): string => {
@@ -87,8 +100,14 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
         if (isPlayingRef.current || audioQueueRef.current.length === 0) return;
         isPlayingRef.current = true;
 
+        // Playback AudioContext is created in startVoice() inside user gesture.
+        // Fallback creation here for safety, but prefer user-gesture init.
         if (!playbackContextRef.current) {
             playbackContextRef.current = new AudioContext({ sampleRate: 16000 });
+        }
+        // Resume if suspended (browsers may suspend AudioContext not from user gesture)
+        if (playbackContextRef.current.state === "suspended") {
+            await playbackContextRef.current.resume();
         }
 
         while (audioQueueRef.current.length > 0) {
@@ -107,13 +126,26 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
         }
 
         isPlayingRef.current = false;
+
+        // Audio playback finished — if the assistant was speaking, reveal text
+        // (Nova Sonic doesn't emit bidi_response_complete, so we detect response
+        // end by the audio queue draining after assistant transcripts)
+        // Wait a short moment to ensure no more audio chunks arrive
+        setTimeout(() => {
+            if (!isPlayingRef.current && audioQueueRef.current.length === 0) {
+                setActiveSpeaker((current) => {
+                    if (current === "assistant") return null;
+                    return current;
+                });
+            }
+        }, 500);
     }, []);
 
     // Start voice recording and WebSocket connection
     const startVoice = useCallback(async () => {
         try {
             setError(null);
-            setTranscripts([]);
+            setConversationTurns([]);
 
             // Request microphone access
             const stream = await navigator.mediaDevices.getUserMedia({
@@ -126,7 +158,13 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
             });
             mediaStreamRef.current = stream;
 
-            // Set up AudioContext and Worklet
+            // Create playback AudioContext early (inside user gesture) to avoid
+            // browser restrictions that cause degraded/robotic audio quality
+            if (!playbackContextRef.current) {
+                playbackContextRef.current = new AudioContext({ sampleRate: 16000 });
+            }
+
+            // Set up AudioContext and Worklet for capture
             const audioContext = new AudioContext({ sampleRate: 16000 });
             audioContextRef.current = audioContext;
 
@@ -164,16 +202,94 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
                 },
 
                 onTranscript: (text: string, isFinal: boolean, role: "user" | "assistant") => {
-                    setTranscripts((prev) => {
-                        // Update last transcript of same role if not final, otherwise add new
+                    // Track who is currently speaking — waveform stays until the OTHER actor speaks
+                    setActiveSpeaker(role);
+
+                    setConversationTurns((prev) => {
                         const lastIdx = prev.length - 1;
-                        if (lastIdx >= 0 && prev[lastIdx].role === role && !prev[lastIdx].isFinal) {
+
+                        // Case 1: Last turn is same role and NOT final → update in place (partial → partial/final)
+                        if (
+                            lastIdx >= 0 &&
+                            prev[lastIdx].role === role &&
+                            !prev[lastIdx].isFinal
+                        ) {
                             const updated = [...prev];
-                            updated[lastIdx] = { role, text, isFinal };
+                            updated[lastIdx] = {
+                                role,
+                                text,
+                                isFinal,
+                                timestamp: Date.now(),
+                            };
                             return updated;
                         }
-                        return [...prev, { role, text, isFinal }];
+
+                        // Case 2: Last turn is same role and IS final, and new text is also final
+                        // → merge: append text to existing turn (avoids consecutive same-role blocks)
+                        if (
+                            lastIdx >= 0 &&
+                            prev[lastIdx].role === role &&
+                            prev[lastIdx].isFinal &&
+                            isFinal
+                        ) {
+                            const updated = [...prev];
+                            updated[lastIdx] = {
+                                ...updated[lastIdx],
+                                text: updated[lastIdx].text + " " + text,
+                                timestamp: Date.now(),
+                            };
+                            return updated;
+                        }
+
+                        // Case 3: Different role or first turn → add new entry
+                        return [
+                            ...prev,
+                            { role, text, isFinal, timestamp: Date.now() },
+                        ];
                     });
+                },
+
+                onToolEvent: (toolName: string, eventType: string, description?: string) => {
+                    // Track tool as active speaker (shows waveform with tool label)
+                    setActiveSpeaker("tool");
+
+                    if (eventType === "tool_use_stream") {
+                        // New tool invocation — show clean placeholder
+                        const cleanName = toolName
+                            .replace(/^[a-z-]+_aws___/, "") // strip MCP prefixes
+                            .replace(/_/g, " ");
+                        const toolText = `Using ${cleanName}...`;
+                        setConversationTurns((prev) => [
+                            ...prev,
+                            {
+                                role: "tool" as const,
+                                text: toolText,
+                                toolName,
+                                isFinal: true,
+                                timestamp: Date.now(),
+                            },
+                        ]);
+                    } else if (eventType === "tool_description" && description) {
+                        // AI-rephrased description arrived — update the LAST tool turn's text
+                        setConversationTurns((prev) => {
+                            // Find the last tool turn and replace its text
+                            const updated = [...prev];
+                            for (let i = updated.length - 1; i >= 0; i--) {
+                                if (updated[i].role === "tool") {
+                                    updated[i] = { ...updated[i], text: description };
+                                    break;
+                                }
+                            }
+                            return updated;
+                        });
+                    }
+                },
+
+                onResponseComplete: (stopReason: string) => {
+                    console.log("Voice: onResponseComplete fired, stopReason:", stopReason);
+                    // Agent finished its response — reveal the text by clearing activeSpeaker
+                    // This shows the assistant's text bubble (same as when the other actor speaks)
+                    setActiveSpeaker(null);
                 },
 
                 onInterruption: (reason: string) => {
@@ -192,7 +308,8 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
             connectionRef.current = conn;
 
             // Tell the container to switch to voice (BidiAgent) mode
-            conn.send({ type: "voice_init" });
+            // Include sessionId so the container can attach callbacks for AI tool rephrasing
+            conn.send({ type: "voice_init", sessionId: options.sessionId });
 
             // Send audio chunks from worklet to WebSocket
             workletNode.port.onmessage = (event) => {
@@ -216,7 +333,7 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
         }
     }, [options, int16ToBase64, base64ToFloat32, playNextAudio]);
 
-    // Stop voice recording
+    // Stop voice recording and save session
     const stopVoice = useCallback(() => {
         // Stop microphone
         if (mediaStreamRef.current) {
@@ -236,8 +353,24 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
             audioContextRef.current = null;
         }
 
-        // Send close event and disconnect WebSocket
+        // Save voice session to DynamoDB via container, then close WebSocket
         if (connectionRef.current?.isConnected()) {
+            // Send voice_save with conversation turns so container persists to DynamoDB
+            const finalTurns = conversationTurnsRef.current
+                .filter((t) => t.isFinal)
+                .map((t) => ({ role: t.role, text: t.text }));
+
+            if (finalTurns.length > 0) {
+                connectionRef.current.send({
+                    type: "voice_save",
+                    sessionId: options.sessionId,
+                    agentRuntimeId: options.agentRuntimeId,
+                    qualifier: options.qualifier,
+                    turns: finalTurns,
+                });
+            }
+
+            // Then close
             connectionRef.current.send({ type: "bidi_close", reason: "user_request" });
             connectionRef.current.close();
         }
@@ -249,7 +382,8 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
 
         setIsRecording(false);
         setIsConnected(false);
-    }, []);
+        setActiveSpeaker(null);
+    }, [options.sessionId, options.agentRuntimeId, options.qualifier]);
 
     // Cleanup on unmount
     useEffect(() => {
@@ -261,7 +395,8 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
     return {
         isRecording,
         isConnected,
-        transcripts,
+        conversationTurns,
+        activeSpeaker,
         startVoice,
         stopVoice,
         error,
