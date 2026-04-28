@@ -78,13 +78,15 @@ async function createPresignedUrl(
     agentRuntimeArn: string,
     qualifier: string,
     sessionId: string,
-    mode: "text" | "voice",
+    _mode: "text" | "voice",
     config: ConnectOptions["config"],
 ): Promise<string> {
     const region = config.aws_project_region;
     const credentials = await getAWSCredentials(config);
 
-    const wsPath = mode === "voice" ? "ws/voice" : "ws";
+    // AgentCore only supports the /ws path — voice/text mode is
+    // determined by the first message sent after connection
+    const wsPath = "ws";
     // URL format per AWS docs: wss://bedrock-agentcore.<region>.amazonaws.com/runtimes/<agentRuntimeArn>/ws
     // The ARN must be URI-encoded in the path
     const encodedArn = encodeURIComponent(agentRuntimeArn);
@@ -223,6 +225,15 @@ export async function connectToAgent(options: ConnectOptions): Promise<WebSocket
                         options.onInterruption?.(data.reason || "interrupted");
                         break;
 
+                    // --- Voice: tool stream events (informational) ---
+                    case "tool_use_stream":
+                    case "tool_result":
+                    case "tool_result_message":
+                    case "tool_stream":
+                        // Tool events during voice mode — logged but not displayed
+                        console.debug("Voice tool event:", data.type, data);
+                        break;
+
                     // --- Common ---
                     case "heartbeat_ack":
                         // Heartbeat acknowledged — no action needed
@@ -232,7 +243,7 @@ export async function connectToAgent(options: ConnectOptions): Promise<WebSocket
                         break;
 
                     default:
-                        console.warn("Unknown WebSocket message type:", data.type, data);
+                        console.debug("Unhandled WebSocket message type:", data.type);
                 }
             } catch (err) {
                 console.error("Error parsing WebSocket message:", err);
