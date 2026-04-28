@@ -228,14 +228,6 @@ export type FavoriteRuntime = {
   endpointName: string,
 };
 
-export type SendQueryMutationVariables = {
-  data?: string | null,
-};
-
-export type SendQueryMutation = {
-  sendQuery?: string | null,
-};
-
 export type PublishResponseMutationVariables = {
   sessionId?: string | null,
   userId?: string | null,
