@@ -304,9 +304,15 @@ async def voice_chat(websocket: WebSocket):
         await websocket.accept()
         logger.info("Voice WebSocket connection accepted")
 
+        # Use WebSocket adapters that implement the BidiInput/BidiOutput protocols
+        from shared.bidi_ws_adapter import WebSocketBidiInput, WebSocketBidiOutput
+
+        ws_input = WebSocketBidiInput(websocket)
+        ws_output = WebSocketBidiOutput(websocket)
+
         await voice_agent.run(
-            inputs=[websocket.receive_json],
-            outputs=[websocket.send_json],
+            inputs=[ws_input],
+            outputs=[ws_output],
         )
     except WebSocketDisconnect:
         logger.info("Voice WebSocket client disconnected")

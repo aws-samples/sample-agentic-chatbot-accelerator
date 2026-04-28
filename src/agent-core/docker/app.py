@@ -83,6 +83,12 @@ async def text_chat(websocket: WebSocket):
             message = await websocket.receive_json()
             msg_type = message.get("type")
 
+            # Voice mode: if the first message is voice_init, switch to BidiAgent
+            if msg_type == "voice_init":
+                logger.info("Switching to voice mode (BidiAgent)")
+                await _handle_voice_mode(websocket, logger)
+                return  # voice mode takes over the connection
+
             if msg_type == "text_input":
                 user_message = message.get("text", "")
                 session_id = message.get("sessionId", str(uuid.uuid4()))
@@ -422,6 +428,83 @@ async def text_chat(websocket: WebSocket):
             mcp_client_manager.cleanup_connections()
 
 
+async def _handle_voice_mode(websocket: WebSocket, log) -> None:
+    """Handle voice mode using BidiAgent with Nova Sonic.
+
+    Called when the /ws handler receives a voice_init message.
+    Takes over the WebSocket connection for bidirectional audio streaming.
+    """
+    from shared.bidi_ws_adapter import WebSocketBidiInput, WebSocketBidiOutput
+    from strands.experimental.bidi import BidiAgent
+    from strands.experimental.bidi.models import BidiNovaSonicModel
+    from strands.experimental.bidi.tools import stop_conversation
+
+    MODEL_ID = os.getenv("VOICE_MODEL_ID", "amazon.nova-2-sonic-v1:0")
+    BEDROCK_REGION = os.getenv("BEDROCK_REGION", AWS_REGION or "us-east-1")
+
+    sonic_model = BidiNovaSonicModel(
+        model_id=MODEL_ID,
+        provider_config={
+            "audio": {
+                "voice": "tiffany",
+                "input_rate": 16000,
+                "output_rate": 16000,
+                "channels": 1,
+                "format": "pcm",
+            },
+            "inference": {},
+        },
+        client_config={"region": BEDROCK_REGION},
+    )
+
+    configuration = parse_configuration(log)
+    tools = _initialize_voice_tools(configuration)
+
+    # Initialize MCP clients for voice mode (same as text mode)
+    mcp_client_manager = None
+    if configuration.mcpServers:
+        from shared.mcp_client import MCPClientManager
+        from src.registry import AVAILABLE_MCPS
+
+        mcp_client_manager = MCPClientManager(
+            mcp_servers=configuration.mcpServers,
+            logger=log,
+            mcp_registry=AVAILABLE_MCPS,
+        )
+        mcp_client_manager.init_mcp_clients()
+        # Add MCP tools to the tools list
+        mcp_tools = mcp_client_manager.load_mcp_tools()
+        tools.extend(mcp_tools)
+        log.info(f"Loaded {len(mcp_tools)} MCP tools for voice mode")
+
+    voice_agent = BidiAgent(
+        model=sonic_model,
+        tools=tools + [stop_conversation],
+        system_prompt=configuration.instructions,
+    )
+
+    try:
+        ws_input = WebSocketBidiInput(websocket)
+        ws_output = WebSocketBidiOutput(websocket)
+
+        await voice_agent.run(
+            inputs=[ws_input],
+            outputs=[ws_output],
+        )
+    except WebSocketDisconnect:
+        log.info("Voice WebSocket client disconnected")
+    except Exception as e:
+        log.error(f"Voice mode error: {e}")
+        import traceback
+
+        traceback.print_exc()
+    finally:
+        try:
+            await voice_agent.stop()
+        except Exception:
+            pass
+
+
 def _extract_reasoning(raw_result: "AgentResult") -> str:
     """Extract reasoning content from agent result."""
     reasoning = ""
@@ -485,9 +568,15 @@ async def voice_chat(websocket: WebSocket):
         await websocket.accept()
         logger.info("Voice WebSocket connection accepted")
 
+        # Use WebSocket adapters that implement the BidiInput/BidiOutput protocols
+        from shared.bidi_ws_adapter import WebSocketBidiInput, WebSocketBidiOutput
+
+        ws_input = WebSocketBidiInput(websocket)
+        ws_output = WebSocketBidiOutput(websocket)
+
         await voice_agent.run(
-            inputs=[websocket.receive_json],
-            outputs=[websocket.send_json],
+            inputs=[ws_input],
+            outputs=[ws_output],
         )
 
     except WebSocketDisconnect:

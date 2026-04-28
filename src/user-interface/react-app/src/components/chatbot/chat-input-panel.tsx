@@ -16,6 +16,7 @@ import { Utils } from "../../common/utils";
 import { saveToolActions, updateMessageExecutionTime } from "../../graphql/mutations";
 import { receiveMessages } from "../../graphql/subscriptions";
 import {
+    getDefaultRuntimeConfiguration as getDefaultRuntimeConfigurationQuery,
     getFavoriteRuntime as getFavoriteRuntimeQuery,
     listAgentEndpoints as listAgentEndpointsQuery,
     listRuntimeAgents as listRuntimeAgentsQuery,
@@ -36,6 +37,7 @@ import {
     ToolActionItem,
 } from "./types";
 import { updateMessageHistoryRef } from "./utils";
+import VoiceModeToggle from "./VoiceModeToggle";
 
 export interface ChatInputPanelProps {
     running: boolean;
@@ -68,8 +70,9 @@ export default function ChatInputPanel(props: ChatInputPanelProps) {
     const [agentRuntimeId, setAgentRuntimeId] = useState<string>("");
     const [qualifier, setQualifier] = useState<string>("DEFAULT");
     const [availableAgents, setAvailableAgents] = useState<
-        { label: string; value: string; iconName?: IconProps.Name; disabled?: boolean }[]
+        { label: string; value: string; iconName?: IconProps.Name; disabled?: boolean; architectureType?: string }[]
     >([]);
+    const [voiceSupported, setVoiceSupported] = useState(false);
     const [agentsLoading, setAgentsLoading] = useState(true);
     const [availableEndpoints, setAvailableEndpoints] = useState<
         Array<{ label: string; value: string }>
@@ -155,6 +158,7 @@ export default function ChatInputPanel(props: ChatInputPanelProps) {
                         value: agent.agentRuntimeId,
                         iconName: getStatusIcon(agent.status),
                         disabled: agent.status.toLowerCase() !== "ready",
+                        architectureType: agent.architectureType || undefined,
                     };
                 }) || [];
 
@@ -433,6 +437,46 @@ export default function ChatInputPanel(props: ChatInputPanelProps) {
             }
         };
     }, [props.session.id, agentRuntimeId, qualifier, appContext]);
+
+    // Check if selected agent supports voice mode
+    // (1) architectureType must be SINGLE or AGENTS_AS_TOOLS
+    // (2) model must contain "sonic" (Nova Sonic)
+    useEffect(() => {
+        if (!agentRuntimeId) {
+            setVoiceSupported(false);
+            return;
+        }
+
+        const selectedAgent = availableAgents.find((a) => a.value === agentRuntimeId);
+        if (!selectedAgent) {
+            setVoiceSupported(false);
+            return;
+        }
+
+        // Step 1: Check architectureType
+        const arch = selectedAgent.architectureType;
+        if (arch && arch !== "SINGLE" && arch !== "AGENTS_AS_TOOLS") {
+            setVoiceSupported(false);
+            return;
+        }
+
+        // Step 2: Load agent config to check model
+        const checkModel = async () => {
+            try {
+                const result = await client.graphql({
+                    query: getDefaultRuntimeConfigurationQuery,
+                    variables: { agentName: selectedAgent.label },
+                });
+                const config = JSON.parse(result.data.getDefaultRuntimeConfiguration);
+                const modelId = config?.modelInferenceParameters?.modelId || "";
+                setVoiceSupported(modelId.toLowerCase().includes("sonic"));
+            } catch {
+                // If we can't load config, default to architectureType check only
+                setVoiceSupported(arch === "SINGLE" || arch === "AGENTS_AS_TOOLS" || !arch);
+            }
+        };
+        checkModel();
+    }, [agentRuntimeId, availableAgents]);
 
     // Send heartbeat when a new session is initialized (no messages yet)
     useEffect(() => {
@@ -736,6 +780,15 @@ export default function ChatInputPanel(props: ChatInputPanelProps) {
                         </>
                     )}
                 </SpaceBetween>
+                {/* Voice mode — available for Single Agent and Agents-as-Tools patterns */}
+                {agentRuntimeId && isSelectedAgentReady() && (
+                    <VoiceModeToggle
+                        agentRuntimeId={agentRuntimeId}
+                        qualifier={qualifier}
+                        sessionId={props.session.id}
+                        voiceSupported={voiceSupported}
+                    />
+                )}
             </SpaceBetween>
         </SpaceBetween>
     );
