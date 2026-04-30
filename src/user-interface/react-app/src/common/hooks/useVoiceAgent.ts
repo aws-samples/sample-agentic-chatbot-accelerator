@@ -38,7 +38,10 @@ export interface UseVoiceAgentReturn {
     /** Who is currently speaking — stays set until the OTHER actor starts speaking */
     activeSpeaker: "user" | "assistant" | "tool" | null;
     startVoice: () => Promise<void>;
+    /** Pause: stop mic/audio but keep WS alive for context */
     stopVoice: () => void;
+    /** Full disconnect: close WS, save session (use on exit/unmount) */
+    disconnectVoice: () => void;
     error: string | null;
 }
 
@@ -157,11 +160,10 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
         }, remainingMs + 500);
     }, []);
 
-    // Start voice recording and WebSocket connection
+    // Start voice recording and WebSocket connection (or resume if WS still alive)
     const startVoice = useCallback(async () => {
         try {
             setError(null);
-            setConversationTurns([]);
 
             // Request microphone access
             const stream = await navigator.mediaDevices.getUserMedia({
@@ -191,7 +193,26 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
             const source = audioContext.createMediaStreamSource(stream);
             source.connect(workletNode);
 
-            // Connect to AgentCore via WebSocket (voice mode)
+            // If WebSocket is still alive (resume after pause), just re-attach mic
+            if (connectionRef.current?.isConnected()) {
+                console.log("Voice: resuming — reusing existing WebSocket connection");
+                workletNode.port.onmessage = (event) => {
+                    if (event.data.type === "audio" && connectionRef.current?.isConnected()) {
+                        const base64Audio = int16ToBase64(event.data.data);
+                        connectionRef.current.send({
+                            type: "bidi_audio_input",
+                            audio: base64Audio,
+                            format: "pcm",
+                            sample_rate: 16000,
+                            channels: 1,
+                        });
+                    }
+                };
+                setIsRecording(true);
+                return;
+            }
+
+            // New connection — connect to AgentCore via WebSocket (voice mode)
             const conn = await connectToAgent({
                 agentRuntimeId: options.agentRuntimeId,
                 accountId: options.accountId,
@@ -339,9 +360,9 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
 
             // Send audio chunks from worklet to WebSocket
             workletNode.port.onmessage = (event) => {
-                if (event.data.type === "audio" && conn.isConnected()) {
+                if (event.data.type === "audio" && connectionRef.current?.isConnected()) {
                     const base64Audio = int16ToBase64(event.data.data);
-                    conn.send({
+                    connectionRef.current.send({
                         type: "bidi_audio_input",
                         audio: base64Audio,
                         format: "pcm",
@@ -359,7 +380,7 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
         }
     }, [options, int16ToBase64, base64ToFloat32, playNextAudio]);
 
-    // Stop voice recording and save session
+    // Pause voice — stop mic/audio but keep WebSocket alive for context preservation
     const stopVoice = useCallback(() => {
         // Stop microphone
         if (mediaStreamRef.current) {
@@ -383,9 +404,26 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
             playbackContextRef.current = null;
         }
 
+        // Clear audio queue and scheduled playback state
+        audioQueueRef.current = [];
+        isPlayingRef.current = false;
+        nextPlayTimeRef.current = 0;
+        if (drainTimerRef.current) {
+            clearTimeout(drainTimerRef.current);
+            drainTimerRef.current = null;
+        }
+
+        // NOTE: WebSocket is intentionally kept alive so the BidiAgent retains
+        // conversation context for when the user resumes.
+
+        setIsRecording(false);
+        setActiveSpeaker(null);
+    }, []);
+
+    // Fully disconnect — close WebSocket and save session (called on unmount / exit)
+    const disconnectVoice = useCallback(() => {
         // Save voice session to DynamoDB via container, then close WebSocket
         if (connectionRef.current?.isConnected()) {
-            // Send voice_save with conversation turns so container persists to DynamoDB
             const finalTurns = conversationTurnsRef.current
                 .filter((t) => t.isFinal)
                 .map((t) => ({ role: t.role, text: t.text }));
@@ -400,32 +438,20 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
                 });
             }
 
-            // Then close
             connectionRef.current.send({ type: "bidi_close", reason: "user_request" });
             connectionRef.current.close();
         }
         connectionRef.current = null;
-
-        // Clear audio queue and scheduled playback state
-        audioQueueRef.current = [];
-        isPlayingRef.current = false;
-        nextPlayTimeRef.current = 0;
-        if (drainTimerRef.current) {
-            clearTimeout(drainTimerRef.current);
-            drainTimerRef.current = null;
-        }
-
-        setIsRecording(false);
         setIsConnected(false);
-        setActiveSpeaker(null);
     }, [options.sessionId, options.agentRuntimeId, options.qualifier]);
 
-    // Cleanup on unmount
+    // Cleanup on unmount — fully disconnect
     useEffect(() => {
         return () => {
             stopVoice();
+            disconnectVoice();
         };
-    }, [stopVoice]);
+    }, [stopVoice, disconnectVoice]);
 
     return {
         isRecording,
@@ -434,6 +460,7 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
         activeSpeaker,
         startVoice,
         stopVoice,
+        disconnectVoice,
         error,
     };
 }

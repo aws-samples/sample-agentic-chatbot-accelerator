@@ -221,7 +221,9 @@ export async function connectToAgent(options: ConnectOptions): Promise<WebSocket
                         );
                         break;
                     case "bidi_text_response":
-                        options.onTranscript?.(data.text, true, "assistant");
+                        // Intentionally ignored — assistant text is already received via
+                        // bidi_transcript_stream events. Processing both would duplicate text.
+                        console.debug("Voice WS: bidi_text_response (ignored, using transcript_stream):", data.text?.slice(0, 50));
                         break;
                     case "bidi_interruption":
                         options.onInterruption?.(data.reason || "interrupted");
