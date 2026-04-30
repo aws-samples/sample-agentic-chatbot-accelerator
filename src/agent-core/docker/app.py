@@ -438,16 +438,21 @@ async def _handle_voice_mode(websocket: WebSocket, log, session_id: str = "") ->
     Takes over the WebSocket connection for bidirectional audio streaming.
     """
     from shared.bidi_ws_adapter import WebSocketBidiInput, WebSocketBidiOutput
-    from src.callbacks import AgentCallbacks
     from strands.experimental.bidi import BidiAgent
     from strands.experimental.bidi.models import BidiNovaSonicModel
     from strands.experimental.bidi.tools import stop_conversation
-    from strands.hooks.events import AfterToolCallEvent, BeforeToolCallEvent
 
-    # TODO - no the following is wrong; we should:
-    #   - get model from the configuration
-    #   - if the model id is not amazon.nova-2-sonic-v1:0 raise an exception
-    MODEL_ID = os.getenv("VOICE_MODEL_ID", "amazon.nova-2-sonic-v1:0")
+    configuration = parse_configuration(log)
+
+    # Get model from agent configuration and validate it's a Nova Sonic model
+    # (BidiAgent only supports Nova Sonic — other models will fail silently)
+    SUPPORTED_SONIC_MODELS = {"amazon.nova-sonic-v1:0", "amazon.nova-2-sonic-v1:0"}
+    MODEL_ID = configuration.modelInferenceParameters.modelId
+    if MODEL_ID not in SUPPORTED_SONIC_MODELS:
+        raise ValueError(
+            f"Voice mode requires a Nova Sonic model, but agent is configured with '{MODEL_ID}'. "
+            f"Supported models: {SUPPORTED_SONIC_MODELS}"
+        )
     BEDROCK_REGION = os.getenv("BEDROCK_REGION", AWS_REGION or "us-east-1")
 
     sonic_model = BidiNovaSonicModel(
@@ -465,7 +470,6 @@ async def _handle_voice_mode(websocket: WebSocket, log, session_id: str = "") ->
         client_config={"region": BEDROCK_REGION},
     )
 
-    configuration = parse_configuration(log)
     tools = _initialize_voice_tools(configuration)
 
     # Initialize MCP clients for voice mode (same as text mode)
@@ -485,19 +489,32 @@ async def _handle_voice_mode(websocket: WebSocket, log, session_id: str = "") ->
         tools.extend(mcp_tools)
         log.info(f"Loaded {len(mcp_tools)} MCP tools for voice mode")
 
+    # Create session manager if memory is enabled (same as text mode)
+    # This persists conversation history across BidiAgent turns and reconnections
+    session_manager = None
+    if MEMORY_ID and session_id:
+        log.info(
+            "Creating session manager for voice mode",
+            extra={"context": {"memoryId": MEMORY_ID, "sessionId": session_id}},
+        )
+        session_manager = create_session_manager(
+            memory_id=MEMORY_ID,
+            session_id=session_id,
+            user_id="",
+            region_name=AWS_REGION,
+        )
+
     voice_agent = BidiAgent(
         model=sonic_model,
         tools=tools + [stop_conversation],
         system_prompt=configuration.instructions,
-    )  # TODO - what about session manager? add this if missing
+        session_manager=session_manager,
+    )
 
-    # TODO - I believe that the following can be safely removed as these hooks are not available in `BidiAgent`
-    # Attach callbacks for AI-rephrased tool descriptions (SNS → Mistral → AppSync)
-    # Same callbacks as text mode — publishes tool invocations to Agent Tools SNS topic
-    callbacks = AgentCallbacks(logger=log, session_id=session_id, user_id="")
-    voice_agent.hooks.add_callback(BeforeToolCallEvent, callbacks.log_tool_entries)
-    voice_agent.hooks.add_callback(AfterToolCallEvent, callbacks.log_tool_results)
-    log.info(f"Voice mode callbacks attached for session {session_id}")
+    # NOTE: BeforeToolCallEvent/AfterToolCallEvent are standard Agent hooks and do NOT
+    # fire in BidiAgent. Tool descriptions for voice mode are handled directly by
+    # WebSocketBidiOutput._send_tool_description() which calls Mistral when it detects
+    # a ToolUseStreamEvent in the output stream.
 
     try:
         ws_input = WebSocketBidiInput(websocket)
