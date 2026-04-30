@@ -10,14 +10,15 @@
 // mode is active. Shows completed turns as markdown, active turns as an
 // animated waveform, and a sticky footer with recording controls.
 //
-import { Alert, Box, Button, SpaceBetween, StatusIndicator } from "@cloudscape-design/components";
+import { Alert, Box, Button, FormField, Select, SpaceBetween, StatusIndicator } from "@cloudscape-design/components";
 import { generateClient } from "aws-amplify/api";
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { AppContext } from "../../common/app-context";
 import { useVoiceAgent, VoiceConversationTurn } from "../../common/hooks/useVoiceAgent";
+import { getDefaultRuntimeConfiguration as getDefaultRuntimeConfigurationQuery } from "../../graphql/queries";
 import { receiveMessages } from "../../graphql/subscriptions";
 import { ConnectOptions } from "../../websocket-presigned";
-import { ChatBotAction, ChatBotMessageResponse } from "./types";
+import { AgentOption, ChatBotAction, ChatBotMessageResponse, EndpointOption } from "./types";
 import MarkdownContent from "./side-view/markdown-content";
 
 export interface VoiceConversationViewProps {
@@ -29,6 +30,14 @@ export interface VoiceConversationViewProps {
     onExit: () => void;
     onConversationEnd: (turns: VoiceConversationTurn[]) => void;
     restoredTurns?: VoiceConversationTurn[];
+
+    // Agent/Endpoint selector props (from lifted state in chat.tsx)
+    availableAgents: AgentOption[];
+    availableEndpoints: EndpointOption[];
+    agentsLoading: boolean;
+    endpointsLoading: boolean;
+    /** Called when user changes agent — parent decides whether to stay in voice or exit */
+    onAgentChange: (newAgentId: string, newQualifier: string, isSonic: boolean) => void;
 }
 
 export default function VoiceConversationView({
@@ -40,6 +49,11 @@ export default function VoiceConversationView({
     onExit,
     onConversationEnd,
     restoredTurns,
+    availableAgents,
+    availableEndpoints,
+    agentsLoading,
+    endpointsLoading,
+    onAgentChange,
 }: VoiceConversationViewProps) {
     const appContext = useContext(AppContext);
     const logEndRef = useRef<HTMLDivElement>(null);
@@ -157,7 +171,52 @@ export default function VoiceConversationView({
         onExit();
     };
 
+    // ================================================================
+    // Agent change handler — check if new agent is sonic before calling parent
+    // ================================================================
+    const handleAgentSelect = async (newAgentId: string) => {
+        if (newAgentId === agentRuntimeId) return;
+
+        const selectedAgent = availableAgents.find((a) => a.value === newAgentId);
+        if (!selectedAgent) return;
+
+        // Check architectureType first
+        const arch = selectedAgent.architectureType;
+        if (arch && arch !== "SINGLE" && arch !== "AGENTS_AS_TOOLS") {
+            // Definitely not sonic-capable — exit voice
+            onAgentChange(newAgentId, "DEFAULT", false);
+            return;
+        }
+
+        // Check model to determine if sonic
+        let isSonic = false;
+        try {
+            const result = await client.graphql({
+                query: getDefaultRuntimeConfigurationQuery,
+                variables: { agentName: selectedAgent.label },
+            });
+            const config = JSON.parse((result as any).data.getDefaultRuntimeConfiguration);
+            const modelId = config?.modelInferenceParameters?.modelId || "";
+            isSonic = modelId.toLowerCase().includes("sonic");
+        } catch {
+            // If can't load config, assume not sonic for safety
+            isSonic = false;
+        }
+
+        // Use DEFAULT qualifier for new agent — parent will load proper endpoints
+        onAgentChange(newAgentId, "DEFAULT", isSonic);
+    };
+
+    const handleEndpointSelect = (newQualifier: string) => {
+        if (newQualifier === qualifier) return;
+        // Endpoint change within same agent — always stays in voice (agent is already sonic)
+        onAgentChange(agentRuntimeId, newQualifier, true);
+    };
+
     const displayUserName = userName || "You";
+
+    // Dropdowns are disabled while recording (can only change when paused/before start)
+    const dropdownsDisabled = isRecording || isReadOnly;
 
     return (
         <div style={{ display: "flex", flexDirection: "column", height: "100%", position: "relative" }}>
@@ -170,11 +229,65 @@ export default function VoiceConversationView({
                     padding: "12px 16px",
                     borderBottom: "1px solid var(--color-border-divider-default)",
                     flexShrink: 0,
+                    flexWrap: "wrap",
+                    gap: "8px",
                 }}
             >
-                <span style={{ fontSize: "18px", fontWeight: 700 }}>
-                    🎙 Voice — {agentName}
-                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                    <span style={{ fontSize: "18px", fontWeight: 700 }}>
+                        🎙 Voice
+                    </span>
+                </div>
+
+                {/* Agent/Endpoint Selectors */}
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    {!agentsLoading && availableAgents.length > 0 && (
+                        <>
+                            <div style={{ minWidth: "160px" }}>
+                                <FormField label="Agent Runtime">
+                                    <Select
+                                        disabled={dropdownsDisabled || agentsLoading}
+                                        placeholder={agentsLoading ? "Loading..." : "Select agent"}
+                                        selectedOption={
+                                            agentRuntimeId
+                                                ? availableAgents.find((a) => a.value === agentRuntimeId) || null
+                                                : null
+                                        }
+                                        onChange={({ detail }) => {
+                                            const newId = detail.selectedOption?.value || "";
+                                            if (newId) handleAgentSelect(newId);
+                                        }}
+                                        options={availableAgents}
+                                        statusType={agentsLoading ? "loading" : "finished"}
+                                        loadingText="Loading..."
+                                    />
+                                </FormField>
+                            </div>
+
+                            <div style={{ minWidth: "140px" }}>
+                                <FormField label="Endpoint">
+                                    <Select
+                                        disabled={dropdownsDisabled || !agentRuntimeId || endpointsLoading}
+                                        placeholder={endpointsLoading ? "Loading..." : "Endpoint"}
+                                        selectedOption={
+                                            qualifier
+                                                ? availableEndpoints.find((e) => e.value === qualifier) || null
+                                                : null
+                                        }
+                                        onChange={({ detail }) => {
+                                            const newQ = detail.selectedOption?.value || "DEFAULT";
+                                            handleEndpointSelect(newQ);
+                                        }}
+                                        options={availableEndpoints}
+                                        statusType={endpointsLoading ? "loading" : "finished"}
+                                        loadingText="Loading..."
+                                    />
+                                </FormField>
+                            </div>
+                        </>
+                    )}
+                </div>
+
                 {isReadOnly && (
                     <StatusIndicator type="info">Read-only</StatusIndicator>
                 )}
