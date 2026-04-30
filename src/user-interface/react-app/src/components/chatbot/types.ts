@@ -121,3 +121,19 @@ export interface ChatBotRunRequest {
         qualifier?: string;
     };
 }
+
+// -------------------- Agent/Endpoint Option Types -------------------
+import type { IconProps } from "@cloudscape-design/components/icon";
+
+export interface AgentOption {
+    label: string;
+    value: string;
+    iconName?: IconProps.Name;
+    disabled?: boolean;
+    architectureType?: string;
+}
+
+export interface EndpointOption {
+    label: string;
+    value: string;
+}

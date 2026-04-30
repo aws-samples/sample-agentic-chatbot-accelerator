@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: MIT-0
 // ----------------------------------------------------------------------
 import { Alert, Button, SpaceBetween, StatusIndicator } from "@cloudscape-design/components";
+import type { IconProps } from "@cloudscape-design/components/icon";
 import { generateClient } from "aws-amplify/api";
 import { fetchUserAttributes } from "aws-amplify/auth";
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -14,12 +15,18 @@ import { useNavigate } from "react-router-dom";
 import { AppContext } from "../../common/app-context";
 import { VoiceConversationTurn } from "../../common/hooks/useVoiceAgent";
 import { CHATBOT_NAME } from "../../common/constants";
-import { getSession } from "../../graphql/queries";
+import {
+    getDefaultRuntimeConfiguration as getDefaultRuntimeConfigurationQuery,
+    getFavoriteRuntime as getFavoriteRuntimeQuery,
+    getSession,
+    listAgentEndpoints as listAgentEndpointsQuery,
+    listRuntimeAgents as listRuntimeAgentsQuery,
+} from "../../graphql/queries";
 import styles from "../../styles/chat.module.scss";
 import ChatInputPanel, { ChatScrollState } from "./chat-input-panel";
 import ChatMessage from "./chat-message";
 import VoiceConversationView from "./VoiceConversationView";
-import { ChatBotHistoryItem, ChatBotMessageType, Feedback, ToolActionItem } from "./types";
+import { AgentOption, ChatBotHistoryItem, ChatBotMessageType, EndpointOption, Feedback, ToolActionItem } from "./types";
 
 /**
  * Chat Component
@@ -82,18 +89,28 @@ export default function Chat(props: { sessionId?: string }) {
     const [annex, setAnnex] = useState<React.ReactElement | null>(null);
 
     const [scrollPaused, setScrollPaused] = useState(false);
-    const [agentsAvailable, setAgentsAvailable] = useState<boolean | null>(null);
     const navigate = useNavigate();
+
+    // ================================================================
+    // Lifted Agent / Endpoint state (shared between text & voice views)
+    // ================================================================
+    const [agentRuntimeId, setAgentRuntimeId] = useState<string>("");
+    const [qualifier, setQualifier] = useState<string>("DEFAULT");
+    const [availableAgents, setAvailableAgents] = useState<AgentOption[]>([]);
+    const [availableEndpoints, setAvailableEndpoints] = useState<EndpointOption[]>([]);
+    const [agentsLoading, setAgentsLoading] = useState(true);
+    const [endpointsLoading, setEndpointsLoading] = useState(false);
+    const [voiceSupported, setVoiceSupported] = useState(false);
+    const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+    const favoriteQualifierRef = useRef<string | null>(null);
+    const sessionEndpointRef = useRef<string | null>(null);
+    const client = generateClient();
 
     // ================================================================
     // Voice mode state
     // ================================================================
     const [voiceMode, setVoiceMode] = useState(false);
-    const [voiceAgentInfo, setVoiceAgentInfo] = useState<{
-        agentRuntimeId: string;
-        qualifier: string;
-        agentName: string;
-    } | null>(null);
     /** Restored voice turns for read-only session display */
     const [restoredVoiceTurns, setRestoredVoiceTurns] = useState<VoiceConversationTurn[] | undefined>(undefined);
     /** User display name from Cognito (for voice bubble labels) */
@@ -101,6 +118,231 @@ export default function Chat(props: { sessionId?: string }) {
     const chatContainerRef = useRef<HTMLDivElement>(null);
     const messagesContainerRef = useRef<HTMLDivElement>(null);
     const lastUserMessageRef = useRef<HTMLDivElement>(null);
+    /** Guard: suppress auto-enter voice mode after explicit agent change to non-sonic */
+    const suppressAutoVoiceRef = useRef(false);
+
+    // Derived: current agent name
+    const agentName = availableAgents.find((a) => a.value === agentRuntimeId)?.label || agentRuntimeId;
+
+    // Derived: agents available
+    const agentsAvailable = agentsLoading ? null : availableAgents.length > 0 ? true : false;
+
+    // ================================================================
+    // Agent / Endpoint loading logic (lifted from ChatInputPanel)
+    // ================================================================
+
+    // Load available runtime agents
+    const loadRuntimeAgents = async () => {
+        try {
+            setAgentsLoading(true);
+            const response = await client.graphql({
+                query: listRuntimeAgentsQuery,
+            });
+
+            const agents: AgentOption[] =
+                response.data.listRuntimeAgents?.map((agent: any) => {
+                    const getStatusIcon = (status: string): IconProps.Name => {
+                        switch (status.toLowerCase()) {
+                            case "ready":
+                                return "status-positive";
+                            case "updating":
+                                return "status-pending";
+                            case "failed":
+                                return "status-negative";
+                            default:
+                                return "status-info";
+                        }
+                    };
+                    return {
+                        label: agent.agentName,
+                        value: agent.agentRuntimeId,
+                        iconName: getStatusIcon(agent.status),
+                        disabled: agent.status.toLowerCase() !== "ready",
+                        architectureType: agent.architectureType || undefined,
+                    };
+                }) || [];
+
+            setAvailableAgents(agents);
+        } catch (error) {
+            console.error("Error fetching runtime agents:", error);
+        } finally {
+            setAgentsLoading(false);
+        }
+    };
+
+    // Load agents on mount and on refresh
+    useEffect(() => {
+        loadRuntimeAgents();
+    }, [refreshTrigger]);
+
+    const refreshAgents = () => setRefreshTrigger((prev) => prev + 1);
+
+    // Load favorite runtime for new sessions
+    useEffect(() => {
+        if (session.loading || session.runtimeId) return;
+
+        if (messageHistory.length === 0 && !agentRuntimeId) {
+            const loadFavoriteRuntime = async () => {
+                try {
+                    const result = await client.graphql({ query: getFavoriteRuntimeQuery });
+                    const favorite = result.data.getFavoriteRuntime;
+                    if (favorite) {
+                        favoriteQualifierRef.current = favorite.endpointName;
+                        setAgentRuntimeId(favorite.agentRuntimeId);
+                        setQualifier(favorite.endpointName);
+                    }
+                } catch (error) {
+                    // No favorite set, continue with defaults
+                }
+            };
+            loadFavoriteRuntime();
+        }
+    }, [messageHistory.length, agentRuntimeId, session.loading, session.runtimeId]);
+
+    // Restore agent/endpoint from session (loaded sessions)
+    useEffect(() => {
+        if (session.runtimeId && messageHistory.length > 0) {
+            if (session.endpoint) {
+                sessionEndpointRef.current = session.endpoint;
+            }
+            setAgentRuntimeId(session.runtimeId);
+        }
+        if (session.endpoint && messageHistory.length > 0) {
+            setQualifier(session.endpoint);
+        }
+    }, [session.runtimeId, session.endpoint, messageHistory.length]);
+
+    // Load endpoints when agentRuntimeId changes
+    useEffect(() => {
+        if (!agentRuntimeId) {
+            setAvailableEndpoints([{ label: "DEFAULT", value: "DEFAULT" }]);
+            setQualifier("DEFAULT");
+            return;
+        }
+
+        setEndpointsLoading(true);
+        client
+            .graphql({
+                query: listAgentEndpointsQuery,
+                variables: { agentRuntimeId },
+            })
+            .then((result: any) => {
+                const endpoints = result.data?.listAgentEndpoints || [];
+                const endpointOptions: EndpointOption[] = endpoints
+                    .filter((endpoint: any): endpoint is string => endpoint !== null)
+                    .map((endpoint: string) => ({ label: endpoint, value: endpoint }));
+
+                setAvailableEndpoints(endpointOptions);
+
+                // Check if there's a preserved qualifier from session or favorite
+                if (sessionEndpointRef.current) {
+                    if (endpointOptions.some((e) => e.value === sessionEndpointRef.current)) {
+                        setQualifier(sessionEndpointRef.current);
+                    } else {
+                        if (endpointOptions.some((e) => e.value === "QUALIFIER")) {
+                            setQualifier("QUALIFIER");
+                        } else if (endpointOptions.length > 0) {
+                            setQualifier(endpointOptions[0].value);
+                        } else {
+                            setQualifier("DEFAULT");
+                        }
+                    }
+                    sessionEndpointRef.current = null;
+                } else if (favoriteQualifierRef.current) {
+                    if (endpointOptions.some((e) => e.value === favoriteQualifierRef.current)) {
+                        setQualifier(favoriteQualifierRef.current);
+                    } else {
+                        if (endpointOptions.some((e) => e.value === "QUALIFIER")) {
+                            setQualifier("QUALIFIER");
+                        } else if (endpointOptions.length > 0) {
+                            setQualifier(endpointOptions[0].value);
+                        } else {
+                            setQualifier("DEFAULT");
+                        }
+                    }
+                    favoriteQualifierRef.current = null;
+                } else {
+                    if (endpointOptions.some((e) => e.value === "QUALIFIER")) {
+                        setQualifier("QUALIFIER");
+                    } else if (endpointOptions.length > 0) {
+                        setQualifier(endpointOptions[0].value);
+                    } else {
+                        setQualifier("DEFAULT");
+                    }
+                }
+            })
+            .catch((err: any) => {
+                console.error("Failed to load endpoints:", err);
+                setAvailableEndpoints([{ label: "DEFAULT", value: "DEFAULT" }]);
+                setQualifier("DEFAULT");
+                favoriteQualifierRef.current = null;
+            })
+            .finally(() => setEndpointsLoading(false));
+    }, [agentRuntimeId]);
+
+    // Check if selected agent supports voice mode
+    // (1) architectureType must be SINGLE or AGENTS_AS_TOOLS
+    // (2) model must contain "sonic" (Nova Sonic)
+    useEffect(() => {
+        if (!agentRuntimeId) {
+            setVoiceSupported(false);
+            return;
+        }
+
+        const selectedAgent = availableAgents.find((a) => a.value === agentRuntimeId);
+        if (!selectedAgent) {
+            setVoiceSupported(false);
+            return;
+        }
+
+        // Step 1: Check architectureType
+        const arch = selectedAgent.architectureType;
+        if (arch && arch !== "SINGLE" && arch !== "AGENTS_AS_TOOLS") {
+            setVoiceSupported(false);
+            return;
+        }
+
+        // Step 2: Load agent config to check model
+        const checkModel = async () => {
+            try {
+                const result = await client.graphql({
+                    query: getDefaultRuntimeConfigurationQuery,
+                    variables: { agentName: selectedAgent.label },
+                });
+                const config = JSON.parse(result.data.getDefaultRuntimeConfiguration);
+                const modelId = config?.modelInferenceParameters?.modelId || "";
+                setVoiceSupported(modelId.toLowerCase().includes("sonic"));
+            } catch {
+                // If we can't load config, default to architectureType check only
+                setVoiceSupported(arch === "SINGLE" || arch === "AGENTS_AS_TOOLS" || !arch);
+            }
+        };
+        checkModel();
+    }, [agentRuntimeId, availableAgents]);
+
+    // Auto-enter voice mode when a Nova Sonic agent is selected
+    useEffect(() => {
+        // Guard: skip if we just explicitly exited voice via agent change
+        if (suppressAutoVoiceRef.current) {
+            suppressAutoVoiceRef.current = false;
+            return;
+        }
+
+        if (!voiceSupported || !agentRuntimeId) return;
+        if (running || messageHistory.length > 0) return; // don't auto-switch mid-conversation
+        if (voiceMode) return; // already in voice mode
+
+        const selectedAgent = availableAgents.find((a) => a.value === agentRuntimeId);
+        if (!selectedAgent || selectedAgent.iconName !== "status-positive") return;
+
+        // Trigger voice mode automatically
+        setVoiceMode(true);
+        setRestoredVoiceTurns(undefined);
+    }, [voiceSupported, agentRuntimeId, qualifier, availableAgents]);
+
+    // ================================================================
+    // Scroll management
+    // ================================================================
 
     // Scroll management when message history changes:
     // - On new message send: scroll so the user's message is at the top of the viewport
@@ -194,6 +436,10 @@ export default function Chat(props: { sessionId?: string }) {
         container.addEventListener("scroll", onContainerScroll);
         return () => container.removeEventListener("scroll", onContainerScroll);
     }, []);
+
+    // ================================================================
+    // Session loading
+    // ================================================================
 
     useEffect(() => {
         if (!appContext) return;
@@ -292,7 +538,9 @@ export default function Chat(props: { sessionId?: string }) {
 
     /** Called from ChatInputPanel when user clicks "Start Voice" */
     const handleVoiceStart = (info: { agentRuntimeId: string; qualifier: string; agentName: string }) => {
-        setVoiceAgentInfo(info);
+        // Ensure lifted state matches what was passed
+        setAgentRuntimeId(info.agentRuntimeId);
+        setQualifier(info.qualifier);
         setVoiceMode(true);
         setRestoredVoiceTurns(undefined);
     };
@@ -364,14 +612,31 @@ export default function Chat(props: { sessionId?: string }) {
     /** Called when user exits voice mode */
     const handleVoiceExit = () => {
         setVoiceMode(false);
-        setVoiceAgentInfo(null);
         setRestoredVoiceTurns(undefined);
+    };
+
+    /**
+     * Called from VoiceConversationView when user changes agent in the voice dropdown.
+     * If the new agent is sonic-capable, stay in voice mode (reconnect).
+     * If not, exit voice mode and return to text chat.
+     */
+    const handleAgentChangeFromVoice = (newAgentId: string, newQualifier: string, isSonic: boolean) => {
+        if (!isSonic) {
+            // Prevent auto-enter voice from re-triggering before voiceSupported updates
+            suppressAutoVoiceRef.current = true;
+        }
+        setAgentRuntimeId(newAgentId);
+        setQualifier(newQualifier);
+        if (!isSonic) {
+            handleVoiceExit();
+        }
+        // If sonic, VoiceConversationView will reconnect with new agentRuntimeId/qualifier via props
     };
 
     // ================================================================
     // Render: Voice mode vs Text mode
     // ================================================================
-    if (voiceMode && voiceAgentInfo) {
+    if (voiceMode && agentRuntimeId) {
         return (
             <div
                 style={{
@@ -384,14 +649,19 @@ export default function Chat(props: { sessionId?: string }) {
                 <div className={styles.chat_meta_container}>
                     <div className={styles.chat_container}>
                         <VoiceConversationView
-                            agentRuntimeId={voiceAgentInfo.agentRuntimeId}
-                            qualifier={voiceAgentInfo.qualifier}
+                            agentRuntimeId={agentRuntimeId}
+                            qualifier={qualifier}
                             sessionId={session.id}
-                            agentName={voiceAgentInfo.agentName}
+                            agentName={agentName}
                             userName={userName}
                             onExit={handleVoiceExit}
                             onConversationEnd={handleVoiceConversationEnd}
                             restoredTurns={restoredVoiceTurns}
+                            availableAgents={availableAgents}
+                            availableEndpoints={availableEndpoints}
+                            agentsLoading={agentsLoading}
+                            endpointsLoading={endpointsLoading}
+                            onAgentChange={handleAgentChangeFromVoice}
                         />
                     </div>
                 </div>
@@ -494,7 +764,16 @@ export default function Chat(props: { sessionId?: string }) {
                             setRunning={setRunning}
                             messageHistory={messageHistory}
                             setMessageHistory={(history) => setMessageHistory(history)}
-                            onAgentsAvailable={setAgentsAvailable}
+                            agentRuntimeId={agentRuntimeId}
+                            setAgentRuntimeId={setAgentRuntimeId}
+                            qualifier={qualifier}
+                            setQualifier={setQualifier}
+                            availableAgents={availableAgents}
+                            availableEndpoints={availableEndpoints}
+                            agentsLoading={agentsLoading}
+                            endpointsLoading={endpointsLoading}
+                            voiceSupported={voiceSupported}
+                            refreshAgents={refreshAgents}
                             onVoiceStart={handleVoiceStart}
                         />
                     </div>
