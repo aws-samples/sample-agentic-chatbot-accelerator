@@ -66,6 +66,10 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
     const playbackContextRef = useRef<AudioContext | null>(null);
     const audioQueueRef = useRef<Float32Array[]>([]);
     const isPlayingRef = useRef(false);
+    /** Tracks the next time (in AudioContext seconds) to schedule the next chunk */
+    const nextPlayTimeRef = useRef(0);
+    /** Timer to detect when audio playback has fully drained */
+    const drainTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     // Keep a ref to conversationTurns so stopVoice can access latest value
     const conversationTurnsRef = useRef<VoiceConversationTurn[]>([]);
     conversationTurnsRef.current = conversationTurns;
@@ -95,10 +99,12 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
         return float32;
     }, []);
 
-    // Play audio from the queue
+    // Play audio from the queue using schedule-ahead playback.
+    // Instead of awaiting each chunk sequentially (which introduces micro-gaps
+    // causing robotic/choppy audio), we schedule all queued chunks at precise
+    // future times using AudioContext.currentTime. This produces gapless playback.
     const playNextAudio = useCallback(async () => {
-        if (isPlayingRef.current || audioQueueRef.current.length === 0) return;
-        isPlayingRef.current = true;
+        if (audioQueueRef.current.length === 0) return;
 
         // Playback AudioContext is created in startVoice() inside user gesture.
         // Fallback creation here for safety, but prefer user-gesture init.
@@ -110,35 +116,45 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
             await playbackContextRef.current.resume();
         }
 
-        while (audioQueueRef.current.length > 0) {
-            const samples = audioQueueRef.current.shift()!;
-            const buffer = playbackContextRef.current.createBuffer(1, samples.length, 16000);
-            buffer.getChannelData(0).set(samples);
+        const ctx = playbackContextRef.current;
+        const sampleRate = 16000;
 
-            const source = playbackContextRef.current.createBufferSource();
-            source.buffer = buffer;
-            source.connect(playbackContextRef.current.destination);
-
-            await new Promise<void>((resolve) => {
-                source.onended = () => resolve();
-                source.start();
-            });
+        // If our scheduled time is in the past, reset to now (+ small lookahead buffer)
+        if (nextPlayTimeRef.current < ctx.currentTime) {
+            nextPlayTimeRef.current = ctx.currentTime + 0.01; // 10ms lookahead
         }
 
-        isPlayingRef.current = false;
+        // Schedule all currently queued chunks back-to-back
+        while (audioQueueRef.current.length > 0) {
+            const samples = audioQueueRef.current.shift()!;
+            const buffer = ctx.createBuffer(1, samples.length, sampleRate);
+            buffer.getChannelData(0).set(samples);
 
-        // Audio playback finished — if the assistant was speaking, reveal text
-        // (Nova Sonic doesn't emit bidi_response_complete, so we detect response
-        // end by the audio queue draining after assistant transcripts)
-        // Wait a short moment to ensure no more audio chunks arrive
-        setTimeout(() => {
-            if (!isPlayingRef.current && audioQueueRef.current.length === 0) {
+            const source = ctx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(ctx.destination);
+            source.start(nextPlayTimeRef.current);
+
+            // Advance the schedule time by this chunk's duration
+            nextPlayTimeRef.current += samples.length / sampleRate;
+        }
+
+        // Set up a drain timer: fires after all scheduled audio has finished + 500ms grace.
+        // This detects when the assistant response is complete (Nova Sonic doesn't emit
+        // bidi_response_complete to custom output adapters).
+        if (drainTimerRef.current) {
+            clearTimeout(drainTimerRef.current);
+        }
+        const remainingMs = Math.max(0, (nextPlayTimeRef.current - ctx.currentTime) * 1000);
+        drainTimerRef.current = setTimeout(() => {
+            // Only reveal text if no new audio arrived in the meantime
+            if (audioQueueRef.current.length === 0) {
                 setActiveSpeaker((current) => {
                     if (current === "assistant") return null;
                     return current;
                 });
             }
-        }, 500);
+        }, remainingMs + 500);
     }, []);
 
     // Start voice recording and WebSocket connection
@@ -207,41 +223,40 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
 
                     setConversationTurns((prev) => {
                         const lastIdx = prev.length - 1;
+                        const lastTurn = lastIdx >= 0 ? prev[lastIdx] : null;
 
-                        // Case 1: Last turn is same role and NOT final → update in place (partial → partial/final)
-                        if (
-                            lastIdx >= 0 &&
-                            prev[lastIdx].role === role &&
-                            !prev[lastIdx].isFinal
-                        ) {
+                        // Same role as last turn → accumulate
+                        if (lastTurn && lastTurn.role === role) {
                             const updated = [...prev];
-                            updated[lastIdx] = {
-                                role,
-                                text,
-                                isFinal,
-                                timestamp: Date.now(),
-                            };
+                            if (role === "user") {
+                                if (!lastTurn.isFinal) {
+                                    // Still in the same utterance (partial updates are cumulative)
+                                    // → replace in place
+                                    updated[lastIdx] = { role, text, isFinal, timestamp: Date.now() };
+                                } else {
+                                    // Previous user turn was final — this is a NEW utterance after a pause
+                                    // → append to preserve the earlier text
+                                    updated[lastIdx] = {
+                                        ...updated[lastIdx],
+                                        text: updated[lastIdx].text + " " + text,
+                                        isFinal,
+                                        timestamp: Date.now(),
+                                    };
+                                }
+                            } else {
+                                // Assistant transcripts are INCREMENTAL (each chunk is new words)
+                                // → always append
+                                updated[lastIdx] = {
+                                    ...updated[lastIdx],
+                                    text: updated[lastIdx].text + " " + text,
+                                    isFinal,
+                                    timestamp: Date.now(),
+                                };
+                            }
                             return updated;
                         }
 
-                        // Case 2: Last turn is same role and IS final, and new text is also final
-                        // → merge: append text to existing turn (avoids consecutive same-role blocks)
-                        if (
-                            lastIdx >= 0 &&
-                            prev[lastIdx].role === role &&
-                            prev[lastIdx].isFinal &&
-                            isFinal
-                        ) {
-                            const updated = [...prev];
-                            updated[lastIdx] = {
-                                ...updated[lastIdx],
-                                text: updated[lastIdx].text + " " + text,
-                                timestamp: Date.now(),
-                            };
-                            return updated;
-                        }
-
-                        // Case 3: Different role or first turn → add new entry
+                        // Different role or first turn → add new entry
                         return [
                             ...prev,
                             { role, text, isFinal, timestamp: Date.now() },
@@ -294,9 +309,20 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
 
                 onInterruption: (reason: string) => {
                     console.log("Voice interruption:", reason);
-                    // Clear audio queue on interruption (barge-in)
+                    // Clear audio queue
                     audioQueueRef.current = [];
-                    isPlayingRef.current = false;
+                    nextPlayTimeRef.current = 0;
+                    if (drainTimerRef.current) {
+                        clearTimeout(drainTimerRef.current);
+                        drainTimerRef.current = null;
+                    }
+                    // STOP already-scheduled audio immediately by closing the playback context.
+                    // (With schedule-ahead, chunks are pre-scheduled in the AudioContext timeline —
+                    // clearing the queue alone won't stop them. Closing the context cancels all.)
+                    if (playbackContextRef.current) {
+                        playbackContextRef.current.close();
+                        playbackContextRef.current = null;
+                    }
                 },
 
                 onError: (errorMessage: string) => {
@@ -347,10 +373,14 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
             workletNodeRef.current = null;
         }
 
-        // Close audio contexts
+        // Close audio contexts (both capture and playback — stops any playing audio immediately)
         if (audioContextRef.current) {
             audioContextRef.current.close();
             audioContextRef.current = null;
+        }
+        if (playbackContextRef.current) {
+            playbackContextRef.current.close();
+            playbackContextRef.current = null;
         }
 
         // Save voice session to DynamoDB via container, then close WebSocket
@@ -376,9 +406,14 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
         }
         connectionRef.current = null;
 
-        // Clear audio queue
+        // Clear audio queue and scheduled playback state
         audioQueueRef.current = [];
         isPlayingRef.current = false;
+        nextPlayTimeRef.current = 0;
+        if (drainTimerRef.current) {
+            clearTimeout(drainTimerRef.current);
+            drainTimerRef.current = null;
+        }
 
         setIsRecording(false);
         setIsConnected(false);

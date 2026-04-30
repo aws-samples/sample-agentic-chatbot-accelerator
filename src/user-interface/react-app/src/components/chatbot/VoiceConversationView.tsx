@@ -44,6 +44,7 @@ export default function VoiceConversationView({
     const appContext = useContext(AppContext);
     const logEndRef = useRef<HTMLDivElement>(null);
     const isReadOnly = !!restoredTurns;
+    const [sessionEnded, setSessionEnded] = useState(false);
 
     const voiceOptions = useMemo(
         () => ({
@@ -120,29 +121,33 @@ export default function VoiceConversationView({
     // and the session is live (not read-only)
     const showWaveform = !isReadOnly && isRecording && activeSpeaker !== null;
 
-    // Completed turns to render: all final turns EXCEPT the current active speaker's
-    // latest turn — that one stays hidden behind the waveform until the other actor speaks.
-    // When read-only or session ended (!isRecording), show everything.
-    const completedTurns = (() => {
-        const allFinal = displayTurns?.filter((t) => t.isFinal) || [];
-        if (!showWaveform || allFinal.length === 0) return allFinal;
-
-        // Hide the trailing turn(s) that belong to the current activeSpeaker
-        // Find the last index where a different role spoke — show up to there
-        let lastVisibleIdx = allFinal.length - 1;
-        while (lastVisibleIdx >= 0 && allFinal[lastVisibleIdx].role === activeSpeaker) {
-            lastVisibleIdx--;
-        }
-        return allFinal.slice(0, lastVisibleIdx + 1);
-    })();
+    // All turns to display — including partial (non-final) ones.
+    // Text appears gradually as transcripts arrive. No hiding.
+    const visibleTurns = displayTurns || [];
 
     // Auto-scroll when turns change
     useEffect(() => {
         logEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [displayTurns]);
 
+    /** End session — stop recording but stay in the view */
+    const handleEndSession = () => {
+        stopVoice();
+        setSessionEnded(true);
+        if (conversationTurns.length > 0) {
+            onConversationEnd(conversationTurns);
+        }
+    };
+
+    /** Restart a new conversation */
+    const handleRestart = () => {
+        setSessionEnded(false);
+        startVoice();
+    };
+
+    /** Exit back to text chat */
     const handleExit = () => {
-        if (!isReadOnly) {
+        if (!isReadOnly && !sessionEnded) {
             stopVoice();
             if (conversationTurns.length > 0) {
                 onConversationEnd(conversationTurns);
@@ -189,8 +194,8 @@ export default function VoiceConversationView({
                     padding: "16px",
                 }}
             >
-                {/* Pre-voice: Start button */}
-                {!isReadOnly && !isRecording && completedTurns.length === 0 && !showWaveform && (
+                {/* Pre-voice: Start button (only before first recording) */}
+                {!isReadOnly && !isRecording && !sessionEnded && visibleTurns.length === 0 && !showWaveform && (
                     <Box textAlign="center" color="text-body-secondary" padding="xl">
                         <SpaceBetween direction="vertical" size="m" alignItems="center">
                             <Box variant="h3">🎙 Ready for Voice</Box>
@@ -207,7 +212,7 @@ export default function VoiceConversationView({
                 )}
 
                 {/* Listening but no turns yet */}
-                {!isReadOnly && isRecording && completedTurns.length === 0 && !showWaveform && (
+                {!isReadOnly && isRecording && visibleTurns.length === 0 && !showWaveform && (
                     <Box textAlign="center" color="text-body-secondary" padding="xl">
                         <SpaceBetween direction="vertical" size="s" alignItems="center">
                             <WaveformAnimation label={`${displayUserName} — speak to begin...`} />
@@ -216,15 +221,15 @@ export default function VoiceConversationView({
                 )}
 
                 {/* Read-only empty */}
-                {isReadOnly && completedTurns.length === 0 && (
+                {isReadOnly && visibleTurns.length === 0 && (
                     <Box textAlign="center" color="text-body-secondary" padding="xl">
                         No conversation recorded for this voice session.
                     </Box>
                 )}
 
-                {/* Completed turns rendered as markdown */}
+                {/* Conversation turns — shown as they arrive (including partial) */}
                 <SpaceBetween direction="vertical" size="m">
-                    {completedTurns.map((turn, idx) => (
+                    {visibleTurns.map((turn, idx) => (
                         <CompletedTurnCard
                             key={idx}
                             turn={turn}
@@ -283,13 +288,27 @@ export default function VoiceConversationView({
                     )}
                 </div>
 
-                <Button
-                    variant="primary"
-                    iconName={isReadOnly ? "arrow-left" : "close"}
-                    onClick={handleExit}
-                >
-                    {isReadOnly ? "Back to Chat" : "End Voice Session"}
-                </Button>
+                <SpaceBetween direction="horizontal" size="s">
+                    {/* Session ended: only Restart */}
+                    {sessionEnded && (
+                        <Button variant="primary" iconName="microphone" onClick={handleRestart}>
+                            Restart Conversation
+                        </Button>
+                    )}
+                    {/* Recording: End Session */}
+                    {!sessionEnded && !isReadOnly && isRecording && (
+                        <Button variant="primary" iconName="close" onClick={handleEndSession}>
+                            End Voice Session
+                        </Button>
+                    )}
+                    {/* Not yet started: just the Start button in the center (no footer button needed) */}
+                    {/* Read-only */}
+                    {isReadOnly && (
+                        <Button variant="primary" iconName="arrow-left" onClick={handleExit}>
+                            Back to Chat
+                        </Button>
+                    )}
+                </SpaceBetween>
             </div>
         </div>
     );
@@ -332,12 +351,15 @@ function CompletedTurnCard({
     const isUser = turn.role === "user";
     const icon = isUser ? "🎤" : "🤖";
     const label = isUser ? userName : agentName;
+    const isPartial = !turn.isFinal;
 
     return (
         <div
             style={{
                 display: "flex",
                 justifyContent: isUser ? "flex-end" : "flex-start",
+                opacity: isPartial ? 0.7 : 1,
+                transition: "opacity 0.2s ease",
             }}
         >
             <div
