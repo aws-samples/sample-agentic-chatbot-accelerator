@@ -444,6 +444,9 @@ async def _handle_voice_mode(websocket: WebSocket, log, session_id: str = "") ->
     from strands.experimental.bidi.tools import stop_conversation
     from strands.hooks.events import AfterToolCallEvent, BeforeToolCallEvent
 
+    # TODO - no the following is wrong; we should:
+    #   - get model from the configuration
+    #   - if the model id is not amazon.nova-2-sonic-v1:0 raise an exception
     MODEL_ID = os.getenv("VOICE_MODEL_ID", "amazon.nova-2-sonic-v1:0")
     BEDROCK_REGION = os.getenv("BEDROCK_REGION", AWS_REGION or "us-east-1")
 
@@ -486,8 +489,9 @@ async def _handle_voice_mode(websocket: WebSocket, log, session_id: str = "") ->
         model=sonic_model,
         tools=tools + [stop_conversation],
         system_prompt=configuration.instructions,
-    )
+    )  # TODO - what about session manager? add this if missing
 
+    # TODO - I believe that the following can be safely removed as these hooks are not available in `BidiAgent`
     # Attach callbacks for AI-rephrased tool descriptions (SNS → Mistral → AppSync)
     # Same callbacks as text mode — publishes tool invocations to Agent Tools SNS topic
     callbacks = AgentCallbacks(logger=log, session_id=session_id, user_id="")
@@ -499,10 +503,16 @@ async def _handle_voice_mode(websocket: WebSocket, log, session_id: str = "") ->
         ws_input = WebSocketBidiInput(websocket)
         ws_output = WebSocketBidiOutput(websocket, session_id=session_id)
 
-        await voice_agent.run(
-            inputs=[ws_input],  # type: ignore
-            outputs=[ws_output],
-        )
+        # Loop: BidiAgent.run() completes after each agent response.
+        # We keep re-running to accept follow-up questions on the same WebSocket.
+        # The loop exits when the user sends bidi_close (raises WebSocketDisconnect).
+        while True:
+            log.info("Voice: starting BidiAgent turn...")
+            await voice_agent.run(
+                inputs=[ws_input],  # type: ignore
+                outputs=[ws_output],
+            )
+            log.info("Voice: BidiAgent turn completed, awaiting next user input...")
     except WebSocketDisconnect:
         log.info("Voice WebSocket client disconnected")
     except Exception as e:
@@ -602,7 +612,8 @@ async def voice_chat(websocket: WebSocket):
         try:
             await websocket.close()
             await voice_agent.stop()
-        except Exception:
+        except Exception as e:
+            logger.error(f"Failed to close the websocket and stop the voice agent: {e}")
             pass
 
 
