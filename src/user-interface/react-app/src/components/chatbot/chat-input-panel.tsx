@@ -4,7 +4,6 @@
 // SPDX-License-Identifier: MIT-0
 // ----------------------------------------------------------------------
 import { Button, FormField, Select, SpaceBetween } from "@cloudscape-design/components";
-import type { IconProps } from "@cloudscape-design/components/icon";
 import PromptInput from "@cloudscape-design/components/prompt-input";
 import { generateClient } from "aws-amplify/api";
 import { Dispatch, SetStateAction, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -15,12 +14,6 @@ import { AppContext } from "../../common/app-context";
 import { Utils } from "../../common/utils";
 import { saveToolActions, updateMessageExecutionTime } from "../../graphql/mutations";
 import { receiveMessages } from "../../graphql/subscriptions";
-import {
-    getDefaultRuntimeConfiguration as getDefaultRuntimeConfigurationQuery,
-    getFavoriteRuntime as getFavoriteRuntimeQuery,
-    listAgentEndpoints as listAgentEndpointsQuery,
-    listRuntimeAgents as listRuntimeAgentsQuery,
-} from "../../graphql/queries";
 
 import {
     connectToAgent,
@@ -29,10 +22,12 @@ import {
 } from "../../websocket-presigned";
 
 import {
+    AgentOption,
     ChatBotAction,
     ChatBotHistoryItem,
     ChatBotMessageResponse,
     ChatBotMessageType,
+    EndpointOption,
     LLMToken,
     ToolActionItem,
 } from "./types";
@@ -49,7 +44,19 @@ export interface ChatInputPanelProps {
     };
     messageHistory: ChatBotHistoryItem[];
     setMessageHistory: (history: ChatBotHistoryItem[]) => void;
-    onAgentsAvailable?: (available: boolean) => void;
+
+    // Lifted agent/endpoint state from chat.tsx
+    agentRuntimeId: string;
+    setAgentRuntimeId: Dispatch<SetStateAction<string>>;
+    qualifier: string;
+    setQualifier: Dispatch<SetStateAction<string>>;
+    availableAgents: AgentOption[];
+    availableEndpoints: EndpointOption[];
+    agentsLoading: boolean;
+    endpointsLoading: boolean;
+    voiceSupported: boolean;
+    refreshAgents: () => void;
+
     /** Called when the user clicks the voice button — passes agent info for VoiceConversationView */
     onVoiceStart?: (info: { agentRuntimeId: string; qualifier: string; agentName: string }) => void;
 }
@@ -68,188 +75,28 @@ export default function ChatInputPanel(props: ChatInputPanelProps) {
         value: "",
     });
     const [readyState, setReadyState] = useState<ReadyState>(ReadyState.UNINSTANTIATED);
-    const [agentRuntimeId, setAgentRuntimeId] = useState<string>("");
-    const [qualifier, setQualifier] = useState<string>("DEFAULT");
-    const [availableAgents, setAvailableAgents] = useState<
-        { label: string; value: string; iconName?: IconProps.Name; disabled?: boolean; architectureType?: string }[]
-    >([]);
-    const [voiceSupported, setVoiceSupported] = useState(false);
-    const [agentsLoading, setAgentsLoading] = useState(true);
-    const [availableEndpoints, setAvailableEndpoints] = useState<
-        Array<{ label: string; value: string }>
-    >([]);
-    const [endpointsLoading, setEndpointsLoading] = useState(false);
-    const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+    // Use lifted state from props
+    const {
+        agentRuntimeId,
+        setAgentRuntimeId,
+        qualifier,
+        setQualifier,
+        availableAgents,
+        availableEndpoints,
+        agentsLoading,
+        endpointsLoading,
+        voiceSupported,
+        refreshAgents,
+    } = props;
 
     const messageHistoryRef = useRef<ChatBotHistoryItem[]>([]);
-    const favoriteQualifierRef = useRef<string | null>(null);
-    const sessionEndpointRef = useRef<string | null>(null);
     const wsConnectionRef = useRef<WebSocketAgentConnection | null>(null);
     const client = generateClient();
 
     useEffect(() => {
         messageHistoryRef.current = props.messageHistory;
     }, [props.messageHistory]);
-
-    // Load favorite runtime for new sessions
-    useEffect(() => {
-        if (props.session.loading || props.session.runtimeId) return;
-
-        if (props.messageHistory.length === 0 && !agentRuntimeId) {
-            const loadFavoriteRuntime = async () => {
-                try {
-                    const result = await client.graphql({ query: getFavoriteRuntimeQuery });
-                    const favorite = result.data.getFavoriteRuntime;
-                    if (favorite) {
-                        favoriteQualifierRef.current = favorite.endpointName;
-                        setAgentRuntimeId(favorite.agentRuntimeId);
-                        setQualifier(favorite.endpointName);
-                    }
-                } catch (error) {
-                    // No favorite set, continue with defaults
-                }
-            };
-            loadFavoriteRuntime();
-        }
-    }, [
-        props.messageHistory.length,
-        agentRuntimeId,
-        props.session.loading,
-        props.session.runtimeId,
-    ]);
-
-    useEffect(() => {
-        console.log(props.session);
-        if (props.session.runtimeId && props.messageHistory.length > 0) {
-            // Store the session endpoint before changing runtime to prevent it from being overwritten
-            if (props.session.endpoint) {
-                sessionEndpointRef.current = props.session.endpoint;
-            }
-            setAgentRuntimeId(props.session.runtimeId);
-        }
-        if (props.session.endpoint && props.messageHistory.length > 0) {
-            setQualifier(props.session.endpoint);
-        }
-    }, [props.session.runtimeId, props.session.endpoint, props.messageHistory.length]);
-
-    // Load available runtime agents
-    const loadRuntimeAgents = async () => {
-        try {
-            setAgentsLoading(true);
-            const response = await client.graphql({
-                query: listRuntimeAgentsQuery,
-            });
-
-            const agents =
-                response.data.listRuntimeAgents?.map((agent) => {
-                    const getStatusIcon = (status: string): IconProps.Name => {
-                        switch (status.toLowerCase()) {
-                            case "ready":
-                                return "status-positive";
-                            case "updating":
-                                return "status-pending";
-                            case "failed":
-                                return "status-negative";
-                            default:
-                                return "status-info";
-                        }
-                    };
-                    return {
-                        label: agent.agentName,
-                        value: agent.agentRuntimeId,
-                        iconName: getStatusIcon(agent.status),
-                        disabled: agent.status.toLowerCase() !== "ready",
-                        architectureType: agent.architectureType || undefined,
-                    };
-                }) || [];
-
-            setAvailableAgents(agents);
-        } catch (error) {
-            console.error("Error fetching runtime agents:", error);
-        } finally {
-            setAgentsLoading(false);
-        }
-    };
-
-    // Update useEffect to include refreshTrigger
-    useEffect(() => {
-        loadRuntimeAgents();
-    }, [refreshTrigger]);
-
-    // Add refresh function
-    const refreshAgents = () => setRefreshTrigger((prev) => prev + 1);
-    useEffect(() => {
-        if (!agentsLoading) {
-            props.onAgentsAvailable?.(availableAgents.length > 0);
-        }
-    }, [agentsLoading, availableAgents.length, props.onAgentsAvailable]);
-
-    useEffect(() => {
-        if (!agentRuntimeId) {
-            setAvailableEndpoints([{ label: "DEFAULT", value: "DEFAULT" }]);
-            setQualifier("DEFAULT");
-            return;
-        }
-
-        setEndpointsLoading(true);
-        client
-            .graphql({
-                query: listAgentEndpointsQuery,
-                variables: { agentRuntimeId },
-            })
-            .then((result) => {
-                const endpoints = result.data?.listAgentEndpoints || [];
-                const endpointOptions = endpoints
-                    .filter((endpoint): endpoint is string => endpoint !== null)
-                    .map((endpoint) => ({ label: endpoint, value: endpoint }));
-
-                setAvailableEndpoints(endpointOptions);
-
-                // Check if there's a preserved qualifier from session or favorite
-                if (sessionEndpointRef.current) {
-                    if (endpointOptions.some((e) => e.value === sessionEndpointRef.current)) {
-                        setQualifier(sessionEndpointRef.current);
-                    } else {
-                        if (endpointOptions.some((e) => e.value === "QUALIFIER")) {
-                            setQualifier("QUALIFIER");
-                        } else if (endpointOptions.length > 0) {
-                            setQualifier(endpointOptions[0].value);
-                        } else {
-                            setQualifier("DEFAULT");
-                        }
-                    }
-                    sessionEndpointRef.current = null;
-                } else if (favoriteQualifierRef.current) {
-                    if (endpointOptions.some((e) => e.value === favoriteQualifierRef.current)) {
-                        setQualifier(favoriteQualifierRef.current);
-                    } else {
-                        if (endpointOptions.some((e) => e.value === "QUALIFIER")) {
-                            setQualifier("QUALIFIER");
-                        } else if (endpointOptions.length > 0) {
-                            setQualifier(endpointOptions[0].value);
-                        } else {
-                            setQualifier("DEFAULT");
-                        }
-                    }
-                    favoriteQualifierRef.current = null;
-                } else {
-                    if (endpointOptions.some((e) => e.value === "QUALIFIER")) {
-                        setQualifier("QUALIFIER");
-                    } else if (endpointOptions.length > 0) {
-                        setQualifier(endpointOptions[0].value);
-                    } else {
-                        setQualifier("DEFAULT");
-                    }
-                }
-            })
-            .catch((err) => {
-                console.error("Failed to load endpoints:", err);
-                setAvailableEndpoints([{ label: "DEFAULT", value: "DEFAULT" }]);
-                setQualifier("DEFAULT");
-                favoriteQualifierRef.current = null;
-            })
-            .finally(() => setEndpointsLoading(false));
-    }, [agentRuntimeId]);
 
     // ================================================================
     // Direct WebSocket connection to AgentCore (replaces AppSync sub)
@@ -438,46 +285,6 @@ export default function ChatInputPanel(props: ChatInputPanelProps) {
             }
         };
     }, [props.session.id, agentRuntimeId, qualifier, appContext]);
-
-    // Check if selected agent supports voice mode
-    // (1) architectureType must be SINGLE or AGENTS_AS_TOOLS
-    // (2) model must contain "sonic" (Nova Sonic)
-    useEffect(() => {
-        if (!agentRuntimeId) {
-            setVoiceSupported(false);
-            return;
-        }
-
-        const selectedAgent = availableAgents.find((a) => a.value === agentRuntimeId);
-        if (!selectedAgent) {
-            setVoiceSupported(false);
-            return;
-        }
-
-        // Step 1: Check architectureType
-        const arch = selectedAgent.architectureType;
-        if (arch && arch !== "SINGLE" && arch !== "AGENTS_AS_TOOLS") {
-            setVoiceSupported(false);
-            return;
-        }
-
-        // Step 2: Load agent config to check model
-        const checkModel = async () => {
-            try {
-                const result = await client.graphql({
-                    query: getDefaultRuntimeConfigurationQuery,
-                    variables: { agentName: selectedAgent.label },
-                });
-                const config = JSON.parse(result.data.getDefaultRuntimeConfiguration);
-                const modelId = config?.modelInferenceParameters?.modelId || "";
-                setVoiceSupported(modelId.toLowerCase().includes("sonic"));
-            } catch {
-                // If we can't load config, default to architectureType check only
-                setVoiceSupported(arch === "SINGLE" || arch === "AGENTS_AS_TOOLS" || !arch);
-            }
-        };
-        checkModel();
-    }, [agentRuntimeId, availableAgents]);
 
     // Send heartbeat when a new session is initialized (no messages yet)
     useEffect(() => {
