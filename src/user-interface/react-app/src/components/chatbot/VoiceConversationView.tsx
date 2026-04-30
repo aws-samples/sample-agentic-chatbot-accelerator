@@ -61,7 +61,7 @@ export default function VoiceConversationView({
         [agentRuntimeId, qualifier, sessionId, appContext],
     );
 
-    const { isRecording, isConnected, conversationTurns, activeSpeaker, startVoice, stopVoice, error } =
+    const { isRecording, isConnected, conversationTurns, activeSpeaker, startVoice, stopVoice, disconnectVoice, error } =
         useVoiceAgent(voiceOptions);
 
     // AI-rephrased tool descriptions from the AppSync side-channel (ordered array)
@@ -145,10 +145,11 @@ export default function VoiceConversationView({
         startVoice();
     };
 
-    /** Exit back to text chat */
+    /** Exit back to text chat — fully disconnect */
     const handleExit = () => {
-        if (!isReadOnly && !sessionEnded) {
+        if (!isReadOnly) {
             stopVoice();
+            disconnectVoice();
             if (conversationTurns.length > 0) {
                 onConversationEnd(conversationTurns);
             }
@@ -289,10 +290,10 @@ export default function VoiceConversationView({
                 </div>
 
                 <SpaceBetween direction="horizontal" size="s">
-                    {/* Session ended: only Restart */}
+                    {/* Session ended: Resume */}
                     {sessionEnded && (
                         <Button variant="primary" iconName="microphone" onClick={handleRestart}>
-                            Restart Conversation
+                            Resume Conversation
                         </Button>
                     )}
                     {/* Recording: End Session */}
