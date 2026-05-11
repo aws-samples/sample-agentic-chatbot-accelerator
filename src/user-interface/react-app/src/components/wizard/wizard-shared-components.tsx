@@ -184,7 +184,7 @@ export function AgentConfigSection({
                                     value={maxTokens.toString()}
                                     onChange={({ detail }) => {
                                         const value = parseInt(detail.value) || 100;
-                                        if (value >= 100 && value <= 4000) {
+                                        if (value >= 100 && value <= 64000) {
                                             onMaxTokensChange(value);
                                         }
                                     }}
