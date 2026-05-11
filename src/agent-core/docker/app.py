@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from opentelemetry import baggage
 from opentelemetry.context import attach
 from shared.agentcore_memory import create_session_manager
@@ -21,6 +21,7 @@ from src.data_source import parse_configuration
 from src.factory import create_agent
 from src.registry import AVAILABLE_MCPS
 from src.structured_output import build_structured_output_model
+from starlette.responses import StreamingResponse
 from strands_evals.mappers import StrandsInMemorySessionMapper
 
 # Trajectory capture imports for evaluation features
@@ -46,6 +47,124 @@ AWS_REGION = os.environ.get("AWS_REGION")
 @app.get("/ping")
 async def ping():
     return {"status": "Healthy", "time_of_last_update": int(datetime.now().timestamp())}
+
+
+# ============================================================
+# INVOCATIONS: HTTP POST endpoint for agent-to-agent calls
+# ============================================================
+
+# Module-level state for /invocations — same pattern as the WebSocket handler:
+# agent starts as None and is (re)created when the session changes.
+_inv_agent = None
+_inv_callbacks = None
+_inv_mcp_manager: MCPClientManager | None = None
+_inv_current_session_id: str | None = None
+
+
+@app.post("/invocations")
+async def invocations(request: Request):
+    """HTTP POST endpoint for agent-to-agent communication.
+
+    Called by ``invoke_agent_runtime`` when an orchestrator agent delegates
+    a task to this agent.  Returns an SSE stream compatible with
+    ``parse_agent_runtime_response``.
+
+    Request body (JSON):
+        - prompt (str): The user/orchestrator query.
+        - userId (str, optional): Defaults to ``"orchestrator"``.
+        - sessionId (str, optional): Auto-generated if absent.
+    """
+    global _inv_agent, _inv_callbacks, _inv_mcp_manager, _inv_current_session_id
+
+    body = await request.json()
+    prompt = body.get("prompt", "")
+    user_id = body.get("userId", "orchestrator")
+    session_id = body.get("sessionId", str(uuid.uuid4()))
+
+    logger.info(
+        "Invocation received (agent-to-agent)",
+        extra={"prompt": prompt, "userId": user_id, "sessionId": session_id},
+    )
+
+    # Initialize or reinitialize agent when session changes (same pattern as /ws)
+    if _inv_agent is None or _inv_current_session_id != session_id:
+        if _inv_mcp_manager and _inv_current_session_id != session_id:
+            _inv_mcp_manager.cleanup_connections()
+
+        try:
+            configuration = parse_configuration(logger)
+
+            if configuration.mcpServers:
+                _inv_mcp_manager = MCPClientManager(
+                    mcp_servers=configuration.mcpServers,
+                    logger=logger,
+                    mcp_registry=AVAILABLE_MCPS,
+                )
+                _inv_mcp_manager.init_mcp_clients()
+
+            session_manager = None
+            if MEMORY_ID and session_id:
+                session_manager = create_session_manager(
+                    memory_id=MEMORY_ID,
+                    session_id=session_id,
+                    user_id=user_id,
+                    region_name=AWS_REGION,
+                )
+
+            _inv_agent, _inv_callbacks = create_agent(
+                configuration,
+                logger,
+                session_id,
+                user_id,
+                _inv_mcp_manager,
+                session_manager,
+            )
+            _inv_current_session_id = session_id
+
+        except Exception as err:
+            logger.error(
+                "Failed to initialize agent for /invocations", extra={"error": str(err)}
+            )
+            error_event = json.dumps({"error": str(err)})
+
+            async def _error_stream():
+                yield f"data: {error_event}\n\n"
+
+            return StreamingResponse(_error_stream(), media_type="text/event-stream")
+
+    async def _sse_generator():
+        try:
+            async for event in _inv_agent.stream_async(  # type: ignore
+                prompt,
+                invocation_state={"userId": user_id, "sessionId": session_id},
+            ):
+                if "data" in event:
+                    # Stream tokens to keep the connection alive (prevents read timeout)
+                    token_event = json.dumps(
+                        {
+                            "action": "on_new_llm_token",
+                            "data": {"token": {"value": event["data"]}},
+                        }
+                    )
+                    yield f"data: {token_event}\n\n"
+
+                elif "result" in event:
+                    content = str(event["result"])
+                    logger.info(
+                        "Invocation complete",
+                        extra={"responseLength": len(content), "sessionId": session_id},
+                    )
+                    final_event = json.dumps(
+                        {"action": "final_response", "data": {"content": content}}
+                    )
+                    yield f"data: {final_event}\n\n"
+
+        except Exception as err:
+            logger.exception(f"Invocation error: {err}")
+            error_event = json.dumps({"error": str(err)})
+            yield f"data: {error_event}\n\n"
+
+    return StreamingResponse(_sse_generator(), media_type="text/event-stream")
 
 
 # ============================================================

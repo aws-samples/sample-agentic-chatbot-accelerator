@@ -7,3 +7,4 @@ boto3>=1.42.86
 aws-opentelemetry-distro==0.15.0
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
+websockets>=13.0

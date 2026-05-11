@@ -90,8 +90,6 @@ class InvokeSubAgentTool(AbstractToolObject):
         session_id = tool_context.invocation_state.get("sessionId", str(uuid.uuid4()))
         session_id += f"-sa-{self._agent_runtime_id}"
 
-        runtime_arn = f"arn:aws:bedrock-agentcore:{REGION_NAME}:{ACCOUNT_ID}:runtime/{self._agent_runtime_id}"
-
         try:
             payload = json.dumps(
                 {
@@ -101,7 +99,7 @@ class InvokeSubAgentTool(AbstractToolObject):
             ).encode()
 
             response = ac_client.invoke_agent_runtime(
-                agentRuntimeArn=runtime_arn,
+                agentRuntimeArn=self._agent_runtime_id,
                 runtimeSessionId=session_id,
                 runtimeUserId=user_id,
                 payload=payload,

@@ -288,6 +288,7 @@ export class AgentCoreApis extends Construct {
                 __dirname,
                 "../../../src/api/functions/notify-runtime-update/index.ts",
             ),
+            projectRoot: path.join(__dirname, "../../.."),
             layers: [powertoolsLayerJS],
             handler: "index.handler",
             runtime: Runtime.NODEJS_LATEST,
