@@ -78,6 +78,7 @@ export class WebsocketApiBackend extends Construct {
                 __dirname,
                 "../../../src/api/functions/outgoing-message-handler/index.ts",
             ),
+            projectRoot: path.join(__dirname, "../../.."),
             layers: [powertoolsLayerJS],
             handler: "index.handler",
             runtime: Runtime.NODEJS_LATEST,
