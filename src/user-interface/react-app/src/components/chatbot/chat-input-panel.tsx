@@ -6,7 +6,7 @@
 import { Button, FormField, Select, SpaceBetween, StatusIndicator } from "@cloudscape-design/components";
 import PromptInput from "@cloudscape-design/components/prompt-input";
 import { generateClient } from "aws-amplify/api";
-import { Dispatch, SetStateAction, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Dispatch, SetStateAction, forwardRef, useContext, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
 import { ReadyState } from "react-use-websocket";
 
 import { fetchUserAttributes } from "aws-amplify/auth";
@@ -69,7 +69,13 @@ export abstract class ChatScrollState {
     static scrollToUserMessage = false;
 }
 
-export default function ChatInputPanel(props: ChatInputPanelProps) {
+/** Imperative handle exposed by ChatInputPanel via ref */
+export interface ChatInputPanelHandle {
+    /** Close the text WebSocket connection. Returns a promise that resolves once fully closed. */
+    closeWebSocket: () => Promise<void>;
+}
+
+const ChatInputPanel = forwardRef<ChatInputPanelHandle, ChatInputPanelProps>(function ChatInputPanel(props, ref) {
     const appContext = useContext(AppContext);
     const [state, setState] = useState<{ value: string }>({
         value: "",
@@ -93,6 +99,21 @@ export default function ChatInputPanel(props: ChatInputPanelProps) {
     const messageHistoryRef = useRef<ChatBotHistoryItem[]>([]);
     const wsConnectionRef = useRef<WebSocketAgentConnection | null>(null);
     const client = generateClient();
+
+    // Expose imperative handle so chat.tsx can close the text WS before voice mode
+    useImperativeHandle(ref, () => ({
+        closeWebSocket: () => {
+            return new Promise<void>((resolve) => {
+                if (wsConnectionRef.current) {
+                    console.log(`Imperatively closing text WebSocket for session ${props.session.id}`);
+                    wsConnectionRef.current.close();
+                    wsConnectionRef.current = null;
+                    setReadyState(ReadyState.CLOSED);
+                }
+                setTimeout(resolve, 200);
+            });
+        },
+    }));
 
     useEffect(() => {
         messageHistoryRef.current = props.messageHistory;
@@ -649,4 +670,6 @@ export default function ChatInputPanel(props: ChatInputPanelProps) {
             </SpaceBetween>
         </SpaceBetween>
     );
-}
+});
+
+export default ChatInputPanel;
