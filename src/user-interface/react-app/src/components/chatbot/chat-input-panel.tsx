@@ -3,7 +3,7 @@
 //
 // SPDX-License-Identifier: MIT-0
 // ----------------------------------------------------------------------
-import { Button, FormField, Select, SpaceBetween } from "@cloudscape-design/components";
+import { Button, FormField, Select, SpaceBetween, StatusIndicator } from "@cloudscape-design/components";
 import PromptInput from "@cloudscape-design/components/prompt-input";
 import { generateClient } from "aws-amplify/api";
 import { Dispatch, SetStateAction, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -104,6 +104,10 @@ export default function ChatInputPanel(props: ChatInputPanelProps) {
     useEffect(() => {
         if (!agentRuntimeId || !qualifier || !appContext) return;
 
+        // Guard against React Strict Mode double-mount: if the cleanup runs
+        // before connectToAgent() resolves, we must discard the stale connection.
+        let aborted = false;
+
         const messageTokens: { [key: string]: LLMToken[] } = {};
         const toolActions: { [key: string]: ToolActionItem[] } = {};
 
@@ -122,17 +126,20 @@ export default function ChatInputPanel(props: ChatInputPanelProps) {
             sessionId: props.session.id,
 
             onConnected: () => {
+                if (aborted) return;
                 setReadyState(ReadyState.OPEN);
                 console.log(`WebSocket connected for session ${props.session.id}`);
             },
 
             onDisconnected: () => {
+                if (aborted) return;
                 setReadyState(ReadyState.CLOSED);
                 console.log(`WebSocket disconnected for session ${props.session.id}`);
                 wsConnectionRef.current = null;
             },
 
             onTextToken: (data: string, sequenceNumber: number, runId?: string) => {
+                if (aborted) return;
                 const response: ChatBotMessageResponse = {
                     action: ChatBotAction.LLMNewToken,
                     data: {
@@ -156,6 +163,7 @@ export default function ChatInputPanel(props: ChatInputPanelProps) {
             },
 
             onFinalResponse: (finalResponse: FinalResponsePayload) => {
+                if (aborted) return;
                 const response: ChatBotMessageResponse = {
                     action: ChatBotAction.FinalResponse,
                     data: {
@@ -244,6 +252,7 @@ export default function ChatInputPanel(props: ChatInputPanelProps) {
             },
 
             onError: (errorMessage: string) => {
+                if (aborted) return;
                 console.error("WebSocket error:", errorMessage);
                 // Only write errors to the message history if we're actively running
                 // (not during initial connection or session restore)
@@ -269,15 +278,24 @@ export default function ChatInputPanel(props: ChatInputPanelProps) {
             },
         })
             .then((conn) => {
+                if (aborted) {
+                    // Effect was cleaned up before the connection resolved —
+                    // close the orphaned WebSocket immediately.
+                    console.log(`Closing orphaned WebSocket for session ${props.session.id}`);
+                    conn.close();
+                    return;
+                }
                 wsConnectionRef.current = conn;
                 console.log(`WebSocket connected to AgentCore for session ${props.session.id}`);
             })
             .catch((err) => {
+                if (aborted) return;
                 console.error("Failed to establish WebSocket connection:", err);
                 setReadyState(ReadyState.CLOSED);
             });
 
         return () => {
+            aborted = true;
             if (wsConnectionRef.current) {
                 console.log(`Closing WebSocket for session ${props.session.id}`);
                 wsConnectionRef.current.close();
@@ -482,6 +500,26 @@ export default function ChatInputPanel(props: ChatInputPanelProps) {
         return selectedAgent?.iconName === "status-positive";
     };
 
+    const connectionStatus = (): {
+        type: "loading" | "success" | "error" | "stopped";
+        label: string;
+    } => {
+        switch (readyState) {
+            case ReadyState.CONNECTING:
+                return { type: "loading", label: "Connecting…" };
+            case ReadyState.OPEN:
+                return { type: "success", label: "Ready" };
+            case ReadyState.CLOSING:
+            case ReadyState.CLOSED:
+                return { type: "error", label: "Disconnected" };
+            case ReadyState.UNINSTANTIATED:
+            default:
+                return { type: "stopped", label: "Not connected" };
+        }
+    };
+
+    const wsReady = readyState === ReadyState.OPEN;
+
     return (
         <SpaceBetween direction="vertical" size="l">
             <PromptInput
@@ -512,7 +550,7 @@ export default function ChatInputPanel(props: ChatInputPanelProps) {
                         : "Send message"
                 }
                 disableActionButton={state.value.trim() === ""}
-                disabled={props.running || !agentRuntimeId || !isSelectedAgentReady()}
+                disabled={props.running || !agentRuntimeId || !isSelectedAgentReady() || !wsReady}
             />
 
             <SpaceBetween direction="vertical" size="s" alignItems="end">
@@ -585,6 +623,9 @@ export default function ChatInputPanel(props: ChatInputPanelProps) {
                                 onClick={refreshAgents}
                                 disabled={agentsLoading}
                             />
+                            <StatusIndicator type={connectionStatus().type}>
+                                {connectionStatus().label}
+                            </StatusIndicator>
                         </>
                     )}
                 </SpaceBetween>
