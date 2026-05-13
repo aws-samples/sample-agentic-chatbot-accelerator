@@ -23,7 +23,7 @@ import {
     listRuntimeAgents as listRuntimeAgentsQuery,
 } from "../../graphql/queries";
 import styles from "../../styles/chat.module.scss";
-import ChatInputPanel, { ChatScrollState } from "./chat-input-panel";
+import ChatInputPanel, { ChatInputPanelHandle, ChatScrollState } from "./chat-input-panel";
 import ChatMessage from "./chat-message";
 import VoiceConversationView from "./VoiceConversationView";
 import { AgentOption, ChatBotHistoryItem, ChatBotMessageType, EndpointOption, Feedback, ToolActionItem } from "./types";
@@ -120,6 +120,8 @@ export default function Chat(props: { sessionId?: string }) {
     const lastUserMessageRef = useRef<HTMLDivElement>(null);
     /** Guard: suppress auto-enter voice mode after explicit agent change to non-sonic */
     const suppressAutoVoiceRef = useRef(false);
+    /** Ref to ChatInputPanel for imperatively closing the text WebSocket */
+    const chatInputPanelRef = useRef<ChatInputPanelHandle>(null);
 
     // Derived: current agent name
     const agentName = availableAgents.find((a) => a.value === agentRuntimeId)?.label || agentRuntimeId;
@@ -335,9 +337,16 @@ export default function Chat(props: { sessionId?: string }) {
         const selectedAgent = availableAgents.find((a) => a.value === agentRuntimeId);
         if (!selectedAgent || selectedAgent.iconName !== "status-positive") return;
 
-        // Trigger voice mode automatically
-        setVoiceMode(true);
-        setRestoredVoiceTurns(undefined);
+        // Close the text WebSocket before entering voice mode to avoid
+        // session conflict on AgentCore (only one WS per session allowed).
+        const enterVoice = async () => {
+            if (chatInputPanelRef.current) {
+                await chatInputPanelRef.current.closeWebSocket();
+            }
+            setVoiceMode(true);
+            setRestoredVoiceTurns(undefined);
+        };
+        enterVoice();
     }, [voiceSupported, agentRuntimeId, qualifier, availableAgents]);
 
     // ================================================================
@@ -537,7 +546,13 @@ export default function Chat(props: { sessionId?: string }) {
     // ================================================================
 
     /** Called from ChatInputPanel when user clicks "Start Voice" */
-    const handleVoiceStart = (info: { agentRuntimeId: string; qualifier: string; agentName: string }) => {
+    const handleVoiceStart = async (info: { agentRuntimeId: string; qualifier: string; agentName: string }) => {
+        // Close the text WebSocket BEFORE entering voice mode.
+        // AgentCore only allows one WebSocket per session — if the text WS
+        // is still alive when voice connects, the server will kill one of them.
+        if (chatInputPanelRef.current) {
+            await chatInputPanelRef.current.closeWebSocket();
+        }
         // Ensure lifted state matches what was passed
         setAgentRuntimeId(info.agentRuntimeId);
         setQualifier(info.qualifier);
@@ -759,6 +774,7 @@ export default function Chat(props: { sessionId?: string }) {
                             </div>
                         )}
                         <ChatInputPanel
+                            ref={chatInputPanelRef}
                             session={session}
                             running={running}
                             setRunning={setRunning}

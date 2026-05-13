@@ -11,6 +11,7 @@
 // WebSocket communication, audio playback, and transcript display.
 //
 import { useCallback, useEffect, useRef, useState } from "react";
+import { fetchUserAttributes } from "aws-amplify/auth";
 import { connectToAgent, ConnectOptions, WebSocketAgentConnection } from "../../websocket-presigned";
 
 /** A single turn in a voice conversation (user speech, assistant speech, or tool use). */
@@ -354,9 +355,18 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
 
             connectionRef.current = conn;
 
+            // Get Cognito user ID for session memory persistence
+            let userId = "voice-user";
+            try {
+                const attrs = await fetchUserAttributes();
+                userId = attrs.sub || "voice-user";
+            } catch {
+                console.warn("Could not fetch user attributes for voice userId");
+            }
+
             // Tell the container to switch to voice (BidiAgent) mode
-            // Include sessionId so the container can attach callbacks for AI tool rephrasing
-            conn.send({ type: "voice_init", sessionId: options.sessionId });
+            // Include sessionId and userId so the container can set up memory correctly
+            conn.send({ type: "voice_init", sessionId: options.sessionId, userId });
 
             // Send audio chunks from worklet to WebSocket
             workletNode.port.onmessage = (event) => {
