@@ -205,10 +205,13 @@ async def text_chat(websocket: WebSocket):
             # Voice mode: if the first message is voice_init, switch to BidiAgent
             if msg_type == "voice_init":
                 voice_session_id = message.get("sessionId", str(uuid.uuid4()))
+                voice_user_id = message.get("userId", "voice-user")
                 logger.info(
                     f"Switching to voice mode (BidiAgent) for session {voice_session_id}"
                 )
-                await _handle_voice_mode(websocket, logger, voice_session_id)
+                await _handle_voice_mode(
+                    websocket, logger, voice_session_id, voice_user_id
+                )
                 return  # voice mode takes over the connection
 
             if msg_type == "text_input":
@@ -550,7 +553,9 @@ async def text_chat(websocket: WebSocket):
             mcp_client_manager.cleanup_connections()
 
 
-async def _handle_voice_mode(websocket: WebSocket, log, session_id: str = "") -> None:
+async def _handle_voice_mode(
+    websocket: WebSocket, log, session_id: str = "", user_id: str = "voice-user"
+) -> None:
     """Handle voice mode using BidiAgent with Nova Sonic.
 
     Called when the /ws handler receives a voice_init message.
@@ -614,12 +619,18 @@ async def _handle_voice_mode(websocket: WebSocket, log, session_id: str = "") ->
     if MEMORY_ID and session_id:
         log.info(
             "Creating session manager for voice mode",
-            extra={"context": {"memoryId": MEMORY_ID, "sessionId": session_id}},
+            extra={
+                "context": {
+                    "memoryId": MEMORY_ID,
+                    "sessionId": session_id,
+                    "userId": user_id,
+                }
+            },
         )
         session_manager = create_session_manager(
             memory_id=MEMORY_ID,
             session_id=session_id,
-            user_id="",
+            user_id=user_id,
             region_name=AWS_REGION,
         )
 
