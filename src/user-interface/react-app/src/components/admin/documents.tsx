@@ -300,7 +300,6 @@ export default function DocumentManager(props: DocumentManagerProps) {
                     variables: {
                         s3ObjectNames: selectedItems.map((object) => {
                             const parts = object.uri.replace("s3://", "").split("/");
-                            console.log("S3 URI parts:", JSON.stringify(parts));
                             if (parts.length < 2) {
                                 throw new Error("Invalid S3 URI format");
                             }
@@ -534,7 +533,6 @@ export default function DocumentManager(props: DocumentManagerProps) {
                 },
             });
             const metadata = result.data.getDocumentMetadata;
-            console.log(metadata);
             setMetadataDialog({
                 ...resetMetadataConfigDialog,
                 id: selectedItems[0].id,
