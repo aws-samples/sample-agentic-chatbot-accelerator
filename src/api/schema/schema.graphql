@@ -214,6 +214,7 @@ type Mutation {
     renameSession(id: String!, title: String!): Boolean @aws_cognito_user_pools
     updateMessageExecutionTime(sessionId: String!, messageId: String!, executionTimeMs: Int!): Boolean @aws_cognito_user_pools
     saveToolActions(sessionId: String!, messageId: String!, toolActions: String!): Boolean @aws_cognito_user_pools
+    saveVoiceSession(sessionId: String!, history: String!, runtimeId: String, endpoint: String): Boolean @aws_cognito_user_pools
     # Feedback
     publishFeedback(feedback: String!, messageId: String!, messageType:String!, sessionId: String!): Boolean @aws_cognito_user_pools
     # Knowledge bases

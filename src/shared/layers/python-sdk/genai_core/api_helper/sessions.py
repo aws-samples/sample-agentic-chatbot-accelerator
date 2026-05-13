@@ -288,3 +288,55 @@ def save_tool_actions(
     except json.JSONDecodeError as error:
         logger.error(f"Invalid JSON for tool_actions: {error}")
         return False
+
+
+def save_voice_session(
+    user_id: str,
+    session_id: str,
+    history_json: str,
+    runtime_id: str = "",
+    endpoint: str = "",
+) -> bool:
+    """
+    Saves a voice conversation session to DynamoDB.
+
+    The frontend sends the full History array as a JSON string.
+    This function creates a new session item (or overwrites if the same
+    session_id already exists) with the provided history.
+
+    Args:
+        user_id: The unique identifier for the user
+        session_id: The chat/voice session identifier
+        history_json: JSON string containing the History array in DynamoDB format
+        runtime_id: Agent runtime identifier
+        endpoint: Name of the agent endpoint
+
+    Returns:
+        bool: True if the session was successfully saved, False otherwise
+    """
+    try:
+        from datetime import datetime, timezone
+
+        history = json.loads(history_json)
+
+        item: Dict = {
+            "SessionId": session_id,
+            "UserId": user_id,
+            "History": history,
+            "StartTime": datetime.now(timezone.utc).isoformat(),
+        }
+        if runtime_id:
+            item["RuntimeId"] = runtime_id
+        if endpoint:
+            item["Endpoint"] = endpoint
+
+        table.put_item(Item=item)
+        logger.info(f"Voice session saved: {session_id}")
+        return True
+
+    except json.JSONDecodeError as error:
+        logger.error(f"Invalid JSON for voice session history: {error}")
+        return False
+    except ClientError as error:
+        logger.exception(error)
+        return False

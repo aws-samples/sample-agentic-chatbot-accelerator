@@ -295,6 +295,17 @@ export type SaveToolActionsMutation = {
   saveToolActions?: boolean | null,
 };
 
+export type SaveVoiceSessionMutationVariables = {
+  sessionId: string,
+  history: string,
+  runtimeId?: string | null,
+  endpoint?: string | null,
+};
+
+export type SaveVoiceSessionMutation = {
+  saveVoiceSession?: boolean | null,
+};
+
 export type PublishFeedbackMutationVariables = {
   feedback: string,
   messageId: string,
