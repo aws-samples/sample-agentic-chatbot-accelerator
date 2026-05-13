@@ -10,6 +10,9 @@ export default defineConfig({
     define: {
         "process.env": {},
     },
+    esbuild: {
+        drop: isDev ? [] : ["console", "debugger"],
+    },
     plugins: [
         isDev && {
             name: "aws-exports",
