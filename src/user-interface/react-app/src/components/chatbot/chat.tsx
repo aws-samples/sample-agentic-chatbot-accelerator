@@ -22,6 +22,7 @@ import {
     listAgentEndpoints as listAgentEndpointsQuery,
     listRuntimeAgents as listRuntimeAgentsQuery,
 } from "../../graphql/queries";
+import { saveVoiceSession as saveVoiceSessionMut } from "../../graphql/mutations";
 import styles from "../../styles/chat.module.scss";
 import ChatInputPanel, { ChatInputPanelHandle, ChatScrollState } from "./chat-input-panel";
 import ChatMessage from "./chat-message";
@@ -201,18 +202,19 @@ export default function Chat(props: { sessionId?: string }) {
         }
     }, [messageHistory.length, agentRuntimeId, session.loading, session.runtimeId]);
 
-    // Restore agent/endpoint from session (loaded sessions)
+    // Restore agent/endpoint from session (loaded sessions — text or voice)
     useEffect(() => {
-        if (session.runtimeId && messageHistory.length > 0) {
+        const hasContent = messageHistory.length > 0 || !!restoredVoiceTurns;
+        if (session.runtimeId && hasContent) {
             if (session.endpoint) {
                 sessionEndpointRef.current = session.endpoint;
             }
             setAgentRuntimeId(session.runtimeId);
         }
-        if (session.endpoint && messageHistory.length > 0) {
+        if (session.endpoint && hasContent) {
             setQualifier(session.endpoint);
         }
-    }, [session.runtimeId, session.endpoint, messageHistory.length]);
+    }, [session.runtimeId, session.endpoint, messageHistory.length, restoredVoiceTurns]);
 
     // Load endpoints when agentRuntimeId changes
     useEffect(() => {
@@ -454,6 +456,7 @@ export default function Chat(props: { sessionId?: string }) {
         if (!appContext) return;
 
         setMessageHistory([]);
+        setRestoredVoiceTurns(undefined);
 
         (async () => {
             if (!props.sessionId) {
@@ -470,17 +473,79 @@ export default function Chat(props: { sessionId?: string }) {
                     variables: { id: props.sessionId },
                 });
                 if (result.data?.getSession?.history) {
-                    // load history
-                    // Scroll to the last user message after history renders
-                    ChatScrollState.scrollToUserMessage = true;
-                    setMessageHistory(
-                        result
-                            .data!.getSession!.history.filter((x) => x !== null)
-                            .map((x) => ({
+                    const historyItems = result.data.getSession.history.filter((x) => x !== null);
+
+                    // Detect voice session: all message IDs start with "voice-"
+                    const isVoiceSession =
+                        historyItems.length > 0 &&
+                        historyItems.every((x) => x!.messageId?.startsWith("voice-"));
+
+                    if (isVoiceSession) {
+                        // Reconstruct VoiceConversationTurn[] from the stored history
+                        const voiceTurns: VoiceConversationTurn[] = [];
+                        for (const item of historyItems) {
+                            if (!item) continue;
+                            // Skip voice_meta items (hidden metadata)
+                            if (item.type === "voice_meta") continue;
+                            const role: "user" | "assistant" | "tool" =
+                                item.type === "user" ? "user" :
+                                item.type === "tool" ? "tool" : "assistant";
+                            voiceTurns.push({
+                                role,
+                                text: item.content,
+                                timestamp: Date.now(),
+                                isFinal: true,
+                            });
+                        }
+
+                        // Filter out replay-artifact tool turns: a tool turn that appears
+                        // after an assistant turn and before a user turn is invalid
+                        // (valid pattern is user → tool → assistant, not assistant → tool → user).
+                        const cleanedTurns: VoiceConversationTurn[] = [];
+                        for (let i = 0; i < voiceTurns.length; i++) {
+                            const turn = voiceTurns[i];
+                            if (turn.role === "tool") {
+                                // Check if the previous finalized turn was "assistant"
+                                // AND the next non-tool turn is "user" → skip (replay artifact)
+                                const prevRole = cleanedTurns.length > 0
+                                    ? cleanedTurns[cleanedTurns.length - 1].role
+                                    : null;
+                                if (prevRole === "assistant") {
+                                    // Look ahead: is the next non-tool turn a user turn?
+                                    let nextNonToolIdx = i + 1;
+                                    while (nextNonToolIdx < voiceTurns.length && voiceTurns[nextNonToolIdx].role === "tool") {
+                                        nextNonToolIdx++;
+                                    }
+                                    const nextRole = nextNonToolIdx < voiceTurns.length
+                                        ? voiceTurns[nextNonToolIdx].role
+                                        : null;
+                                    if (nextRole === "user" || nextRole === null) {
+                                        // This is a replay artifact — skip it
+                                        continue;
+                                    }
+                                }
+                            }
+                            cleanedTurns.push(turn);
+                        }
+                        // Suppress auto-enter-voice (we're entering explicitly)
+                        suppressAutoVoiceRef.current = true;
+                        setRestoredVoiceTurns(cleanedTurns);
+                        setVoiceMode(true);
+                        setSession({
+                            id: props.sessionId,
+                            loading: false,
+                            runtimeId: result.data.getSession.runtimeId,
+                            endpoint: result.data.getSession.endpoint,
+                        });
+                    } else {
+                        // Normal text session — load as message history
+                        ChatScrollState.scrollToUserMessage = true;
+                        setMessageHistory(
+                            historyItems.map((x) => ({
                                 type: x!.type as ChatBotMessageType,
                                 content: x!.content,
                                 references: x!.references ? x!.references : undefined,
-                                messageId: x.messageId,
+                                messageId: x!.messageId,
                                 feedback: x!.feedback
                                     ? (JSON.parse(x!.feedback) as Feedback)
                                     : undefined,
@@ -498,7 +563,6 @@ export default function Chat(props: { sessionId?: string }) {
                                     ? (JSON.parse(x!.toolActions) as ToolActionItem[])
                                     : undefined,
                                 tokens: [
-                                    // put dummy token here just to render the "Thinking Process" component
                                     {
                                         sequenceNumber: 0,
                                         value: "",
@@ -506,14 +570,15 @@ export default function Chat(props: { sessionId?: string }) {
                                     },
                                 ],
                             })),
-                    );
+                        );
 
-                    setSession({
-                        id: props.sessionId,
-                        loading: false,
-                        runtimeId: result.data.getSession.runtimeId,
-                        endpoint: result.data.getSession.endpoint,
-                    });
+                        setSession({
+                            id: props.sessionId,
+                            loading: false,
+                            runtimeId: result.data.getSession.runtimeId,
+                            endpoint: result.data.getSession.endpoint,
+                        });
+                    }
                 } else {
                     setSession({ id: props.sessionId, loading: false });
                 }
@@ -558,67 +623,91 @@ export default function Chat(props: { sessionId?: string }) {
         setRestoredVoiceTurns(undefined);
     };
 
-    /** Called when a live voice session ends — convert voice turns to text chat format */
+    /** Called when a live voice session ends — persist to DynamoDB and update local state */
     const handleVoiceConversationEnd = async (turns: VoiceConversationTurn[]) => {
         if (turns.length === 0) return;
 
         try {
-            // Convert voice turns into the text chat history format.
-            // Each user→assistant exchange gets a unique messageId (paired).
+            // Only keep final turns for persistence
+            const finalTurns = turns.filter((t) => t.isFinal);
+            if (finalTurns.length === 0) return;
+
+            // Save each turn sequentially in its exact order from the voice agent.
+            // This preserves the natural conversation flow: user → tool → assistant → tool → user → ...
+            // Each turn gets its own DynamoDB history item with a unique voice- prefixed messageId.
+            const dynamoHistory: Array<Record<string, any>> = [];
             const historyItems: ChatBotHistoryItem[] = [];
-            let currentUserText = "";
-            let currentAssistantText = "";
-            let pairCount = 0;
+            let itemCount = 0;
 
-            const flushPair = () => {
-                if (!currentUserText && !currentAssistantText) return;
-                pairCount++;
-                const pairId = `voice-${pairCount}-${crypto.randomUUID().slice(0, 8)}`;
+            for (const turn of finalTurns) {
+                itemCount++;
+                const msgId = `voice-${itemCount}-${crypto.randomUUID().slice(0, 8)}`;
 
-                if (currentUserText) {
+                if (turn.role === "user") {
                     historyItems.push({
                         type: ChatBotMessageType.Human,
-                        content: currentUserText.trim(),
-                        messageId: pairId,
+                        content: turn.text,
+                        messageId: msgId,
                     });
-                }
-                if (currentAssistantText) {
+                    dynamoHistory.push({
+                        type: "user",
+                        messageId: msgId,
+                        render: true,
+                        data: { content: turn.text },
+                    });
+                } else if (turn.role === "assistant") {
                     historyItems.push({
                         type: ChatBotMessageType.AI,
-                        content: currentAssistantText.trim(),
-                        messageId: pairId,
+                        content: turn.text,
+                        messageId: msgId,
                         complete: true,
                         tokens: [{ sequenceNumber: 0, value: "", runId: "voice" }],
                     });
-                }
-                currentUserText = "";
-                currentAssistantText = "";
-            };
-
-            for (const turn of turns) {
-                if (!turn.isFinal) continue;
-
-                if (turn.role === "user") {
-                    // If we already have assistant text, flush the current pair first
-                    if (currentAssistantText) {
-                        flushPair();
-                    }
-                    currentUserText += (currentUserText ? " " : "") + turn.text;
-                } else if (turn.role === "assistant") {
-                    currentAssistantText += (currentAssistantText ? " " : "") + turn.text;
+                    dynamoHistory.push({
+                        type: "assistant",
+                        messageId: msgId,
+                        render: true,
+                        data: { content: turn.text },
+                    });
                 } else if (turn.role === "tool") {
-                    currentAssistantText += (currentAssistantText ? "\n" : "") + `🔧 ${turn.text}`;
+                    // Tool turns are saved as their own items — rendered as centered pills
+                    dynamoHistory.push({
+                        type: "tool",
+                        messageId: msgId,
+                        render: true,
+                        data: { content: turn.text },
+                    });
                 }
             }
 
-            // Flush final pair
-            flushPair();
+            // Add a hidden meta item with the raw voice turns JSON (for future use).
+            dynamoHistory.push({
+                type: "voice_meta",
+                messageId: "voice-meta",
+                render: false,
+                data: {
+                    content: "__VOICE_SESSION__",
+                    voiceTurns: JSON.stringify(finalTurns),
+                },
+            });
 
             // Update local message history
             setMessageHistory(historyItems);
-            console.log(`Voice conversation rendered: ${historyItems.length} messages (${pairCount} pairs)`);
+
+            // Persist to DynamoDB via GraphQL mutation
+            const apiClient = generateClient();
+            await apiClient.graphql({
+                query: saveVoiceSessionMut,
+                variables: {
+                    sessionId: session.id,
+                    history: JSON.stringify(dynamoHistory),
+                    runtimeId: agentRuntimeId || undefined,
+                    endpoint: qualifier || undefined,
+                },
+            });
+            console.log(`Voice session saved: ${session.id} (${itemCount} items)`);
         } catch (err) {
-            console.error("Failed to process voice conversation:", err);
+            console.error("Failed to save voice session:", err);
         }
     };
 
@@ -649,35 +738,31 @@ export default function Chat(props: { sessionId?: string }) {
     // ================================================================
     // Render: Voice mode vs Text mode
     // ================================================================
-    if (voiceMode && agentRuntimeId) {
+    if (voiceMode && (agentRuntimeId || restoredVoiceTurns)) {
         return (
             <div
                 style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr",
                     width: "100%",
-                    height: "100%",
+                    height: "calc(100vh - 96px)",
+                    overflow: "hidden",
                 }}
             >
-                <div className={styles.chat_meta_container}>
-                    <div className={styles.chat_container}>
-                        <VoiceConversationView
-                            agentRuntimeId={agentRuntimeId}
-                            qualifier={qualifier}
-                            sessionId={session.id}
-                            agentName={agentName}
-                            userName={userName}
-                            onExit={handleVoiceExit}
-                            onConversationEnd={handleVoiceConversationEnd}
-                            restoredTurns={restoredVoiceTurns}
-                            availableAgents={availableAgents}
-                            availableEndpoints={availableEndpoints}
-                            agentsLoading={agentsLoading}
-                            endpointsLoading={endpointsLoading}
-                            onAgentChange={handleAgentChangeFromVoice}
-                        />
-                    </div>
-                </div>
+                <VoiceConversationView
+                    key={session.id}
+                    agentRuntimeId={agentRuntimeId}
+                    qualifier={qualifier}
+                    sessionId={session.id}
+                    agentName={agentName}
+                    userName={userName}
+                    onExit={handleVoiceExit}
+                    onConversationEnd={handleVoiceConversationEnd}
+                    restoredTurns={restoredVoiceTurns}
+                    availableAgents={availableAgents}
+                    availableEndpoints={availableEndpoints}
+                    agentsLoading={agentsLoading}
+                    endpointsLoading={endpointsLoading}
+                    onAgentChange={handleAgentChangeFromVoice}
+                />
             </div>
         );
     }

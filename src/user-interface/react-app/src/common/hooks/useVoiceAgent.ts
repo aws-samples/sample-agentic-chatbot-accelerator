@@ -291,7 +291,10 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
                     setActiveSpeaker("tool");
 
                     if (eventType === "tool_use_stream") {
-                        // New tool invocation — show clean placeholder
+                        // New tool invocation — show clean placeholder.
+                        // Only tool_use_stream creates a new turn. Other events
+                        // (tool_result, tool_result_message, tool_stream) are
+                        // follow-ups for the same invocation and are ignored.
                         const cleanName = toolName
                             .replace(/^[a-z-]+_aws___/, "") // strip MCP prefixes
                             .replace(/_/g, " ");
@@ -320,6 +323,8 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
                             return updated;
                         });
                     }
+                    // tool_result, tool_result_message, tool_stream → ignored
+                    // (they are follow-up events for the same tool invocation)
                 },
 
                 onResponseComplete: (stopReason: string) => {

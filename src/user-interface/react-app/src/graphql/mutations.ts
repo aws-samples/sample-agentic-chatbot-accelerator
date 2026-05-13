@@ -79,6 +79,23 @@ export const saveToolActions = /* GraphQL */ `mutation SaveToolActions(
   APITypes.SaveToolActionsMutationVariables,
   APITypes.SaveToolActionsMutation
 >;
+export const saveVoiceSession = /* GraphQL */ `mutation SaveVoiceSession(
+  $sessionId: String!
+  $history: String!
+  $runtimeId: String
+  $endpoint: String
+) {
+  saveVoiceSession(
+    sessionId: $sessionId
+    history: $history
+    runtimeId: $runtimeId
+    endpoint: $endpoint
+  )
+}
+` as GeneratedMutation<
+  APITypes.SaveVoiceSessionMutationVariables,
+  APITypes.SaveVoiceSessionMutation
+>;
 export const publishFeedback = /* GraphQL */ `mutation PublishFeedback(
   $feedback: String!
   $messageId: String!

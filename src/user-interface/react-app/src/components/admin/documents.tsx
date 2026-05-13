@@ -532,7 +532,7 @@ export default function DocumentManager(props: DocumentManagerProps) {
                     documentId: selectedItems[0].id,
                 },
             });
-            const metadata = result.data.getDocumentMetadata;
+            // const metadata = result.data.getDocumentMetadata;
             setMetadataDialog({
                 ...resetMetadataConfigDialog,
                 id: selectedItems[0].id,

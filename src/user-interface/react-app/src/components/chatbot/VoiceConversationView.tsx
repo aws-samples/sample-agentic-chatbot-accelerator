@@ -46,7 +46,7 @@ export default function VoiceConversationView({
     sessionId,
     agentName,
     userName,
-    onExit,
+    onExit: _onExit,
     onConversationEnd,
     restoredTurns,
     availableAgents,
@@ -56,9 +56,11 @@ export default function VoiceConversationView({
     onAgentChange,
 }: VoiceConversationViewProps) {
     const appContext = useContext(AppContext);
-    const logEndRef = useRef<HTMLDivElement>(null);
-    const isReadOnly = !!restoredTurns;
+    const scrollContainerRef = useRef<HTMLDivElement>(null);
+    const [isReadOnly, setIsReadOnly] = useState(!!restoredTurns);
     const [sessionEnded, setSessionEnded] = useState(false);
+    /** True while startVoice() is connecting after a resume — prevents "Start Listening" flash */
+    const [resuming, setResuming] = useState(false);
 
     const voiceOptions = useMemo(
         () => ({
@@ -75,7 +77,7 @@ export default function VoiceConversationView({
         [agentRuntimeId, qualifier, sessionId, appContext],
     );
 
-    const { isRecording, isConnected, conversationTurns, activeSpeaker, startVoice, stopVoice, disconnectVoice, error } =
+    const { isRecording, isConnected, conversationTurns, activeSpeaker, startVoice, stopVoice, disconnectVoice: _disconnectVoice, error } =
         useVoiceAgent(voiceOptions);
 
     // AI-rephrased tool descriptions from the AppSync side-channel (ordered array)
@@ -112,11 +114,39 @@ export default function VoiceConversationView({
         return () => sub.unsubscribe();
     }, [sessionId, isReadOnly, client]);
 
-    // Build display turns: replace tool turn text with AI-rephrased version if available
-    // Match by order: 1st AI description → 1st tool turn, 2nd → 2nd, etc.
+    // Helper: filter out context-replay artifacts from new turns after a resume.
+    // When the agent reconnects on resume, it may replay tool events from its context
+    // before the user speaks again. These are not real new interactions — drop them.
+    const filterReplayArtifacts = (newTurns: VoiceConversationTurn[]): VoiceConversationTurn[] => {
+        if (!restoredTurns || restoredTurns.length === 0 || newTurns.length === 0) {
+            return newTurns;
+        }
+        // Skip any non-user turns at the start of newTurns (they are replay artifacts)
+        let startIdx = 0;
+        while (startIdx < newTurns.length && newTurns[startIdx].role !== "user") {
+            startIdx++;
+        }
+        return newTurns.slice(startIdx);
+    };
+
+    // Build display turns:
+    // - Read-only: show restored turns only
+    // - Resumed (was read-only, now live): show restored turns + new live turns (filtered)
+    // - Fresh session: show live conversation turns only
+    // Then apply AI-rephrased tool descriptions on top.
     const displayTurns = useMemo(() => {
-        const baseTurns = isReadOnly ? restoredTurns : conversationTurns;
-        if (!baseTurns || toolDescriptions.length === 0) return baseTurns;
+        let baseTurns: VoiceConversationTurn[];
+        if (isReadOnly) {
+            baseTurns = restoredTurns || [];
+        } else if (restoredTurns && restoredTurns.length > 0) {
+            // Resumed session: combine old + new (filtered to remove replay artifacts)
+            baseTurns = [...restoredTurns, ...filterReplayArtifacts(conversationTurns)];
+        } else {
+            baseTurns = conversationTurns;
+        }
+
+        if (baseTurns.length === 0) return baseTurns;
+        if (toolDescriptions.length === 0) return baseTurns;
 
         let toolIdx = 0;
         return baseTurns.map((turn) => {
@@ -139,17 +169,36 @@ export default function VoiceConversationView({
     // Text appears gradually as transcripts arrive. No hiding.
     const visibleTurns = displayTurns || [];
 
+    // Clear resuming flag once recording actually starts
+    useEffect(() => {
+        if (isRecording && resuming) {
+            setResuming(false);
+        }
+    }, [isRecording, resuming]);
+
     // Auto-scroll when turns change
     useEffect(() => {
-        logEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        const container = scrollContainerRef.current;
+        if (container) {
+            container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+        }
     }, [displayTurns]);
+
+    /** Combine restored turns (if any) with new live turns for a complete transcript.
+     *  Uses filterReplayArtifacts to strip context-replay tool events that fire
+     *  before the user speaks again after a resume. */
+    const getAllTurns = () => {
+        const filteredNew = filterReplayArtifacts(conversationTurns);
+        return [...(restoredTurns || []), ...filteredNew];
+    };
 
     /** End session — stop recording but stay in the view */
     const handleEndSession = () => {
         stopVoice();
         setSessionEnded(true);
-        if (conversationTurns.length > 0) {
-            onConversationEnd(conversationTurns);
+        const allTurns = getAllTurns();
+        if (allTurns.length > 0) {
+            onConversationEnd(allTurns);
         }
     };
 
@@ -159,17 +208,6 @@ export default function VoiceConversationView({
         startVoice();
     };
 
-    /** Exit back to text chat — fully disconnect */
-    const handleExit = () => {
-        if (!isReadOnly) {
-            stopVoice();
-            disconnectVoice();
-            if (conversationTurns.length > 0) {
-                onConversationEnd(conversationTurns);
-            }
-        }
-        onExit();
-    };
 
     // ================================================================
     // Agent change handler — check if new agent is sonic before calling parent
@@ -219,7 +257,7 @@ export default function VoiceConversationView({
     const dropdownsDisabled = isRecording || isReadOnly;
 
     return (
-        <div style={{ display: "flex", flexDirection: "column", height: "100%", position: "relative" }}>
+        <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", position: "relative" }}>
             {/* ─── Header ─── */}
             <div
                 style={{
@@ -288,9 +326,6 @@ export default function VoiceConversationView({
                     )}
                 </div>
 
-                {isReadOnly && (
-                    <StatusIndicator type="info">Read-only</StatusIndicator>
-                )}
             </div>
 
             {/* ─── Error ─── */}
@@ -302,14 +337,16 @@ export default function VoiceConversationView({
 
             {/* ─── Conversation Log (scrollable) ─── */}
             <div
+                ref={scrollContainerRef}
                 style={{
                     flex: 1,
+                    minHeight: 0,
                     overflowY: "auto",
                     padding: "16px",
                 }}
             >
-                {/* Pre-voice: Start button (only before first recording) */}
-                {!isReadOnly && !isRecording && !sessionEnded && visibleTurns.length === 0 && !showWaveform && (
+                {/* Pre-voice: Start button (only before first recording, not during resume) */}
+                {!isReadOnly && !isRecording && !sessionEnded && !resuming && visibleTurns.length === 0 && !showWaveform && (
                     <Box textAlign="center" color="text-body-secondary" padding="xl">
                         <SpaceBetween direction="vertical" size="m" alignItems="center">
                             <Box variant="h3">🎙 Ready for Voice</Box>
@@ -368,7 +405,6 @@ export default function VoiceConversationView({
                     </div>
                 )}
 
-                <div ref={logEndRef} />
             </div>
 
             {/* ─── Sticky Footer ─── */}
@@ -416,10 +452,14 @@ export default function VoiceConversationView({
                         </Button>
                     )}
                     {/* Not yet started: just the Start button in the center (no footer button needed) */}
-                    {/* Read-only */}
+                    {/* Read-only: Resume */}
                     {isReadOnly && (
-                        <Button variant="primary" iconName="arrow-left" onClick={handleExit}>
-                            Back to Chat
+                        <Button variant="primary" iconName="microphone" onClick={() => {
+                            setResuming(true);
+                            setIsReadOnly(false);
+                            startVoice();
+                        }}>
+                            Resume Conversation
                         </Button>
                     )}
                 </SpaceBetween>

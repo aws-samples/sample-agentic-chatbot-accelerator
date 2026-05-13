@@ -149,3 +149,22 @@ def save_tool_actions(
         message_id=messageId,
         tool_actions=toolActions,
     )
+
+
+@router.resolver(field_name="saveVoiceSession")
+@tracer.capture_method
+@fetch_user_id(router)
+def save_voice_session(
+    user_id: str,
+    sessionId: str,
+    history: str,
+    runtimeId: str = "",
+    endpoint: str = "",
+) -> bool:
+    return session_helper.save_voice_session(
+        user_id=user_id,
+        session_id=sessionId,
+        history_json=history,
+        runtime_id=runtimeId,
+        endpoint=endpoint,
+    )
