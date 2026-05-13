@@ -471,10 +471,8 @@ export default function Chat(props: { sessionId?: string }) {
                 });
                 if (result.data?.getSession?.history) {
                     // load history
-                    console.log(result.data.getSession);
                     // Scroll to the last user message after history renders
                     ChatScrollState.scrollToUserMessage = true;
-                    console.log("History", result.data.getSession.history);
                     setMessageHistory(
                         result
                             .data!.getSession!.history.filter((x) => x !== null)

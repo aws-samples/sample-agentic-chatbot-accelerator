@@ -36,7 +36,7 @@ export default function AppConfigured() {
 
                 setConfig(currentConfig);
             } catch (e) {
-                console.error(e);
+                console.error("Failed to load application configuration");
                 setError(true);
             }
         })();

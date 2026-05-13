@@ -223,14 +223,14 @@ export async function connectToAgent(options: ConnectOptions): Promise<WebSocket
                     case "bidi_text_response":
                         // Intentionally ignored — assistant text is already received via
                         // bidi_transcript_stream events. Processing both would duplicate text.
-                        console.debug("Voice WS: bidi_text_response (ignored, using transcript_stream):", data.text?.slice(0, 50));
+                        // bidi_text_response intentionally ignored (using transcript_stream)
                         break;
                     case "bidi_interruption":
                         options.onInterruption?.(data.reason || "interrupted");
                         break;
                     case "bidi_response_complete":
                         // Agent finished its response — signal to reveal text
-                        console.log("Voice WS: bidi_response_complete received", data);
+                        console.log("Voice WS: bidi_response_complete received");
                         options.onResponseComplete?.(data.stop_reason || "complete");
                         break;
 
@@ -239,7 +239,7 @@ export async function connectToAgent(options: ConnectOptions): Promise<WebSocket
                     case "tool_result":
                     case "tool_result_message":
                     case "tool_stream":
-                        console.debug("Voice tool event:", data.type, data);
+                        console.debug("Voice tool event:", data.type);
                         options.onToolEvent?.(
                             data.tool_name || data.toolName || data.name || "tool",
                             data.type,
@@ -249,7 +249,7 @@ export async function connectToAgent(options: ConnectOptions): Promise<WebSocket
 
                     // --- Voice: AI-rephrased tool description (from Mistral via container) ---
                     case "tool_description":
-                        console.debug("Voice tool description:", data);
+                        console.debug("Voice tool description received");
                         options.onToolEvent?.(
                             data.tool_name || "tool",
                             "tool_description",
