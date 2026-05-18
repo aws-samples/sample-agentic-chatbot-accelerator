@@ -185,6 +185,12 @@ variable "knowledge_base_id" {
   default     = null
 }
 
+variable "sessions_table_arn" {
+  description = "ARN of the sessions DynamoDB table (for container-side session history writes via direct WebSocket architecture)"
+  type        = string
+  default     = null
+}
+
 variable "aws_profile" {
   description = "AWS CLI profile name for local-exec provisioner commands."
   type        = string

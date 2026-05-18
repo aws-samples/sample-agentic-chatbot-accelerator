@@ -37,11 +37,6 @@ output "outgoing_handler_function_arn" {
 # AppSync Data Source Outputs
 # -----------------------------------------------------------------------------
 
-output "sns_http_datasource_name" {
-  description = "Name of the SNS HTTP AppSync data source"
-  value       = aws_appsync_datasource.sns_http.name
-}
-
 output "none_datasource_name" {
   description = "Name of the None AppSync data source"
   value       = aws_appsync_datasource.websocket_none.name
@@ -53,5 +48,5 @@ output "none_datasource_name" {
 
 output "operations" {
   description = "List of GraphQL operations handled by this module"
-  value       = ["sendQuery", "publishResponse", "receiveMessages"]
+  value       = ["publishResponse", "receiveMessages"]
 }
