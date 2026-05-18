@@ -65,6 +65,18 @@ async def text_chat(websocket: WebSocket):
             message = await websocket.receive_json()
             msg_type = message.get("type")
 
+            # Voice mode: if the first message is voice_init, switch to BidiAgent
+            if msg_type == "voice_init":
+                voice_session_id = message.get("sessionId", str(uuid.uuid4()))
+                voice_user_id = message.get("userId", "voice-user")
+                logger.info(
+                    f"Switching to voice mode (BidiAgent) for session {voice_session_id}"
+                )
+                await _handle_voice_mode(
+                    websocket, logger, voice_session_id, voice_user_id
+                )
+                return  # voice mode takes over the connection
+
             if msg_type == "text_input":
                 user_message = message.get("text", "")
                 session_id = message.get("sessionId", str(uuid.uuid4()))
@@ -259,6 +271,119 @@ async def text_chat(websocket: WebSocket):
             mcp_client_manager.cleanup_connections()
 
 
+async def _handle_voice_mode(
+    websocket: WebSocket, log, session_id: str = "", user_id: str = "voice-user"
+) -> None:
+    """Handle voice mode using BidiAgent with Nova Sonic.
+
+    Called when the /ws handler receives a voice_init message.
+    Takes over the WebSocket connection for bidirectional audio streaming.
+    """
+    from shared.bidi_ws_adapter import WebSocketBidiInput, WebSocketBidiOutput
+    from strands.experimental.bidi import BidiAgent
+    from strands.experimental.bidi.models import BidiNovaSonicModel
+    from strands.experimental.bidi.tools import stop_conversation
+
+    configuration = parse_configuration(log)
+
+    # Get model from agent configuration and validate it's a Nova Sonic model
+    # (BidiAgent only supports Nova Sonic — other models will fail silently)
+    SUPPORTED_SONIC_MODELS = {"amazon.nova-sonic-v1:0", "amazon.nova-2-sonic-v1:0"}
+    MODEL_ID = configuration.modelInferenceParameters.modelId
+    if MODEL_ID not in SUPPORTED_SONIC_MODELS:
+        raise ValueError(
+            f"Voice mode requires a Nova Sonic model, but agent is configured with '{MODEL_ID}'. "
+            f"Supported models: {SUPPORTED_SONIC_MODELS}"
+        )
+    BEDROCK_REGION = os.getenv("BEDROCK_REGION", AWS_REGION or "us-east-1")
+
+    sonic_model = BidiNovaSonicModel(
+        model_id=MODEL_ID,
+        provider_config={
+            "audio": {
+                "voice": "tiffany",
+                "input_rate": 16000,
+                "output_rate": 16000,
+                "channels": 1,
+                "format": "pcm",
+            },
+            "inference": {},
+        },
+        client_config={"region": BEDROCK_REGION},
+    )
+
+    tools = _initialize_voice_tools(configuration)
+
+    # Initialize MCP clients for voice mode (same as text mode)
+    mcp_client_manager = None
+    if configuration.mcpServers:
+        mcp_client_manager = MCPClientManager(
+            mcp_servers=configuration.mcpServers,
+            logger=log,
+            mcp_registry=AVAILABLE_MCPS,
+        )
+        mcp_client_manager.init_mcp_clients()
+        # Add MCP tools to the tools list
+        mcp_tools = mcp_client_manager.load_mcp_tools()
+        tools.extend(mcp_tools)
+        log.info(f"Loaded {len(mcp_tools)} MCP tools for voice mode")
+
+    # Create session manager if memory is enabled (same as text mode)
+    # This persists conversation history across BidiAgent turns and reconnections
+    session_manager = None
+    if MEMORY_ID and session_id:
+        log.info(
+            "Creating session manager for voice mode",
+            extra={
+                "context": {
+                    "memoryId": MEMORY_ID,
+                    "sessionId": session_id,
+                    "userId": user_id,
+                }
+            },
+        )
+        session_manager = create_session_manager(
+            memory_id=MEMORY_ID,
+            session_id=session_id,
+            user_id=user_id,
+            region_name=AWS_REGION,
+        )
+
+    voice_agent = BidiAgent(
+        model=sonic_model,
+        tools=tools + [stop_conversation],
+        system_prompt=configuration.instructions,
+        session_manager=session_manager,
+    )
+
+    try:
+        ws_input = WebSocketBidiInput(websocket)
+        ws_output = WebSocketBidiOutput(websocket, session_id=session_id)
+
+        # Loop: BidiAgent.run() completes after each agent response.
+        # We keep re-running to accept follow-up questions on the same WebSocket.
+        # The loop exits when the user sends bidi_close (raises WebSocketDisconnect).
+        while True:
+            log.info("Voice: starting BidiAgent turn...")
+            await voice_agent.run(
+                inputs=[ws_input],  # type: ignore
+                outputs=[ws_output],
+            )
+            log.info("Voice: BidiAgent turn completed, awaiting next user input...")
+    except WebSocketDisconnect:
+        log.info("Voice WebSocket client disconnected")
+    except Exception as e:
+        log.error(f"Voice mode error: {e}")
+        import traceback
+
+        traceback.print_exc()
+    finally:
+        try:
+            await voice_agent.stop()
+        except Exception:
+            pass
+
+
 # ============================================================
 # VOICE MODE: WebSocket endpoint for bidirectional audio
 # ============================================================
@@ -291,13 +416,39 @@ async def voice_chat(websocket: WebSocket):
         client_config={"region": BEDROCK_REGION},
     )
 
+    # Load tools from configuration
     configuration = parse_configuration(logger)
     tools = _initialize_voice_tools(configuration)
+
+    # Initialize MCP clients for voice mode
+    mcp_client_manager = None
+    if configuration.mcpServers:
+        mcp_client_manager = MCPClientManager(
+            mcp_servers=configuration.mcpServers,
+            logger=logger,
+            mcp_registry=AVAILABLE_MCPS,
+        )
+        mcp_client_manager.init_mcp_clients()
+        mcp_tools = mcp_client_manager.load_mcp_tools()
+        tools.extend(mcp_tools)
+        logger.info(f"Loaded {len(mcp_tools)} MCP tools for voice mode")
+
+    # Create session manager if memory is enabled
+    session_manager = None
+    if MEMORY_ID:
+        session_id = str(uuid.uuid4())
+        session_manager = create_session_manager(
+            memory_id=MEMORY_ID,
+            session_id=session_id,
+            user_id="voice-user",
+            region_name=AWS_REGION,
+        )
 
     voice_agent = BidiAgent(
         model=sonic_model,
         tools=tools + [stop_conversation],
         system_prompt=configuration.instructions,
+        session_manager=session_manager,
     )
 
     try:
@@ -310,10 +461,16 @@ async def voice_chat(websocket: WebSocket):
         ws_input = WebSocketBidiInput(websocket)
         ws_output = WebSocketBidiOutput(websocket)
 
-        await voice_agent.run(
-            inputs=[ws_input],
-            outputs=[ws_output],
-        )
+        # Loop: BidiAgent.run() completes after each agent response.
+        # We keep re-running to accept follow-up questions on the same WebSocket.
+        while True:
+            logger.info("Voice: starting BidiAgent turn...")
+            await voice_agent.run(
+                inputs=[ws_input],  # type: ignore
+                outputs=[ws_output],
+            )
+            logger.info("Voice: BidiAgent turn completed, awaiting next user input...")
+
     except WebSocketDisconnect:
         logger.info("Voice WebSocket client disconnected")
     except Exception as e:
@@ -325,21 +482,37 @@ async def voice_chat(websocket: WebSocket):
         try:
             await websocket.close()
             await voice_agent.stop()
-        except Exception:
+        except Exception as e:
+            logger.error(f"Failed to close the websocket and stop the voice agent: {e}")
             pass
 
 
 def _initialize_voice_tools(configuration):
-    """Initialize tools from agent configuration for voice mode."""
-    from src.registry import AVAILABLE_TOOLS
+    """Initialize tools from agent configuration for voice mode.
+
+    Loads both regular tools (from configuration.tools) and sub-agent tools
+    (from configuration.agentsAsTools) so the BidiAgent can delegate to sub-agents.
+    """
+    from src.registry import AVAILABLE_TOOLS, InvokeSubAgentTool
 
     tools = []
-    for tool_name in configuration.tools:
+    for tool_name in configuration.tools or []:
         if tool_name in AVAILABLE_TOOLS:
             record = AVAILABLE_TOOLS[tool_name]
-            params = configuration.toolParameters.get(tool_name, {})
+            params = (configuration.toolParameters or {}).get(tool_name, {})
             params.pop("invokesSubAgent", None)
             tools.append(record["factory"](**params))
+
+    # Add sub-agent tools for agents-as-tools voice mode
+    for sub_agent in getattr(configuration, "agentsAsTools", []) or []:
+        tools.append(
+            InvokeSubAgentTool(
+                agent_runtime=sub_agent.runtimeId,
+                agent_role=sub_agent.role,
+                qualifier=sub_agent.endpoint,
+            ).tool
+        )
+
     return tools
 
 

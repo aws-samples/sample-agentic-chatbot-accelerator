@@ -14,7 +14,6 @@ from botocore.exceptions import ClientError
 from shared.base_registry import (
     TOOL_FACTORY_MAP,
     AbstractToolObject,
-    get_agentcore_client,
     load_mcps_from_dynamodb,
     load_tools_from_dynamodb,
 )
@@ -84,8 +83,29 @@ class InvokeSubAgentTool(AbstractToolObject):
         )
 
     def _tool_implementation(self, query: str, tool_context: ToolContext) -> str:
-        """Invokes a sub-agent to process the given query."""
-        ac_client = get_agentcore_client()
+        """Invokes a sub-agent to process the given query.
+
+        Uses a thread-local boto3 client to avoid HTTP/2 CRT connection pool
+        conflicts when called from BidiAgent's async context (voice mode).
+        The shared global client can conflict with BidiAgent's own CRT HTTP/2
+        connection to Nova Sonic, causing AWS_ERROR_HTTP_STREAM_HAS_COMPLETED.
+        """
+        import threading
+
+        import boto3
+
+        # Use a thread-local client to avoid CRT HTTP/2 connection conflicts
+        # between BidiAgent's streaming connection and sub-agent invocations.
+        if not hasattr(self, "_thread_local"):
+            self._thread_local = threading.local()
+
+        if not hasattr(self._thread_local, "ac_client"):
+            self._thread_local.ac_client = boto3.client(
+                "bedrock-agentcore", region_name=REGION_NAME
+            )
+
+        ac_client = self._thread_local.ac_client
+
         user_id = tool_context.invocation_state.get("userId", "default")
         session_id = tool_context.invocation_state.get("sessionId", str(uuid.uuid4()))
         session_id += f"-sa-{self._agent_runtime_id}"
