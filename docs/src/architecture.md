@@ -5,20 +5,21 @@
 - **Frontend & User Access**
   - React Static Website: Hosted on Amazon S3 and distributed globally via Amazon CloudFront for low-latency access
   - User Authentication: Managed through Amazon Cognito for secure identity and access management
-  - GraphQL API: AWS AppSync serves as the primary interface for real-time backend communication
-- **AI Chatbot Service** - The chatbot service orchestrates bidirectional message flow between users and AI agents:
-  - User Message Flow:
-    - Users send messages through an AppSync mutation and subscribe to responses via GraphQL subscriptions
-    - Inbound messages are published to an Amazon SNS topic for asynchronous processing
-  - Inbound Message Handler (AWS Lambda):
-    - Subscribes to the SNS topic for incoming messages
-    - Invokes the conversational agent hosted on Amazon Bedrock AgentCore runtime
-    - Persists conversation history to Amazon DynamoDB for UI rendering and session management
-    - Publishes streaming tokens and final responses to an outbound SNS topic
-  - Outbound Message Handler (Lambda):
-    - Subscribes to the outbound SNS topic
-    - Delivers responses back to clients in real-time through AppSync GraphQL subscriptions
-- **Agent Factory** - The Agent Factory provides dynamic agent lifecycle management and configuration:
+  - GraphQL API: AWS AppSync serves as the primary interface for REST-like queries (session history, agent configuration CRUD)
+  - Direct WebSocket: The React client connects directly to the AgentCore runtime container via SigV4 presigned WebSocket URLs for real-time chat and voice streaming — no API Gateway in the data path
+- **Real-Time Communication Layer** — The accelerator uses a **direct browser-to-AgentCore WebSocket architecture** for all real-time interactions:
+  - Text Chat Flow:
+    - The React client obtains temporary AWS credentials from the Cognito Identity Pool
+    - A SigV4 presigned WebSocket URL is generated pointing directly at the AgentCore runtime endpoint (`wss://bedrock-agentcore.<region>.amazonaws.com/runtimes/<ARN>/ws`)
+    - The browser opens a WebSocket connection to the AgentCore container's FastAPI `/ws` endpoint
+    - Tokens, tool actions, and final responses stream back to the client over the same WebSocket connection in real-time
+  - Voice Chat Flow:
+    - The React client opens the same presigned WebSocket connection and sends a `voice_init` message to initiate bidirectional audio streaming
+    - The AgentCore container switches to BidiAgent mode, powered by Amazon Nova Sonic for speech-to-speech
+    - Audio frames stream bidirectionally — user speech goes in, agent speech comes out — over a single WebSocket connection
+    - Supports real-time interruption, transcript streaming, and tool invocations during voice conversations
+  - Session History: Conversation exchanges are persisted to Amazon DynamoDB directly by the AgentCore container after each response
+- **Agent Factory** — The Agent Factory provides dynamic agent lifecycle management and configuration:
   - AppSync Resolvers: Handle CRUD operations for Bedrock AgentCore runtime instances
   - Agent Configuration:
     - Amazon ECR container images package AWS Strands Agents with flexible configuration options
@@ -29,8 +30,13 @@
     - Foundation Models: Serverless large language models hosted on Amazon Bedrock
     - Data Sources: Amazon Bedrock Knowledge Bases enable semantic/hybrid search and retrieval-augmented generation (RAG)
   - Storage: Amazon DynamoDB for agent configuration management
-- **Agent Execution Environment** - The agent execution layer handles the core AI processing and integration:
-  - Runtime Deployment: Agents are deployed to Amazon Bedrock AgentCore Runtime as Docker containers registered in Amazon ECR
+- **Agent Execution Environment** — The agent execution layer handles the core AI processing and integration:
+  - Runtime Deployment: Agents are deployed to Amazon Bedrock AgentCore Runtime as Docker containers registered in Amazon ECR, running a **FastAPI application** with WebSocket endpoints
+  - Endpoints:
+    - `GET /ping` — Health check (required by AgentCore)
+    - `POST /invocations` — HTTP SSE endpoint for agent-to-agent calls (used by agents-as-tools orchestrators)
+    - `WS /ws` — WebSocket endpoint for text chat streaming and voice mode initialization
+    - `WS /ws/voice` — Dedicated WebSocket endpoint for bidirectional voice streaming
   - Knowledge Integration (**if enabled in CDK configuration**):
     - Agents connect to Amazon Bedrock Knowledge Bases to implement retrieval tools for RAG
     - Knowledge bases are automatically populated via an AWS Step Functions workflow triggered when documents are uploaded to a designated Amazon S3 bucket
@@ -38,3 +44,8 @@
     - Agent runtime logs are stored in Amazon CloudWatch Logs for debugging and analysis
     - Distributed traces are captured in AWS X-Ray for performance monitoring and troubleshooting
   - State Management: Agents persist conversational state using Amazon Bedrock AgentCore Memory (when enabled) for context-aware interactions
+- **Voice-to-Voice** — Real-time conversational AI with bidirectional audio:
+  - Powered by [Strands Agents BidiAgent](https://strandsagents.com/) with the `strands-agents[bidi]` extension
+  - Uses Amazon Nova Sonic for low-latency speech-to-speech inference
+  - Supports mid-conversation interruptions, tool use during voice interactions, and transcript streaming
+  - All voice tools and MCP servers configured for the agent are available during voice conversations

@@ -48,7 +48,9 @@ Register and manage MCP servers to extend your agents with external capabilities
 
 ![MCP Server Registry](./docs/imgs/mcp-manager.png)
 
-Test your agents through the built-in chatbot interface — interact in real-time, review responses, and provide feedback. Users get real-time visibility as the agent makes calls to tools, and can provide feedback on each response via thumbs up/down or free-text comments.
+Test your agents through the built-in chatbot interface — interact in real-time via text or voice, review responses, and provide feedback. Users get real-time visibility as the agent makes calls to tools, and can provide feedback on each response via thumbs up/down or free-text comments.
+
+The accelerator also supports **Voice-to-Voice** conversations powered by Amazon Nova Sonic and [Strands Agents BidiAgent](https://strandsagents.com/). Talk to your agent naturally with real-time bidirectional audio streaming, mid-conversation interruptions, and tool use during voice interactions.
 
 ![Chatbot Experience — real-time tool call visibility with thumbs up/down and free-text feedback](./docs/imgs/chatbot.png)
 
@@ -58,7 +60,6 @@ For systematic validation, run evaluations powered by the [Strands Agents Evals 
 
 - [Architecture](./docs/src/architecture.md)
 - [API Reference](./docs/src/api.md)
-- [Agent Event Architecture](./docs/src/token-streaming-architecture.md)
 - [Observability & Insights](./docs/src/observability-insights.md)
 
 ## Optional Features
