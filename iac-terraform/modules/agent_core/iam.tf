@@ -238,6 +238,16 @@ data "aws_iam_policy_document" "agentcore_execution" {
     resources = [aws_sns_topic.agent_tools.arn]
   }
 
+  # DynamoDB Write - Sessions Table (for container-side history persistence)
+  dynamic "statement" {
+    for_each = var.sessions_table_arn != null ? [1] : []
+    content {
+      sid       = "WriteSessionHistory"
+      actions   = ["dynamodb:PutItem", "dynamodb:UpdateItem"]
+      resources = [var.sessions_table_arn]
+    }
+  }
+
   # KMS Access - For encrypted DynamoDB, SNS, and ECR resources
   statement {
     sid = "KMSAccess"

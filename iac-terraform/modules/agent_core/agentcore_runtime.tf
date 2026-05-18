@@ -60,6 +60,9 @@ resource "aws_bedrockagentcore_agent_runtime" "default" {
       mcpServerRegistry  = aws_dynamodb_table.mcp_server_registry.name
       agentToolsTopicArn = aws_sns_topic.agent_tools.arn
       memoryId           = var.agent_runtime_config.memory_config != null ? aws_bedrockagentcore_memory.default[0].id : ""
+      # Sessions table name for container-side history persistence
+      # (follows the same {prefix}-sessionsTable naming convention)
+      sessionsTableName = "${local.name_prefix}-sessionsTable"
     },
     var.bedrock_access_role_arn != null ? { bedrockAccessRoleArn = var.bedrock_access_role_arn } : {}
   )

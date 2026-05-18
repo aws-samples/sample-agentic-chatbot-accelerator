@@ -42,25 +42,6 @@ variable "lambda_architecture" {
 }
 
 # -----------------------------------------------------------------------------
-# DynamoDB Tables
-# -----------------------------------------------------------------------------
-
-variable "sessions_table_name" {
-  description = "Name of the sessions DynamoDB table"
-  type        = string
-}
-
-variable "sessions_table_arn" {
-  description = "ARN of the sessions DynamoDB table"
-  type        = string
-}
-
-variable "by_user_id_index" {
-  description = "Name of the by-user-id GSI on sessions table"
-  type        = string
-}
-
-# -----------------------------------------------------------------------------
 # SNS Topics
 # -----------------------------------------------------------------------------
 
@@ -72,22 +53,6 @@ variable "messages_topic_arn" {
 variable "agent_tools_topic_arn" {
   description = "ARN of the agent tools SNS topic"
   type        = string
-}
-
-# -----------------------------------------------------------------------------
-# Tags for IAM Conditions (AgentCore resource scoping)
-# -----------------------------------------------------------------------------
-
-variable "stack_tag" {
-  description = "Stack tag for Bedrock AgentCore resource scoping"
-  type        = string
-  default     = "aca"
-}
-
-variable "environment_tag" {
-  description = "Environment tag for Bedrock AgentCore resource scoping (optional)"
-  type        = string
-  default     = ""
 }
 
 # -----------------------------------------------------------------------------

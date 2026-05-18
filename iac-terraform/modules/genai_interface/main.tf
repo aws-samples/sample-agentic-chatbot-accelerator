@@ -5,8 +5,12 @@ SPDX-License-Identifier: MIT-0
 GenAI Interface Module - Main Resources
 
 Creates:
-- invoke-agentCoreRuntime Lambda (handles AgentCore invocation via SNS)
 - agent-tools-handler Lambda (processes agent tools messages)
+
+After the Direct WebSocket migration, this module only contains
+the agent-tools-handler Lambda (for AI-rephrased tool descriptions).
+The invokeAgentCoreRuntime Lambda was removed — the browser now
+communicates directly with AgentCore containers via WebSocket.
 
 Equivalent to: iac-cdk/lib/genai-interface/index.ts GenAIInterface construct
 */
@@ -14,15 +18,6 @@ Equivalent to: iac-cdk/lib/genai-interface/index.ts GenAIInterface construct
 locals {
   name_prefix   = lower(var.prefix)
   functions_dir = "${path.module}/../../../src/genai-interface/functions"
-
-  # Build IAM condition for AgentCore resource scoping (matches CDK getTagConditions)
-  # Restricts Lambda to only invoke AgentCore runtimes with matching tags
-  agentcore_tag_conditions = var.environment_tag != "" ? {
-    "aws:ResourceTag/Stack"       = var.stack_tag
-    "aws:ResourceTag/Environment" = var.environment_tag
-    } : {
-    "aws:ResourceTag/Stack" = var.stack_tag
-  }
 }
 
 # Get current region and account

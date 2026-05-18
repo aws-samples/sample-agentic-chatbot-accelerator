@@ -393,6 +393,7 @@ resource "aws_lambda_function" "create_runtime_version" {
         ENVIRONMENT_TAG               = var.environment_tag
         STACK_TAG                     = var.stack_tag
         AGENT_TOOLS_TOPIC_ARN         = var.agent_tools_topic_arn
+        SESSIONS_TABLE_NAME           = "${local.name_prefix}-sessionsTable"
         AGENTS_TABLE_NAME             = var.agent_core_runtime_table_name
         AGENTS_SUMMARY_TABLE_NAME     = var.agent_core_summary_table_name
       },

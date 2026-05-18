@@ -200,6 +200,14 @@ resource "aws_iam_role_policy" "authenticated" {
           "cognito-identity:*"
         ]
         Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "bedrock-agentcore:InvokeAgentRuntime",
+          "bedrock-agentcore:InvokeAgentRuntimeWithWebSocketStream"
+        ]
+        Resource = "arn:aws:bedrock-agentcore:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:runtime/*"
       }
     ]
   })

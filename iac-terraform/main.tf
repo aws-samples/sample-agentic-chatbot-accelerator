@@ -172,6 +172,9 @@ module "agent_core" {
   # Cross-account Bedrock access
   bedrock_access_role_arn = var.bedrock_access_role_arn
 
+  # Sessions table ARN for container-side history persistence (direct WebSocket architecture)
+  sessions_table_arn = module.api_tables.sessions_table_arn
+
   # KMS key from root level (breaks circular dependency)
   kms_key_arn = aws_kms_key.main.arn
   kms_key_id  = aws_kms_key.main.key_id
@@ -179,7 +182,7 @@ module "agent_core" {
   # AWS CLI profile for local-exec provisioners
   aws_profile = var.aws_profile
 
-  depends_on = [module.shared, aws_kms_key.main]
+  depends_on = [module.shared, module.api_tables, aws_kms_key.main]
 }
 
 # -----------------------------------------------------------------------------
@@ -352,7 +355,9 @@ module "agent_core_apis" {
 
 # -----------------------------------------------------------------------------
 # GenAI Interface Module
-# Creates Lambda functions for invoking AgentCore runtime and handling agent tools
+# Creates agent-tools-handler Lambda for AI-rephrased tool descriptions.
+# After the Direct WebSocket migration, the invokeAgentCoreRuntime Lambda
+# was removed — the browser now communicates directly with AgentCore via WebSocket.
 # Equivalent to: new GenAIInterface(this, "GenAI", {...}) in iac-cdk/lib/aca-stack.ts
 # -----------------------------------------------------------------------------
 module "genai_interface" {
@@ -367,23 +372,14 @@ module "genai_interface" {
   python_runtime       = module.shared.python_runtime
   lambda_architecture  = module.shared.lambda_architecture
 
-  # DynamoDB Tables
-  sessions_table_name = module.api_tables.sessions_table_name
-  sessions_table_arn  = module.api_tables.sessions_table_arn
-  by_user_id_index    = module.api_tables.sessions_table_by_user_index
-
   # SNS Topics
   messages_topic_arn    = module.websocket_backend.messages_topic_arn
   agent_tools_topic_arn = module.agent_core.agent_tools_topic_arn
 
-  # Tags for IAM conditions (AgentCore resource scoping)
-  stack_tag       = var.prefix
-  environment_tag = var.environment
-
   # Encryption
   kms_key_arn = aws_kms_key.main.arn
 
-  depends_on = [module.api_tables, module.websocket_backend, module.agent_core]
+  depends_on = [module.websocket_backend, module.agent_core]
 }
 
 # -----------------------------------------------------------------------------
