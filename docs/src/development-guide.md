@@ -11,23 +11,23 @@ The Agentic Chatbot Accelerator is a full-stack web application built with AWS C
 ```
 agentic-chatbot-accelerator/
 ├── src/                        # Shared runtime code (Lambda, Docker, React)
-│   ├── agent-core/             # AgentCore runtime containers
+│   ├── agent-core/             # AgentCore runtime containers (FastAPI + WebSocket)
 │   │   ├── docker/             # Single agent container
 │   │   ├── docker-agents-as-tools/ # Agents-as-tools container
 │   │   ├── docker-graph/       # Graph agent container
 │   │   ├── docker-swarm/       # Swarm agent container
 │   │   ├── functions/          # AgentCore Lambda functions
-│   │   └── shared/             # Shared agent utilities
-│   ├── api/                    # GraphQL API
-│   │   ├── functions/          # Lambda resolvers
+│   │   └── shared/             # Shared agent utilities (bidi adapter, session history, MCP client)
+│   ├── api/                    # GraphQL API (AppSync)
+│   │   ├── functions/          # Lambda resolvers & AppSync handlers
 │   │   ├── schema/             # GraphQL schema definitions
 │   │   └── state-machines/     # Step Functions for agent lifecycle
 │   ├── user-interface/         # React frontend application
-│   │   └── react-app/          # React source code
+│   │   └── react-app/          # React source code (includes voice hooks & presigned WS client)
 │   ├── data-processing/        # Document processing pipeline (optional)
 │   │   ├── functions/          # Processing Lambda functions
 │   │   └── state-machines/     # Step Functions workflows
-│   ├── genai-interface/        # AI service integrations (AgentCore invocation)
+│   ├── genai-interface/        # AI service integrations (tool action notifications)
 │   ├── knowledge-base/         # Knowledge base management (optional)
 │   ├── cleanup/                # Resource cleanup functions
 │   ├── experiments-batch/      # Batch experiment runner
@@ -42,7 +42,7 @@ agentic-chatbot-accelerator/
 │   │   ├── aca-stack.ts        # Application CDK stack
 │   │   ├── builder-stack.ts    # BuilderStack (CodeBuild projects, ECR repos, S3 artifact buckets)
 │   │   ├── agent-core/         # AgentCore construct
-│   │   ├── api/                # API constructs (HTTP, WebSocket, AppSync)
+│   │   ├── api/                # API constructs (HTTP, AppSync, subscriptions)
 │   │   ├── authentication/     # Cognito User Pool setup
 │   │   ├── cleanup/            # Cleanup construct
 │   │   ├── codebuild-builder/  # CodeBuild constructs (Docker images, pip layers, npm builds)

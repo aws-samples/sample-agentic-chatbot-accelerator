@@ -115,7 +115,7 @@ In summary, you will need:
 - [How to Deploy](./docs/src/how-to-deploy.md) - Deployment instructions and configuration
 - [API Reference](./docs/src/api.md) - GraphQL API documentation
 - [Expanding AI Tools](./docs/src/expanding-ai-tools.md) - Guide for adding custom tools
-- [Token Streaming Architecture](./docs/src/token-streaming-architecture.md) - Message flow architecture
+- [Architecture](./docs/src/architecture.md) - System architecture and real-time communication
 
 ## Development Workflow
 
