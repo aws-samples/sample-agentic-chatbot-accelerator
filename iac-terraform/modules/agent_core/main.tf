@@ -100,6 +100,87 @@ resource "aws_dynamodb_table" "tool_registry" {
   }
 }
 
+# State Class Registry Table
+# Stores predefined state classes for graph pipelines (UI discovery)
+resource "aws_dynamodb_table" "state_class_registry" {
+  name         = "${local.name_prefix}-stateClassRegistryTable"
+  billing_mode = "PAY_PER_REQUEST"
+
+  hash_key = "StateClassKey"
+
+  attribute {
+    name = "StateClassKey"
+    type = "S"
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = var.kms_key_arn
+  }
+
+  tags = {
+    Name = "${local.name_prefix}-stateClassRegistryTable"
+  }
+}
+
+# Deterministic Node Registry Table
+# Stores deterministic node function metadata for graph pipelines (UI discovery)
+resource "aws_dynamodb_table" "deterministic_node_registry" {
+  name         = "${local.name_prefix}-deterministicNodeRegistryTable"
+  billing_mode = "PAY_PER_REQUEST"
+
+  hash_key = "DeterministicNodeKey"
+
+  attribute {
+    name = "DeterministicNodeKey"
+    type = "S"
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = var.kms_key_arn
+  }
+
+  tags = {
+    Name = "${local.name_prefix}-deterministicNodeRegistryTable"
+  }
+}
+
+# Structured Output Registry Table
+# Stores structured output model metadata for agent pipelines (UI discovery)
+resource "aws_dynamodb_table" "structured_output_registry" {
+  name         = "${local.name_prefix}-structuredOutputRegistryTable"
+  billing_mode = "PAY_PER_REQUEST"
+
+  hash_key = "StructuredOutputKey"
+
+  attribute {
+    name = "StructuredOutputKey"
+    type = "S"
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = var.kms_key_arn
+  }
+
+  tags = {
+    Name = "${local.name_prefix}-structuredOutputRegistryTable"
+  }
+}
+
 # MCP Server Registry Table
 # Stores MCP server configurations
 resource "aws_dynamodb_table" "mcp_server_registry" {
@@ -168,6 +249,71 @@ resource "aws_dynamodb_table_item" "tool_registry" {
     ToolName        = { S = each.value.name }
     ToolDescription = { S = each.value.description }
     InvokesSubAgent = { BOOL = each.value.invokes_sub_agent }
+  })
+
+  lifecycle {
+    ignore_changes = [item]
+  }
+}
+
+# -----------------------------------------------------------------------------
+# DynamoDB Seeding - State Class Registry
+# -----------------------------------------------------------------------------
+
+resource "aws_dynamodb_table_item" "state_class_registry" {
+  for_each = { for sc in var.state_class_registry : sc.key => sc }
+
+  table_name = aws_dynamodb_table.state_class_registry.name
+  hash_key   = aws_dynamodb_table.state_class_registry.hash_key
+
+  item = jsonencode({
+    StateClassKey = { S = each.value.key }
+    Label         = { S = each.value.label }
+    Description   = { S = each.value.description }
+    Fields        = { L = [for f in each.value.fields : { S = f }] }
+  })
+
+  lifecycle {
+    ignore_changes = [item]
+  }
+}
+
+# -----------------------------------------------------------------------------
+# DynamoDB Seeding - Deterministic Node Registry
+# -----------------------------------------------------------------------------
+
+resource "aws_dynamodb_table_item" "deterministic_node_registry" {
+  for_each = { for dn in var.deterministic_node_registry : dn.key => dn }
+
+  table_name = aws_dynamodb_table.deterministic_node_registry.name
+  hash_key   = aws_dynamodb_table.deterministic_node_registry.hash_key
+
+  item = jsonencode({
+    DeterministicNodeKey = { S = each.value.key }
+    Label                = { S = each.value.label }
+    Description          = { S = each.value.description }
+  })
+
+  lifecycle {
+    ignore_changes = [item]
+  }
+}
+
+# -----------------------------------------------------------------------------
+# DynamoDB Seeding - Structured Output Registry
+# -----------------------------------------------------------------------------
+
+resource "aws_dynamodb_table_item" "structured_output_registry" {
+  for_each = { for so in var.structured_output_registry : so.key => so }
+
+  table_name = aws_dynamodb_table.structured_output_registry.name
+  hash_key   = aws_dynamodb_table.structured_output_registry.hash_key
+
+  item = jsonencode({
+    StructuredOutputKey = { S = each.value.key }
+    Label               = { S = each.value.label }
+    Description         = { S = each.value.description }
+    Fields              = { L = [for f in each.value.fields : { S = f }] }
   })
 
   lifecycle {

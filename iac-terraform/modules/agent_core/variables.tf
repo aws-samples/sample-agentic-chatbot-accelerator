@@ -44,6 +44,50 @@ variable "tool_registry" {
 }
 
 # -----------------------------------------------------------------------------
+# State Class Registry Configuration (Graph Pipelines)
+# -----------------------------------------------------------------------------
+
+variable "state_class_registry" {
+  description = "Predefined state classes for graph pipelines (UI discovery). Must match keys registered in Python state_registry.py."
+  type = list(object({
+    key         = string
+    label       = string
+    description = string
+    fields      = list(string)
+  }))
+  default = []
+}
+
+# -----------------------------------------------------------------------------
+# Deterministic Node Registry Configuration (Graph Pipelines)
+# -----------------------------------------------------------------------------
+
+variable "deterministic_node_registry" {
+  description = "Deterministic node functions for graph pipelines (UI discovery). Must match keys registered in Python deterministic_node_registry.py."
+  type = list(object({
+    key         = string
+    label       = string
+    description = string
+  }))
+  default = []
+}
+
+# -----------------------------------------------------------------------------
+# Structured Output Registry Configuration
+# -----------------------------------------------------------------------------
+
+variable "structured_output_registry" {
+  description = "Structured output models for agent pipelines (UI discovery). Must match keys registered in Python structured_output_registry.py."
+  type = list(object({
+    key         = string
+    label       = string
+    description = string
+    fields      = list(string)
+  }))
+  default = []
+}
+
+# -----------------------------------------------------------------------------
 # MCP Server Registry Configuration
 # -----------------------------------------------------------------------------
 
