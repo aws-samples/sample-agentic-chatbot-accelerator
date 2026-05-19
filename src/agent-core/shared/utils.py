@@ -136,6 +136,25 @@ def enrich_trajectory(trajectory_session, tool_executions: dict, log) -> dict:
 # ---------------------------------------------------------------------------- #
 
 
+class AgentRuntimeResponse:
+    """Rich response from an AgentCore sub-agent invocation.
+
+    Attributes:
+        content: The final text content produced by the agent.
+        structured_output: Parsed structured output dict, or ``None`` when
+            the sub-agent did not return one.
+    """
+
+    __slots__ = ("content", "structured_output")
+
+    def __init__(self, content: str, structured_output: Optional[dict] = None):
+        self.content = content
+        self.structured_output = structured_output
+
+    def __str__(self) -> str:
+        return self.content
+
+
 def parse_sse_events(stream: str) -> Tuple[list[dict], str]:
     """Parse SSE events from a stream buffer and extract JSON events.
 
@@ -171,7 +190,8 @@ def parse_sse_events(stream: str) -> Tuple[list[dict], str]:
 def parse_agent_runtime_response(
     response_stream: Any,
     agent_name: str = "agent",
-) -> str:
+    return_structured: bool = False,
+) -> "str | AgentRuntimeResponse":
     """Read and parse a streaming SSE response from ``invoke_agent_runtime``.
 
     Handles the full lifecycle of reading the response stream:
@@ -186,9 +206,15 @@ def parse_agent_runtime_response(
             ``invoke_agent_runtime``. Can be an iterable of chunks or a
             file-like object with a ``read()`` method.
         agent_name: Human-readable agent name used in error messages.
+        return_structured: When ``True``, return an
+            :class:`AgentRuntimeResponse` that includes both the text
+            content and any ``structuredOutput`` from the final event.
+            Defaults to ``False`` for backward compatibility (returns
+            plain ``str``).
 
     Returns:
-        The final text content produced by the agent.
+        The final text content as ``str`` (default) or an
+        :class:`AgentRuntimeResponse` when *return_structured* is ``True``.
 
     Raises:
         RuntimeError: If the agent returns an error event, the stream is
@@ -197,12 +223,13 @@ def parse_agent_runtime_response(
     utf8_decoder = codecs.getincrementaldecoder("utf-8")(errors="strict")
     buffer = ""
     final_content: str | None = None
+    structured_output: dict | None = None
     token_values: list[str] = []
     received_any_chunk = False
 
     def _process_events(events: list[dict]) -> None:
         """Process parsed SSE events, extracting final content or tokens."""
-        nonlocal final_content
+        nonlocal final_content, structured_output
         for event in events:
             action = event.get("action", "")
             data = event.get("data", {})
@@ -214,6 +241,16 @@ def parse_agent_runtime_response(
 
             if action == "final_response":
                 final_content = data.get("content", "")
+                # Extract structuredOutput when the sub-agent includes one
+                so_raw = data.get("structuredOutput")
+                if so_raw is not None:
+                    if isinstance(so_raw, str):
+                        try:
+                            structured_output = json.loads(so_raw)
+                        except json.JSONDecodeError:
+                            pass
+                    elif isinstance(so_raw, dict):
+                        structured_output = so_raw
             elif action == "on_new_llm_token":
                 token = data.get("token", {})
                 if isinstance(token, dict) and "value" in token:
@@ -292,11 +329,18 @@ def parse_agent_runtime_response(
             f"be initializing or the invocation timed out"
         )
 
+    def _wrap(text: str) -> "str | AgentRuntimeResponse":
+        if return_structured:
+            return AgentRuntimeResponse(
+                content=text, structured_output=structured_output
+            )
+        return text
+
     if final_content is not None:
-        return final_content
+        return _wrap(final_content)
 
     if token_values:
-        return "".join(token_values)
+        return _wrap("".join(token_values))
 
     # Last resort: try parsing any remaining buffer as plain JSON (non-SSE response)
     remaining = buffer.strip()
@@ -309,9 +353,9 @@ def parse_agent_runtime_response(
                         f"Sub-agent '{agent_name}' returned error: {parsed['error']}"
                     )
                 data = parsed.get("data", parsed)
-                return str(data.get("content", data))
-            return str(parsed)
+                return _wrap(str(data.get("content", data)))
+            return _wrap(str(parsed))
         except json.JSONDecodeError:
-            return remaining
+            return _wrap(remaining)
 
-    return ""
+    return _wrap("")

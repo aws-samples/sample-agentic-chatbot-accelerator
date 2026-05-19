@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: MIT-0
 # ------------------------------------------------------------------------ #
 import asyncio
+import json
 import logging
 import os
 from datetime import datetime
@@ -13,7 +14,11 @@ from opentelemetry import baggage
 from opentelemetry.context import attach
 from shared.session_history import save_conversation_exchange
 from src.data_source import parse_configuration
-from src.factory import compile_graph
+from src.factory import (
+    compile_graph,
+    get_invocation_extra_state,
+    set_invocation_extra_state,
+)
 
 logger = logging.getLogger("agentcore.app")
 logger.setLevel(logging.INFO)
@@ -63,6 +68,30 @@ async def graph_text_chat(websocket: WebSocket):
 
                 ctx = baggage.set_baggage("session.id", session_id)
                 attach(ctx)
+
+                # ── Parse optional session state from payload ─────────
+                # The caller may provide initial state fields that the
+                # graph nodes should forward to sub-agents.
+                state_json = message.get("state")
+                initial_extra_state: dict = {}
+                if state_json:
+                    initial_extra_state = (
+                        json.loads(state_json)
+                        if isinstance(state_json, str)
+                        else state_json
+                    )
+                    logger.info(
+                        "Graph initial state hydrated from payload",
+                        extra={"stateKeys": list(initial_extra_state.keys())},
+                    )
+
+                # Store the extra state so node functions can always
+                # forward it to sub-agents.
+                set_invocation_extra_state(
+                    initial_extra_state,
+                    session_id=session_id,
+                    user_id=user_id,
+                )
 
                 if COMPILED_GRAPH is None or CURRENT_SESSION_ID != session_id:
                     logger.info(
@@ -131,7 +160,8 @@ async def graph_text_chat(websocket: WebSocket):
                 )
 
                 try:
-                    input_state = {"messages": [user_message]}
+                    input_state: dict = {"messages": [user_message]}
+                    input_state.update(initial_extra_state)
 
                     invoke_config = {
                         "recursion_limit": CONFIGURATION.orchestrator.maxIterations,
@@ -176,6 +206,47 @@ async def graph_text_chat(websocket: WebSocket):
                         "sessionId": session_id,
                         "messageId": message_id,
                     }
+
+                    # ── Extract structured output ─────────────────────
+                    # Collect structured outputs from two sources:
+                    #
+                    # 1. LangGraph final state — dict fields whose keys
+                    #    match the TypedDict schema (non-messages).
+                    #
+                    # 2. _invocation_extra_state — accumulated SO from
+                    #    each node stored under ``{node_id}_output``.
+                    structured_fields: dict = {}
+
+                    # Source 1: LangGraph final state
+                    if isinstance(result, dict):
+                        for key, value in result.items():
+                            if key == "messages":
+                                continue
+                            if isinstance(value, dict) and value:
+                                structured_fields[key] = value
+                            elif isinstance(value, list) and value:
+                                structured_fields[key] = value
+
+                    # Source 2: invocation extra state (_output keys)
+                    extra_state = get_invocation_extra_state()
+                    for key, value in extra_state.items():
+                        if (
+                            key.endswith("_output")
+                            and isinstance(value, dict)
+                            and value
+                        ):
+                            clean_key = key.removesuffix("_output")
+                            if clean_key not in structured_fields:
+                                structured_fields[clean_key] = value
+
+                    if structured_fields:
+                        final_data["structuredOutput"] = json.dumps(structured_fields)
+                        logger.info(
+                            "Structured output extracted",
+                            extra={
+                                "structuredOutputKeys": list(structured_fields.keys()),
+                            },
+                        )
 
                     await websocket.send_json(final_data)
 
