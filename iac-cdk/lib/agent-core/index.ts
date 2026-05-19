@@ -45,6 +45,9 @@ export class AcaAgentCoreContainer extends Construct {
     public readonly executionRole: Role;
     public readonly agentCoreRuntimeTable: dynamodb.Table;
     public readonly toolRegistry: dynamodb.Table;
+    public readonly stateClassRegistry: dynamodb.Table;
+    public readonly deterministicNodeRegistry: dynamodb.Table;
+    public readonly structuredOutputRegistry: dynamodb.Table;
     public readonly mcpServerRegistry: dynamodb.Table;
     public readonly agentCoreSummaryTable: dynamodb.Table;
     public readonly agentToolsTopic: sns.Topic;
@@ -139,6 +142,231 @@ export class AcaAgentCoreContainer extends Construct {
 
             NagSuppressions.addResourceSuppressions(
                 toolSeeder,
+                [
+                    {
+                        id: "AwsSolutions-IAM5",
+                        reason: "IAM role implicitly created by CDK for AwsCustomResource.",
+                    },
+                ],
+                true,
+            );
+        }
+
+        // State Class Registry table — predefined state classes for graph pipelines
+        const stateClassRegistry = new dynamodb.Table(this, "StateClassRegistry", {
+            tableName: `${prefix}-stateClassRegistryTable`,
+            partitionKey: {
+                name: "StateClassKey",
+                type: dynamodb.AttributeType.STRING,
+            },
+            billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+            encryption: dynamodb.TableEncryption.AWS_MANAGED,
+            removalPolicy: cdk.RemovalPolicy.DESTROY,
+            pointInTimeRecoverySpecification: {
+                pointInTimeRecoveryEnabled: true,
+            },
+        });
+        // Seed state class registry table
+        const stateClassSeedItems = (props.config.stateClassRegistry ?? []).map((sc) => ({
+            PutRequest: {
+                Item: {
+                    StateClassKey: { S: sc.key },
+                    Label: { S: sc.label },
+                    Description: { S: sc.description },
+                    Fields: { L: sc.fields.map((f: string) => ({ S: f })) },
+                },
+            },
+        }));
+
+        if (stateClassSeedItems.length > 0) {
+            const stateClassSeeder = new cr.AwsCustomResource(this, "StateClassSeederFunc", {
+                onCreate: {
+                    service: "DynamoDB",
+                    action: "BatchWriteItem",
+                    parameters: {
+                        RequestItems: {
+                            [stateClassRegistry.tableName]: stateClassSeedItems,
+                        },
+                    },
+                    physicalResourceId: cr.PhysicalResourceId.of("StateClassRegistrySeeder"),
+                },
+                onUpdate: {
+                    service: "DynamoDB",
+                    action: "BatchWriteItem",
+                    parameters: {
+                        RequestItems: {
+                            [stateClassRegistry.tableName]: stateClassSeedItems,
+                        },
+                    },
+                    physicalResourceId: cr.PhysicalResourceId.of("StateClassRegistrySeeder"),
+                },
+                policy: cr.AwsCustomResourcePolicy.fromStatements([
+                    new iam.PolicyStatement({
+                        actions: ["dynamodb:BatchWriteItem"],
+                        resources: [stateClassRegistry.tableArn],
+                    }),
+                ]),
+            });
+
+            NagSuppressions.addResourceSuppressions(
+                stateClassSeeder,
+                [
+                    {
+                        id: "AwsSolutions-IAM5",
+                        reason: "IAM role implicitly created by CDK for AwsCustomResource.",
+                    },
+                ],
+                true,
+            );
+        }
+
+        // Deterministic Node Registry table — pure-Python node functions for graph pipelines
+        const deterministicNodeRegistry = new dynamodb.Table(this, "DeterministicNodeRegistry", {
+            tableName: `${prefix}-deterministicNodeRegistryTable`,
+            partitionKey: {
+                name: "DeterministicNodeKey",
+                type: dynamodb.AttributeType.STRING,
+            },
+            billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+            encryption: dynamodb.TableEncryption.AWS_MANAGED,
+            removalPolicy: cdk.RemovalPolicy.DESTROY,
+            pointInTimeRecoverySpecification: {
+                pointInTimeRecoveryEnabled: true,
+            },
+        });
+        // Seed deterministic node registry table
+        const deterministicNodeSeedItems = (props.config.deterministicNodeRegistry ?? []).map(
+            (dn) => ({
+                PutRequest: {
+                    Item: {
+                        DeterministicNodeKey: { S: dn.key },
+                        Label: { S: dn.label },
+                        Description: { S: dn.description },
+                    },
+                },
+            }),
+        );
+
+        if (deterministicNodeSeedItems.length > 0) {
+            const deterministicNodeSeeder = new cr.AwsCustomResource(
+                this,
+                "DeterministicNodeSeederFunc",
+                {
+                    onCreate: {
+                        service: "DynamoDB",
+                        action: "BatchWriteItem",
+                        parameters: {
+                            RequestItems: {
+                                [deterministicNodeRegistry.tableName]:
+                                    deterministicNodeSeedItems,
+                            },
+                        },
+                        physicalResourceId: cr.PhysicalResourceId.of(
+                            "DeterministicNodeRegistrySeeder",
+                        ),
+                    },
+                    onUpdate: {
+                        service: "DynamoDB",
+                        action: "BatchWriteItem",
+                        parameters: {
+                            RequestItems: {
+                                [deterministicNodeRegistry.tableName]:
+                                    deterministicNodeSeedItems,
+                            },
+                        },
+                        physicalResourceId: cr.PhysicalResourceId.of(
+                            "DeterministicNodeRegistrySeeder",
+                        ),
+                    },
+                    policy: cr.AwsCustomResourcePolicy.fromStatements([
+                        new iam.PolicyStatement({
+                            actions: ["dynamodb:BatchWriteItem"],
+                            resources: [deterministicNodeRegistry.tableArn],
+                        }),
+                    ]),
+                },
+            );
+
+            NagSuppressions.addResourceSuppressions(
+                deterministicNodeSeeder,
+                [
+                    {
+                        id: "AwsSolutions-IAM5",
+                        reason: "IAM role implicitly created by CDK for AwsCustomResource.",
+                    },
+                ],
+                true,
+            );
+        }
+
+        // Structured Output Registry table — predefined Pydantic models for structured output
+        const structuredOutputRegistry = new dynamodb.Table(this, "StructuredOutputRegistry", {
+            tableName: `${prefix}-structuredOutputRegistryTable`,
+            partitionKey: {
+                name: "StructuredOutputKey",
+                type: dynamodb.AttributeType.STRING,
+            },
+            billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+            encryption: dynamodb.TableEncryption.AWS_MANAGED,
+            removalPolicy: cdk.RemovalPolicy.DESTROY,
+            pointInTimeRecoverySpecification: {
+                pointInTimeRecoveryEnabled: true,
+            },
+        });
+        // Seed structured output registry table
+        const structuredOutputSeedItems = (props.config.structuredOutputRegistry ?? []).map(
+            (so) => ({
+                PutRequest: {
+                    Item: {
+                        StructuredOutputKey: { S: so.key },
+                        Label: { S: so.label },
+                        Description: { S: so.description },
+                        Fields: { L: so.fields.map((f: string) => ({ S: f })) },
+                    },
+                },
+            }),
+        );
+
+        if (structuredOutputSeedItems.length > 0) {
+            const structuredOutputSeeder = new cr.AwsCustomResource(
+                this,
+                "StructuredOutputSeederFunc",
+                {
+                    onCreate: {
+                        service: "DynamoDB",
+                        action: "BatchWriteItem",
+                        parameters: {
+                            RequestItems: {
+                                [structuredOutputRegistry.tableName]: structuredOutputSeedItems,
+                            },
+                        },
+                        physicalResourceId: cr.PhysicalResourceId.of(
+                            "StructuredOutputRegistrySeeder",
+                        ),
+                    },
+                    onUpdate: {
+                        service: "DynamoDB",
+                        action: "BatchWriteItem",
+                        parameters: {
+                            RequestItems: {
+                                [structuredOutputRegistry.tableName]: structuredOutputSeedItems,
+                            },
+                        },
+                        physicalResourceId: cr.PhysicalResourceId.of(
+                            "StructuredOutputRegistrySeeder",
+                        ),
+                    },
+                    policy: cr.AwsCustomResourcePolicy.fromStatements([
+                        new iam.PolicyStatement({
+                            actions: ["dynamodb:BatchWriteItem"],
+                            resources: [structuredOutputRegistry.tableArn],
+                        }),
+                    ]),
+                },
+            );
+
+            NagSuppressions.addResourceSuppressions(
+                structuredOutputSeeder,
                 [
                     {
                         id: "AwsSolutions-IAM5",
@@ -620,6 +848,9 @@ export class AcaAgentCoreContainer extends Construct {
 
         this.agentCoreRuntimeTable = agentCoreRuntimeTable;
         this.toolRegistry = toolRegistry;
+        this.stateClassRegistry = stateClassRegistry;
+        this.deterministicNodeRegistry = deterministicNodeRegistry;
+        this.structuredOutputRegistry = structuredOutputRegistry;
         this.mcpServerRegistry = mcpServerRegistry;
         this.agentCoreSummaryTable = agentCoreSummaryTable;
         this.imageAsset = imageAsset;

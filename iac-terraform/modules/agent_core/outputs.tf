@@ -27,6 +27,36 @@ output "tool_registry_table_arn" {
   value       = aws_dynamodb_table.tool_registry.arn
 }
 
+output "state_class_registry_table_name" {
+  description = "Name of the DynamoDB table storing state class registry"
+  value       = aws_dynamodb_table.state_class_registry.name
+}
+
+output "state_class_registry_table_arn" {
+  description = "ARN of the DynamoDB table storing state class registry"
+  value       = aws_dynamodb_table.state_class_registry.arn
+}
+
+output "deterministic_node_registry_table_name" {
+  description = "Name of the DynamoDB table storing deterministic node registry"
+  value       = aws_dynamodb_table.deterministic_node_registry.name
+}
+
+output "deterministic_node_registry_table_arn" {
+  description = "ARN of the DynamoDB table storing deterministic node registry"
+  value       = aws_dynamodb_table.deterministic_node_registry.arn
+}
+
+output "structured_output_registry_table_name" {
+  description = "Name of the DynamoDB table storing structured output registry"
+  value       = aws_dynamodb_table.structured_output_registry.name
+}
+
+output "structured_output_registry_table_arn" {
+  description = "ARN of the DynamoDB table storing structured output registry"
+  value       = aws_dynamodb_table.structured_output_registry.arn
+}
+
 output "mcp_server_registry_table_name" {
   description = "Name of the DynamoDB table storing MCP server registry"
   value       = aws_dynamodb_table.mcp_server_registry.name

@@ -160,6 +160,60 @@ interface Tool {
 }
 
 /**
+ * Interface defining a predefined state class for graph-based agent pipelines.
+ * State classes are registered in the backend Docker image and made discoverable
+ * to the UI through this registry. The `key` must match the registration key used
+ * in `state_registry.py`.
+ *
+ * @property key - Unique registry key (must match the Python state_registry entry)
+ * @property label - Human-readable label for UI display
+ * @property description - Longer description shown in the UI tooltip / details
+ * @property fields - List of field names in the state class (for UI preview)
+ */
+export interface StateClassDefinition {
+    key: string;
+    label: string;
+    description: string;
+    fields: string[];
+}
+
+/**
+ * Interface defining a deterministic node function for graph-based agent pipelines.
+ * Deterministic nodes are pure Python functions registered in the backend Docker image
+ * (deterministic_node_registry.py) that transform graph state without calling an LLM.
+ * They are used as the "reduce" step of a map-reduce pipeline or any other stateless
+ * transformation. The `key` must match the registration key used in
+ * `deterministic_node_registry.py`.
+ *
+ * @property key - Unique registry key (must match the Python deterministic_node_registry entry)
+ * @property label - Human-readable label for UI display
+ * @property description - Longer description shown in the UI tooltip / details
+ */
+export interface DeterministicNodeDefinition {
+    key: string;
+    label: string;
+    description: string;
+}
+
+/**
+ * Interface defining a predefined structured output model for agent pipelines.
+ * Structured output models are registered in the backend Docker image and made
+ * discoverable to the UI through this registry. The `key` must match the
+ * registration key used in `structured_output_registry.py`.
+ *
+ * @property key - Unique registry key (must match the Python structured_output_registry entry)
+ * @property label - Human-readable label for UI display
+ * @property description - Longer description shown in the UI tooltip / details
+ * @property fields - List of top-level field names in the model (for UI preview)
+ */
+export interface StructuredOutputDefinition {
+    key: string;
+    label: string;
+    description: string;
+    fields: string[];
+}
+
+/**
  * Base interface for MCP server configuration shared properties.
  * @property name - Unique identifier name for the MCP server
  * @property description - Human-readable description of the MCP server's capabilities
@@ -359,6 +413,15 @@ export interface SystemConfig {
     rerankingModels?: Record<string, string>;
 
     toolRegistry: Tool[];
+
+    /** Predefined state classes for graph pipelines (UI discovery). Defaults to []. */
+    stateClassRegistry?: StateClassDefinition[];
+
+    /** Deterministic node functions for graph pipelines (UI discovery). Defaults to []. */
+    deterministicNodeRegistry?: DeterministicNodeDefinition[];
+
+    /** Structured output models for agent pipelines (UI discovery). Defaults to []. */
+    structuredOutputRegistry?: StructuredOutputDefinition[];
 
     mcpServerRegistry: McpServer[];
 
