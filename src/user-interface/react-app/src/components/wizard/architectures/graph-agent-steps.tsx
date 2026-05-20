@@ -14,7 +14,12 @@ import {
     SpaceBetween,
 } from "@cloudscape-design/components";
 import { RuntimeSummary } from "../../../API";
-import { AgentCoreRuntimeConfiguration, GraphConfiguration } from "../types";
+import {
+    AgentCoreRuntimeConfiguration,
+    GraphConfiguration,
+    PredefinedDeterministicNode,
+    PredefinedStateClass,
+} from "../types";
 import { STEP_MIN_HEIGHT } from "../wizard-utils";
 import GraphDesigner from "./graph-designer";
 
@@ -24,6 +29,8 @@ export interface GraphAgentStepsProps {
     graphConfig: GraphConfiguration;
     setGraphConfig: React.Dispatch<React.SetStateAction<GraphConfiguration>>;
     availableAgents: RuntimeSummary[];
+    availableStateClasses?: PredefinedStateClass[];
+    availableDeterministicNodes?: PredefinedDeterministicNode[];
     isCreating: boolean;
 }
 
@@ -33,6 +40,8 @@ export function getGraphAgentSteps({
     graphConfig,
     setGraphConfig,
     availableAgents,
+    availableStateClasses = [],
+    availableDeterministicNodes = [],
     isCreating,
 }: GraphAgentStepsProps) {
     // Build a simple visual minimap of the graph for the review step
@@ -124,6 +133,8 @@ export function getGraphAgentSteps({
                             graphConfig={graphConfig}
                             setGraphConfig={setGraphConfig}
                             availableAgents={availableAgents}
+                            availableStateClasses={availableStateClasses}
+                            availableDeterministicNodes={availableDeterministicNodes}
                             currentAgentName={config.agentName}
                         />
                     </SpaceBetween>
