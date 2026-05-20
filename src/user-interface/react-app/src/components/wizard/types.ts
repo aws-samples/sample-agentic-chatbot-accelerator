@@ -108,11 +108,34 @@ export interface SwarmConfiguration {
     conversationManager: "null" | "sliding_window" | "summarizing";
 }
 
+/** Configuration for a dynamic_map node (Send()-based parallel fan-out). */
+export interface DynamicMapConfig {
+    /** State key containing the list to iterate over (e.g. "templates"). */
+    sourceKey: string;
+    /** Node ID that each Send() dispatches to (e.g. "fill_template"). */
+    targetNode: string;
+    /** State key set per-branch with the current list item (e.g. "template_name"). */
+    itemStateKey: string;
+}
+
 export interface GraphNodeDefinition {
     id: string;
-    agentName: string;
+    /** Set for agent nodes. Omitted for fork and deterministic nodes. */
+    agentName?: string;
     endpointName: string;
+    /** Set for deterministic nodes — matches a key in deterministic_node_registry. */
+    deterministicNodeKey?: string;
+    /** Set for built-in node types: "fork" or "dynamic_map". */
+    nodeType?: string;
+    /** Configuration for dynamic_map nodes. Required when nodeType is "dynamic_map". */
+    dynamicMapConfig?: DynamicMapConfig;
     label?: string;
+    /**
+     * Optional prompt template for this node. When set, overrides the
+     * inherited graph-level prompt (messages). Supports {variable}
+     * placeholders interpolated from the graph state.
+     */
+    promptTemplate?: string;
 }
 
 export interface GraphEdgeDefinition {
@@ -132,7 +155,32 @@ export interface GraphConfiguration {
     edges: GraphEdgeDefinition[];
     entryPoint: string;
     stateSchema: Record<string, string>;
+    /** When set, uses a predefined state class instead of flat stateSchema. */
+    stateClass?: string;
     orchestrator: GraphOrchestratorConfig;
+}
+
+/** Metadata for a deterministic node function available in the backend registry. */
+export interface PredefinedDeterministicNode {
+    key: string;
+    label: string;
+    description: string;
+}
+
+/** Metadata for a predefined state class available in the backend registry. */
+export interface PredefinedStateClass {
+    key: string;
+    label: string;
+    description: string;
+    fields: string[];
+}
+
+/** Metadata for a predefined structured output model available in the backend registry. */
+export interface PredefinedStructuredOutput {
+    key: string;
+    label: string;
+    description: string;
+    fields: string[];
 }
 
 export interface AgentAsToolDefinition {

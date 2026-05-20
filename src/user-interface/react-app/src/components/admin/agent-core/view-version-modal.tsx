@@ -20,6 +20,7 @@ import { useContext, useEffect, useState } from "react";
 import { McpServer } from "../../../API";
 import { AppContext } from "../../../common/app-context";
 import { listAvailableMcpServers as listAvailableMcpServersQuery } from "../../../graphql/queries";
+import GraphMinimap from "../../wizard/architectures/graph-minimap";
 import {
     AgentCoreRuntimeConfiguration,
     AgentsAsToolsConfiguration,
@@ -589,7 +590,14 @@ export default function ViewVersionModal({
                                             {
                                                 id: "agentName",
                                                 header: "Agent",
-                                                cell: (item: any) => item.agentName,
+                                                cell: (item: any) =>
+                                                    item.agentName || (
+                                                        <Box color="text-status-inactive">
+                                                            {item.deterministicNodeKey ||
+                                                                item.nodeType ||
+                                                                "-"}
+                                                        </Box>
+                                                    ),
                                             },
                                             {
                                                 id: "endpointName",
@@ -601,37 +609,52 @@ export default function ViewVersionModal({
                                                 header: "Label",
                                                 cell: (item: any) => item.label || "-",
                                             },
+                                            {
+                                                id: "promptTemplate",
+                                                header: "Prompt Template",
+                                                cell: (item: any) =>
+                                                    item.promptTemplate ? (
+                                                        <span
+                                                            title={item.promptTemplate}
+                                                            style={{
+                                                                display: "-webkit-box",
+                                                                WebkitLineClamp: 2,
+                                                                WebkitBoxOrient:
+                                                                    "vertical" as const,
+                                                                overflow: "hidden",
+                                                                textOverflow: "ellipsis",
+                                                                whiteSpace: "pre-wrap",
+                                                                maxWidth: 250,
+                                                                fontSize: 12,
+                                                            }}
+                                                        >
+                                                            {item.promptTemplate}
+                                                        </span>
+                                                    ) : (
+                                                        <Box color="text-status-inactive">-</Box>
+                                                    ),
+                                            },
                                         ]}
                                     />
                                 </FormField>
                             )}
 
-                            {agentConfig.edges && agentConfig.edges.length > 0 && (
-                                <FormField label="Graph Edges">
-                                    <Table
-                                        items={agentConfig.edges}
-                                        columnDefinitions={[
-                                            {
-                                                id: "source",
-                                                header: "Source",
-                                                cell: (item: any) => item.source,
-                                                isRowHeader: true,
-                                            },
-                                            {
-                                                id: "target",
-                                                header: "Target",
-                                                cell: (item: any) => item.target,
-                                            },
-                                            {
-                                                id: "condition",
-                                                header: "Condition",
-                                                cell: (item: any) =>
-                                                    item.condition || "Unconditional",
-                                            },
-                                        ]}
-                                    />
-                                </FormField>
-                            )}
+                            <FormField label="Graph Topology">
+                                <GraphMinimap
+                                    graphConfig={{
+                                        nodes: agentConfig.nodes || [],
+                                        edges: agentConfig.edges || [],
+                                        entryPoint: agentConfig.entryPoint,
+                                        stateSchema: (agentConfig as any).stateSchema || {},
+                                        stateClass: (agentConfig as any).stateClass,
+                                        orchestrator: agentConfig.orchestrator || {
+                                            maxIterations: 50,
+                                            executionTimeoutSeconds: 300,
+                                            nodeTimeoutSeconds: 60,
+                                        },
+                                    }}
+                                />
+                            </FormField>
 
                             {agentConfig.orchestrator && (
                                 <FormField label="Orchestrator Settings">
