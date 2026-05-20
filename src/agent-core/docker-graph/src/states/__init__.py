@@ -18,3 +18,7 @@ To add a new predefined state class:
 3. Call ``register_state_class(...)`` at module level
 4. Import the module here to trigger registration
 """
+
+from . import (  # noqa: F401 — triggers state + deterministic node registration
+    mapreduce_example,
+)

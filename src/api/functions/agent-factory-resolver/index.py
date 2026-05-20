@@ -100,7 +100,10 @@ def create_agent_runtime(
             parsed_config = AgentsAsToolsConfiguration.model_validate_json(configValue)
         elif resolved_architecture == ArchitectureType.GRAPH.value:
             parsed_config = GraphConfiguration.model_validate_json(configValue)
-            referenced_names = {node.agentName for node in parsed_config.nodes}
+            # Only check agent nodes (fork, deterministic, dynamic_map have no agentName)
+            referenced_names = {
+                node.agentName for node in parsed_config.nodes if node.agentName
+            }
             missing_agents = set()
             try:
                 for agent_name in referenced_names:

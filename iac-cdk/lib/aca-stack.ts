@@ -109,6 +109,8 @@ export class AcaStack extends cdk.Stack {
             agentCoreRuntimeTable: agentCoreInfra.agentCoreRuntimeTable,
             agentCoreSummaryTable: agentCoreInfra.agentCoreSummaryTable,
             toolRegistryTable: agentCoreInfra.toolRegistry,
+            stateClassRegistryTable: agentCoreInfra.stateClassRegistry,
+            deterministicNodeRegistryTable: agentCoreInfra.deterministicNodeRegistry,
             mcpServerRegistryTable: agentCoreInfra.mcpServerRegistry,
             agentToolsTopic: agentCoreInfra.agentToolsTopic,
             batchImage: props.builder.batchImage,
@@ -215,8 +217,16 @@ export class AcaStack extends cdk.Stack {
         );
 
         // AwsCustomResource singleton Lambda (used by DynamoDB table seeders)
-        // Only exists when at least one AwsCustomResource is created (KB seeder or tool registry seeder)
-        if (knowledgeBase || props.config.toolRegistry.length > 0) {
+        // Only exists when at least one AwsCustomResource is created (KB seeder, tool registry, or graph registry seeders)
+        if (
+            knowledgeBase ||
+            props.config.toolRegistry.length > 0 ||
+            (props.config.stateClassRegistry && props.config.stateClassRegistry.length > 0) ||
+            (props.config.deterministicNodeRegistry &&
+                props.config.deterministicNodeRegistry.length > 0) ||
+            (props.config.structuredOutputRegistry &&
+                props.config.structuredOutputRegistry.length > 0)
+        ) {
             NagSuppressions.addResourceSuppressionsByPath(
                 this,
                 [`/${this.stackName}/AWS679f53fac002430cb0da5b7982bd2287/ServiceRole/Resource`],

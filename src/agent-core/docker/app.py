@@ -59,6 +59,7 @@ _inv_agent = None
 _inv_callbacks = None
 _inv_mcp_manager: MCPClientManager | None = None
 _inv_current_session_id: str | None = None
+_inv_structured_output_model = None
 
 
 @app.post("/invocations")
@@ -74,7 +75,7 @@ async def invocations(request: Request):
         - userId (str, optional): Defaults to ``"orchestrator"``.
         - sessionId (str, optional): Auto-generated if absent.
     """
-    global _inv_agent, _inv_callbacks, _inv_mcp_manager, _inv_current_session_id
+    global _inv_agent, _inv_callbacks, _inv_mcp_manager, _inv_current_session_id, _inv_structured_output_model
 
     body = await request.json()
     prompt = body.get("prompt", "")
@@ -121,6 +122,21 @@ async def invocations(request: Request):
             )
             _inv_current_session_id = session_id
 
+            # Build structured output model for /invocations (same as WebSocket path)
+            _inv_structured_output_model = None
+            if configuration.structuredOutput:
+                _inv_structured_output_model = build_structured_output_model(
+                    configuration.structuredOutput
+                )
+                logger.info(
+                    "Structured output model built for /invocations",
+                    extra={
+                        "fields": [
+                            f.model_dump() for f in configuration.structuredOutput
+                        ]
+                    },
+                )
+
         except Exception as err:
             logger.error(
                 "Failed to initialize agent for /invocations", extra={"error": str(err)}
@@ -134,9 +150,16 @@ async def invocations(request: Request):
 
     async def _sse_generator():
         try:
+            # Build stream kwargs — include structured_output_model if available
+            _stream_kwargs: dict = {
+                "invocation_state": {"userId": user_id, "sessionId": session_id},
+            }
+            if _inv_structured_output_model is not None:
+                _stream_kwargs["structured_output_model"] = _inv_structured_output_model
+
             async for event in _inv_agent.stream_async(  # type: ignore
                 prompt,
-                invocation_state={"userId": user_id, "sessionId": session_id},
+                **_stream_kwargs,
             ):
                 if "data" in event:
                     # Stream tokens to keep the connection alive (prevents read timeout)
@@ -149,13 +172,28 @@ async def invocations(request: Request):
                     yield f"data: {token_event}\n\n"
 
                 elif "result" in event:
-                    content = str(event["result"])
+                    raw_result = event["result"]
+                    content = str(raw_result)
                     logger.info(
                         "Invocation complete",
                         extra={"responseLength": len(content), "sessionId": session_id},
                     )
+                    final_data = {"content": content}
+
+                    # Include structured output when available (for graph sub-agent invocation)
+                    if (
+                        hasattr(raw_result, "structured_output")
+                        and raw_result.structured_output is not None
+                    ):
+                        try:
+                            final_data[
+                                "structuredOutput"
+                            ] = raw_result.structured_output.model_dump_json()
+                        except Exception:
+                            pass
+
                     final_event = json.dumps(
-                        {"action": "final_response", "data": {"content": content}}
+                        {"action": "final_response", "data": final_data}
                     )
                     yield f"data: {final_event}\n\n"
 

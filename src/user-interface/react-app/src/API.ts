@@ -212,6 +212,21 @@ export type McpServer = {
   source: string,
 };
 
+export type StateClass = {
+  __typename: "StateClass",
+  key: string,
+  label: string,
+  description: string,
+  fields: Array< string >,
+};
+
+export type DeterministicNode = {
+  __typename: "DeterministicNode",
+  key: string,
+  label: string,
+  description: string,
+};
+
 export type RuntimeSummary = {
   __typename: "RuntimeSummary",
   agentName: string,
@@ -861,6 +876,31 @@ export type ListAvailableMcpServersQuery = {
     description: string,
     authType: McpAuthType,
     source: string,
+  } > | null,
+};
+
+export type ListAvailableStateClassesQueryVariables = {
+};
+
+export type ListAvailableStateClassesQuery = {
+  listAvailableStateClasses?:  Array< {
+    __typename: "StateClass",
+    key: string,
+    label: string,
+    description: string,
+    fields: Array< string >,
+  } > | null,
+};
+
+export type ListAvailableDeterministicNodesQueryVariables = {
+};
+
+export type ListAvailableDeterministicNodesQuery = {
+  listAvailableDeterministicNodes?:  Array< {
+    __typename: "DeterministicNode",
+    key: string,
+    label: string,
+    description: string,
   } > | null,
 };
 

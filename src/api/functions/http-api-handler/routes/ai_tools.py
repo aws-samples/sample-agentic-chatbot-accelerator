@@ -21,6 +21,8 @@ logger = Logger(service="graphQL-strandsCfgRoute")
 # -------------------------------------------------------------------- #
 TOOL_TABLE = boto3.resource("dynamodb").Table(os.environ["TOOL_REGISTRY_TABLE"])  # type: ignore
 MCP_SERVER_TABLE = boto3.resource("dynamodb").Table(os.environ["MCP_SERVER_REGISTRY_TABLE"])  # type: ignore
+STATE_CLASS_TABLE = boto3.resource("dynamodb").Table(os.environ.get("STATE_CLASS_REGISTRY_TABLE", ""))  # type: ignore
+DETERMINISTIC_NODE_TABLE = boto3.resource("dynamodb").Table(os.environ.get("DETERMINISTIC_NODE_REGISTRY_TABLE", ""))  # type: ignore
 BEDROCK_AGENTCORE = boto3.client(
     "bedrock-agentcore-control", region_name=os.environ["REGION_NAME"]
 )
@@ -81,6 +83,65 @@ def list_mcp_servers(user_id: str) -> Sequence[Mapping]:
             )
 
     return results
+
+
+@router.resolver(field_name="listAvailableStateClasses")
+@tracer.capture_method
+@fetch_user_id(router)
+def list_state_classes(user_id: str) -> Sequence[Mapping]:
+    logger.info(f"User ID {user_id} is querying available state classes")
+
+    table_name = os.environ.get("STATE_CLASS_REGISTRY_TABLE", "")
+    if not table_name:
+        return []
+
+    try:
+        response = STATE_CLASS_TABLE.scan(Limit=50)
+        return [
+            {
+                "key": elem.get("StateClassKey", ""),
+                "label": elem.get("Label", ""),
+                "description": elem.get("Description", ""),
+                "fields": [
+                    f.get("S", f) if isinstance(f, dict) else f
+                    for f in elem.get("Fields", [])
+                ],
+            }
+            for elem in response.get("Items", [])
+        ]
+    except ClientError as err:
+        logger.error(
+            "Failed to scan state class registry", extra={"rawErrorMessage": str(err)}
+        )
+        return []
+
+
+@router.resolver(field_name="listAvailableDeterministicNodes")
+@tracer.capture_method
+@fetch_user_id(router)
+def list_deterministic_nodes(user_id: str) -> Sequence[Mapping]:
+    logger.info(f"User ID {user_id} is querying available deterministic nodes")
+
+    table_name = os.environ.get("DETERMINISTIC_NODE_REGISTRY_TABLE", "")
+    if not table_name:
+        return []
+
+    try:
+        response = DETERMINISTIC_NODE_TABLE.scan(Limit=50)
+        return [
+            {
+                "key": elem.get("DeterministicNodeKey", ""),
+                "label": elem.get("Label", ""),
+                "description": elem.get("Description", ""),
+            }
+            for elem in response.get("Items", [])
+        ]
+    except ClientError as err:
+        logger.error(
+            "Failed to scan deterministic node registry",
+            extra={"rawErrorMessage": str(err)},
+        )
+        return []
 
 
 # ---- URL Composition (mirrors mcp-seeder/index.py logic) ---- #

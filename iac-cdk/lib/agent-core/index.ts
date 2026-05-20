@@ -212,6 +212,10 @@ export class AcaAgentCoreContainer extends Construct {
                 stateClassSeeder,
                 [
                     {
+                        id: "AwsSolutions-IAM4",
+                        reason: "IAM role implicitly created by CDK for AwsCustomResource.",
+                    },
+                    {
                         id: "AwsSolutions-IAM5",
                         reason: "IAM role implicitly created by CDK for AwsCustomResource.",
                     },
@@ -257,8 +261,7 @@ export class AcaAgentCoreContainer extends Construct {
                         action: "BatchWriteItem",
                         parameters: {
                             RequestItems: {
-                                [deterministicNodeRegistry.tableName]:
-                                    deterministicNodeSeedItems,
+                                [deterministicNodeRegistry.tableName]: deterministicNodeSeedItems,
                             },
                         },
                         physicalResourceId: cr.PhysicalResourceId.of(
@@ -270,8 +273,7 @@ export class AcaAgentCoreContainer extends Construct {
                         action: "BatchWriteItem",
                         parameters: {
                             RequestItems: {
-                                [deterministicNodeRegistry.tableName]:
-                                    deterministicNodeSeedItems,
+                                [deterministicNodeRegistry.tableName]: deterministicNodeSeedItems,
                             },
                         },
                         physicalResourceId: cr.PhysicalResourceId.of(
@@ -290,6 +292,10 @@ export class AcaAgentCoreContainer extends Construct {
             NagSuppressions.addResourceSuppressions(
                 deterministicNodeSeeder,
                 [
+                    {
+                        id: "AwsSolutions-IAM4",
+                        reason: "IAM role implicitly created by CDK for AwsCustomResource.",
+                    },
                     {
                         id: "AwsSolutions-IAM5",
                         reason: "IAM role implicitly created by CDK for AwsCustomResource.",
@@ -368,6 +374,10 @@ export class AcaAgentCoreContainer extends Construct {
             NagSuppressions.addResourceSuppressions(
                 structuredOutputSeeder,
                 [
+                    {
+                        id: "AwsSolutions-IAM4",
+                        reason: "IAM role implicitly created by CDK for AwsCustomResource.",
+                    },
                     {
                         id: "AwsSolutions-IAM5",
                         reason: "IAM role implicitly created by CDK for AwsCustomResource.",
