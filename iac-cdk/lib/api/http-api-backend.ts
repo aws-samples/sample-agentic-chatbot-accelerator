@@ -29,6 +29,8 @@ export interface HttpApiBackendProps {
     readonly favoriteRuntimeTable: dynamodb.Table;
     readonly experimentsTable: dynamodb.Table;
     readonly toolRegistryTable: dynamodb.Table;
+    readonly stateClassRegistryTable: dynamodb.Table;
+    readonly deterministicNodeRegistryTable: dynamodb.Table;
     readonly mcpServerRegistryTable: dynamodb.Table;
     readonly byUserIdIndex: string;
     readonly api: appsync.GraphqlApi;
@@ -64,6 +66,8 @@ export class HttpApiBackend extends Construct {
             SESSIONS_BY_USER_ID_INDEX_NAME: props.byUserIdIndex,
             EXPERIMENTS_TABLE_NAME: props.experimentsTable.tableName,
             TOOL_REGISTRY_TABLE: props.toolRegistryTable.tableName,
+            STATE_CLASS_REGISTRY_TABLE: props.stateClassRegistryTable.tableName,
+            DETERMINISTIC_NODE_REGISTRY_TABLE: props.deterministicNodeRegistryTable.tableName,
             MCP_SERVER_REGISTRY_TABLE: props.mcpServerRegistryTable.tableName,
             REGION_NAME: cdk.Aws.REGION,
             AWS_ACCOUNT_ID: cdk.Aws.ACCOUNT_ID,
@@ -89,6 +93,8 @@ export class HttpApiBackend extends Construct {
         props.favoriteRuntimeTable.grantReadWriteData(lambdaResolver);
         props.experimentsTable.grantReadWriteData(lambdaResolver);
         props.toolRegistryTable.grantReadData(lambdaResolver);
+        props.stateClassRegistryTable.grantReadData(lambdaResolver);
+        props.deterministicNodeRegistryTable.grantReadData(lambdaResolver);
         props.mcpServerRegistryTable.grantReadWriteData(lambdaResolver);
 
         // Allow Lambda to validate AgentCore runtime endpoints and gateways

@@ -163,12 +163,33 @@ def _invoke_agent(
     return result
 
 
-def _build_state_type(state_schema: dict[str, str]) -> type:
+def _concat_reducer(current: str, new: str) -> str:
+    """Reducer: concatenates messages from parallel branches.
+
+    When multiple parallel branches write to ``messages``, this reducer
+    combines their outputs with a separator so all results are preserved
+    in the final response.
+    """
+    if not current:
+        return new
+    return f"{current}\n\n---\n\n{new}"
+
+
+def _build_state_type(
+    state_schema: dict[str, str], has_parallel_nodes: bool = False
+) -> type:
     """Build a TypedDict class from the user-defined state schema.
 
     Always ensures a ``messages`` field exists for passing the user
     message through the graph.
+
+    When *has_parallel_nodes* is True (graph contains fork or dynamic_map
+    nodes), the ``messages`` field is wrapped with an ``Annotated``
+    last-writer-wins reducer so that parallel branches can both write
+    to it without LangGraph raising INVALID_CONCURRENT_GRAPH_UPDATE.
     """
+    from typing import Annotated
+
     type_map: dict[str, type] = {
         "str": str,
         "int": int,
@@ -184,6 +205,11 @@ def _build_state_type(state_schema: dict[str, str]) -> type:
 
     if "messages" not in annotations:
         annotations["messages"] = str
+
+    # When parallel branches exist, apply a reducer to messages
+    # so concurrent writes don't cause INVALID_CONCURRENT_GRAPH_UPDATE
+    if has_parallel_nodes:
+        annotations["messages"] = Annotated[str, _concat_reducer]
 
     return TypedDict("GraphState", annotations)  # type: ignore[misc]
 
@@ -212,10 +238,20 @@ def compile_graph(
             extra={"stateClass": configuration.stateClass},
         )
     else:
-        state_type = _build_state_type(configuration.stateSchema)
+        # Detect if the graph has parallel nodes (fork or dynamic_map)
+        # to automatically apply a last-writer-wins reducer on messages
+        has_parallel = any(
+            n.nodeType in ("fork", "dynamic_map") for n in configuration.nodes
+        )
+        state_type = _build_state_type(
+            configuration.stateSchema, has_parallel_nodes=has_parallel
+        )
         logger.info(
             "Using dynamic state schema",
-            extra={"stateSchema": configuration.stateSchema},
+            extra={
+                "stateSchema": configuration.stateSchema,
+                "hasParallelNodes": has_parallel,
+            },
         )
     graph = StateGraph(state_type)
 

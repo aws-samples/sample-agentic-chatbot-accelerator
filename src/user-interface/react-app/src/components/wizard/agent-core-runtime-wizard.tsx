@@ -25,7 +25,9 @@ import { KnowledgeBase, McpServer, RuntimeSummary, Tool } from "../../API";
 import { AppContext } from "../../common/app-context";
 import {
     listAgentEndpoints as listAgentEndpointsQuery,
+    listAvailableDeterministicNodes as listAvailableDeterministicNodesQuery,
     listAvailableMcpServers as listAvailableMcpServersQuery,
+    listAvailableStateClasses as listAvailableStateClassesQuery,
     listAvailableTools as listAvailableToolsQuery,
     listKnowledgeBases as listKnowledgeBasesQuery,
     listRuntimeAgents as listRuntimeAgentsQuery,
@@ -69,6 +71,12 @@ export default function AgentCoreRuntimeCreatorWizard({
     const [availableTools, setAvailableTools] = useState<Tool[]>([]);
     const [availableMcpServers, setAvailableMcpServers] = useState<McpServer[]>([]);
     const [availableAgents, setAvailableAgents] = useState<RuntimeSummary[]>([]);
+    const [availableStateClasses, setAvailableStateClasses] = useState<
+        { key: string; label: string; description: string; fields: string[] }[]
+    >([]);
+    const [availableDeterministicNodes, setAvailableDeterministicNodes] = useState<
+        { key: string; label: string; description: string }[]
+    >([]);
     const [modelOptions, setModelOptions] = useState<{ label: string; value: string }[]>([]);
     const [rerankingModelOptions, setRerankingModelOptions] = useState<
         { label: string; value: string }[]
@@ -177,13 +185,15 @@ export default function AgentCoreRuntimeCreatorWizard({
         const fetchData = async () => {
             try {
                 const knowledgeBaseSupported = appConfig?.knowledgeBaseIsSupported ?? false;
-                const [kbResult, toolsResult, mcpServersResult, agentsResult] = await Promise.all([
+                const [kbResult, toolsResult, mcpServersResult, agentsResult, stateClassesResult, detNodesResult] = await Promise.all([
                     knowledgeBaseSupported
                         ? apiClient.graphql({ query: listKnowledgeBasesQuery })
                         : Promise.resolve({ data: { listKnowledgeBases: [] } }),
                     apiClient.graphql({ query: listAvailableToolsQuery }),
                     apiClient.graphql({ query: listAvailableMcpServersQuery }),
                     apiClient.graphql({ query: listRuntimeAgentsQuery }),
+                    apiClient.graphql({ query: listAvailableStateClassesQuery }),
+                    apiClient.graphql({ query: listAvailableDeterministicNodesQuery }),
                 ]);
 
                 if (isCancelled) return;
@@ -194,6 +204,10 @@ export default function AgentCoreRuntimeCreatorWizard({
                     setAvailableMcpServers(mcpServersResult.data.listAvailableMcpServers);
                 if (agentsResult.data?.listRuntimeAgents)
                     setAvailableAgents(agentsResult.data.listRuntimeAgents);
+                if (stateClassesResult.data?.listAvailableStateClasses)
+                    setAvailableStateClasses(stateClassesResult.data.listAvailableStateClasses);
+                if (detNodesResult.data?.listAvailableDeterministicNodes)
+                    setAvailableDeterministicNodes(detNodesResult.data.listAvailableDeterministicNodes);
             } catch (error) {
                 console.error("Failed to fetch data:", error);
             }
@@ -437,6 +451,8 @@ export default function AgentCoreRuntimeCreatorWizard({
                     graphConfig,
                     setGraphConfig,
                     availableAgents,
+                    availableStateClasses,
+                    availableDeterministicNodes,
                     isCreating,
                 })
               : architectureType === "AGENTS_AS_TOOLS"

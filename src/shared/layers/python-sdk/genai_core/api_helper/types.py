@@ -399,21 +399,31 @@ TERMINAL_NODE = "__end__"
 class GraphNodeDefinition(BaseModel):
     """Definition for a node within a graph workflow.
 
-    Each node references a pre-existing AgentCore runtime by agent name
-    and endpoint name. Multiple nodes may reference the same agent with
-    distinct IDs.
+    Supports multiple node kinds (mutually exclusive):
+    - Agent node (agentName set): invokes an external AgentCore runtime.
+    - Deterministic node (deterministicNodeKey set): pure-Python function.
+    - Fork node (nodeType == "fork"): pass-through fan-out.
+    - Dynamic Map node (nodeType == "dynamic_map"): Send()-based fan-out.
 
     Attributes:
         id: Unique identifier for this node within the graph.
-        agentName: Name of the existing AgentCore runtime to invoke.
+        agentName: Name of the existing AgentCore runtime to invoke (agent nodes).
         endpointName: Endpoint qualifier (e.g. "DEFAULT").
+        deterministicNodeKey: Registry key for a deterministic node function.
+        nodeType: Built-in node type ("fork" or "dynamic_map").
+        dynamicMapConfig: Configuration for dynamic_map nodes.
         label: Optional display name for the node on the canvas.
+        promptTemplate: Optional per-node prompt template with {variable} placeholders.
     """
 
     id: str = Field(..., min_length=1)
-    agentName: str = Field(..., min_length=1)
+    agentName: Optional[str] = Field(default=None, min_length=1)
     endpointName: str = Field(default="DEFAULT", min_length=1)
+    deterministicNodeKey: Optional[str] = Field(default=None, min_length=1)
+    nodeType: Optional[str] = Field(default=None)
+    dynamicMapConfig: Optional[dict] = Field(default=None)
     label: Optional[str] = None
+    promptTemplate: Optional[str] = Field(default=None)
 
 
 class GraphEdgeDefinition(BaseModel):
@@ -477,6 +487,7 @@ class GraphConfiguration(BaseModel):
     edges: list[GraphEdgeDefinition] = Field(default=[])
     entryPoint: str = Field(..., min_length=1)
     stateSchema: dict[str, str] = Field(default={})
+    stateClass: Optional[str] = Field(default=None)
     orchestrator: GraphOrchestratorConfig = GraphOrchestratorConfig()
 
     @model_validator(mode="after")
@@ -516,6 +527,7 @@ class GraphConfiguration(BaseModel):
         """Validates that every non-terminal node has at least one outgoing edge.
 
         A node is considered terminal if it has an edge to __end__.
+        Dynamic map nodes handle outgoing edges implicitly via Send().
         All other nodes must have at least one outgoing edge.
         """
         node_ids = {n.id for n in self.nodes}
@@ -524,7 +536,12 @@ class GraphConfiguration(BaseModel):
         }
         nodes_with_outgoing = {edge.source for edge in self.edges}
 
+        # dynamic_map nodes handle outgoing edges implicitly via Send()
+        dynamic_map_node_ids = {n.id for n in self.nodes if n.nodeType == "dynamic_map"}
+
         for node_id in node_ids:
+            if node_id in dynamic_map_node_ids:
+                continue
             if node_id not in terminal_nodes and node_id not in nodes_with_outgoing:
                 raise ValueError(
                     f"Node '{node_id}' has no outgoing edges and is not terminal."

@@ -41,6 +41,8 @@ export interface ChatbotApiProps {
     readonly agentsAsToolsAgentCoreContainer: CodeBuildDockerImage;
     readonly agentCoreRuntimeTable: dynamodb.Table;
     readonly toolRegistryTable: dynamodb.Table;
+    readonly stateClassRegistryTable: dynamodb.Table;
+    readonly deterministicNodeRegistryTable: dynamodb.Table;
     readonly mcpServerRegistryTable: dynamodb.Table;
     readonly agentCoreSummaryTable: dynamodb.Table;
     readonly agentCoreExecutionRole: iam.Role;

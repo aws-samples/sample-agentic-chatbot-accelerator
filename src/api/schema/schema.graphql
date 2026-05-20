@@ -100,6 +100,19 @@ type McpServer @aws_cognito_user_pools {
     source: String!
 }
 
+type StateClass @aws_cognito_user_pools {
+    key: String!
+    label: String!
+    description: String!
+    fields: [String!]!
+}
+
+type DeterministicNode @aws_cognito_user_pools {
+    key: String!
+    label: String!
+    description: String!
+}
+
 type RuntimeSummary @aws_cognito_user_pools {
     agentName: String!
     agentRuntimeId: String!
@@ -281,6 +294,8 @@ type Query {
     # AgentCore
     listAvailableTools: [Tool!] @aws_cognito_user_pools
     listAvailableMcpServers: [McpServer!] @aws_cognito_user_pools
+    listAvailableStateClasses: [StateClass!] @aws_cognito_user_pools
+    listAvailableDeterministicNodes: [DeterministicNode!] @aws_cognito_user_pools
     listRuntimeAgents: [RuntimeSummary!] @aws_cognito_user_pools
     getRuntimeConfigurationByVersion(agentName: String!, agentVersion: String!): String! @aws_cognito_user_pools
     getRuntimeConfigurationByQualifier(agentName: String!, qualifier: String!): String! @aws_cognito_user_pools

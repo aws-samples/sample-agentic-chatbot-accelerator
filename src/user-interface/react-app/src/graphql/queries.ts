@@ -180,6 +180,31 @@ export const listAvailableMcpServers = /* GraphQL */ `query ListAvailableMcpServ
   APITypes.ListAvailableMcpServersQueryVariables,
   APITypes.ListAvailableMcpServersQuery
 >;
+export const listAvailableStateClasses = /* GraphQL */ `query ListAvailableStateClasses {
+  listAvailableStateClasses {
+    key
+    label
+    description
+    fields
+    __typename
+  }
+}
+` as GeneratedQuery<
+  APITypes.ListAvailableStateClassesQueryVariables,
+  APITypes.ListAvailableStateClassesQuery
+>;
+export const listAvailableDeterministicNodes = /* GraphQL */ `query ListAvailableDeterministicNodes {
+  listAvailableDeterministicNodes {
+    key
+    label
+    description
+    __typename
+  }
+}
+` as GeneratedQuery<
+  APITypes.ListAvailableDeterministicNodesQueryVariables,
+  APITypes.ListAvailableDeterministicNodesQuery
+>;
 export const listRuntimeAgents = /* GraphQL */ `query ListRuntimeAgents {
   listRuntimeAgents {
     agentName
