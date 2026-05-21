@@ -87,6 +87,7 @@ class AgentConfiguration(BaseModel):
         EConversationManagerType.SLIDING_WINDOW
     )
     structuredOutput: list[StructuredOutputFieldSpec] | None = None
+    skills: list[str] = []
 
     @model_validator(mode="after")
     def validate_tool_parameters(self):

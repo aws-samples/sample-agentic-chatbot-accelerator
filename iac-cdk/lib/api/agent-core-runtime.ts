@@ -39,6 +39,8 @@ export interface AgentCoreApisProps {
     readonly mcpServerRegistryTable: dynamodb.Table;
     readonly agentCoreExecutionRole: iam.Role;
     readonly agentToolsTopic: sns.Topic;
+    /** Optional skills bucket for propagating bucket name to runtime containers */
+    readonly skillsBucket?: cdk.aws_s3.Bucket;
 }
 
 export class AgentCoreApis extends Construct {
@@ -634,6 +636,9 @@ export class AgentCoreApis extends Construct {
                 AGENTS_SUMMARY_TABLE_NAME: props.agentCoreSummaryTable.tableName,
                 ...(props.config.bedrockAccessRoleArn && {
                     BEDROCK_ACCESS_ROLE_ARN: props.config.bedrockAccessRoleArn,
+                }),
+                ...(props.skillsBucket && {
+                    SKILLS_BUCKET_NAME: props.skillsBucket.bucketName,
                 }),
             },
         });

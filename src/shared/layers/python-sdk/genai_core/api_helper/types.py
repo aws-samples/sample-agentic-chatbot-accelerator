@@ -234,6 +234,7 @@ class AgentConfiguration(BaseModel):
         EConversationManagerType.SLIDING_WINDOW
     )
     useMemory: bool = False
+    skills: list[str] = []
     structuredOutput: Optional[list[StructuredOutputFieldSpec]] = None
 
     @model_validator(mode="after")

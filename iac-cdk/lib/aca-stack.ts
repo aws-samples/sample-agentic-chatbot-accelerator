@@ -18,6 +18,7 @@ import { VectorKnowledgeBase } from "./knowledge-base";
 import { Observability } from "./observability";
 import { Shared } from "./shared";
 import { SystemConfig } from "./shared/types";
+import { SkillsBucket } from "./skills-bucket";
 import { UserInterface } from "./user-interface";
 
 export interface AcaProps extends cdk.StackProps {
@@ -79,6 +80,9 @@ export class AcaStack extends cdk.Stack {
         // (prefix = stackName.toLowerCase(), same as generatePrefix)
         const sessionsTableName = `${this.stackName.toLowerCase()}-sessionsTable`;
 
+        // Skills bucket for Agent Skills storage
+        const skillsBucket = new SkillsBucket(this, "SkillsBucket");
+
         const agentCoreInfra = new AcaAgentCoreContainer(this, "AgentCoreInfra", {
             shared: shared,
             config: props.config,
@@ -88,7 +92,25 @@ export class AcaStack extends cdk.Stack {
             graphImage: props.builder.graphImage,
             agentsAsToolsImage: props.builder.agentsAsToolsImage,
             sessionsTableName: sessionsTableName,
+            skillsBucketName: skillsBucket.bucket.bucketName,
         });
+
+        // Grant AgentCore execution role read access to skills bucket (for runtime loading)
+        skillsBucket.bucket.grantRead(agentCoreInfra.executionRole);
+
+        // Suppress CDK NAG for the skills bucket read grant on the execution role's default policy.
+        // The wildcard is necessary because the agent needs to read any skill file (skills/*.md)
+        // from the bucket at runtime — the specific keys are determined dynamically by the agent configuration.
+        NagSuppressions.addResourceSuppressionsByPath(
+            this,
+            [`/${this.stackName}/AgentCoreInfra/AgentExecutionRole/DefaultPolicy/Resource`],
+            [
+                {
+                    id: "AwsSolutions-IAM5",
+                    reason: "Wildcard S3 read permissions required for AgentCore execution role to load skill markdown files from the dedicated skills bucket. Skill keys are dynamic (determined by agent configuration at runtime).",
+                },
+            ],
+        );
 
         const api = new ChatbotApi(this, "ChatbotApi", {
             shared,
@@ -114,6 +136,7 @@ export class AcaStack extends cdk.Stack {
             mcpServerRegistryTable: agentCoreInfra.mcpServerRegistry,
             agentToolsTopic: agentCoreInfra.agentToolsTopic,
             batchImage: props.builder.batchImage,
+            skillsBucket: skillsBucket.bucket,
         });
 
         // Grant AgentCore containers permission to write session history to DynamoDB

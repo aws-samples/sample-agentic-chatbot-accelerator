@@ -35,6 +35,8 @@ interface AcaAgentCoreContainerProps {
     readonly agentsAsToolsImage: CodeBuildDockerImage;
     /** Sessions table name for container-side history persistence (optional) */
     readonly sessionsTableName?: string;
+    /** Skills bucket name for runtime skill loading (optional) */
+    readonly skillsBucketName?: string;
 }
 
 export class AcaAgentCoreContainer extends Construct {
@@ -764,6 +766,10 @@ export class AcaAgentCoreContainer extends Construct {
                     }),
                     ...(props.config.bedrockAccessRoleArn && {
                         bedrockAccessRoleArn: props.config.bedrockAccessRoleArn,
+                    }),
+                    // Skills bucket for runtime skill loading
+                    ...(props.skillsBucketName && {
+                        skillsBucket: props.skillsBucketName,
                     }),
                 },
                 tags: {
