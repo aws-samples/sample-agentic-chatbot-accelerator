@@ -20,6 +20,7 @@ import EvaluationsWizardPage from "./pages/admin/evaluations-wizard-page";
 import ExperimentsManagerPage from "./pages/admin/experiments-manager";
 import KnowledgeBaseManagerPage from "./pages/admin/kb-manager";
 import McpServerManagerPage from "./pages/admin/mcp-server-manager-page";
+import SkillManagerPage from "./pages/admin/skill-manager-page";
 import SessionPage from "./pages/chatbot/sessions";
 
 function AppRoutes() {
@@ -37,6 +38,7 @@ function AppRoutes() {
             <Route path="/agent-core" element={<AgentCoreManagerPage />} />
             <Route path="/agent-core/create" element={<AgentCoreWizardPage />} />
             <Route path="/agent-core/mcp-servers" element={<McpServerManagerPage />} />
+            <Route path="/agent-core/skills" element={<SkillManagerPage />} />
             <Route path="/evaluations" element={<EvaluationsManagerPage />} />
             <Route path="/evaluations/create" element={<EvaluationsWizardPage />} />
             {experimentsBatchEnabled && (

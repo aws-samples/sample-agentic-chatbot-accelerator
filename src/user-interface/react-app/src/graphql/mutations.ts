@@ -387,6 +387,39 @@ export const publishEvaluationUpdate = /* GraphQL */ `mutation PublishEvaluation
   APITypes.PublishEvaluationUpdateMutationVariables,
   APITypes.PublishEvaluationUpdateMutation
 >;
+export const createSkill = /* GraphQL */ `mutation CreateSkill($name: String!, $description: String!, $content: String!) {
+  createSkill(name: $name, description: $description, content: $content) {
+    name
+    description
+    s3Key
+    lastModified
+    __typename
+  }
+}
+` as GeneratedMutation<
+  APITypes.CreateSkillMutationVariables,
+  APITypes.CreateSkillMutation
+>;
+export const updateSkill = /* GraphQL */ `mutation UpdateSkill($name: String!, $description: String, $content: String) {
+  updateSkill(name: $name, description: $description, content: $content) {
+    name
+    description
+    s3Key
+    lastModified
+    __typename
+  }
+}
+` as GeneratedMutation<
+  APITypes.UpdateSkillMutationVariables,
+  APITypes.UpdateSkillMutation
+>;
+export const deleteSkill = /* GraphQL */ `mutation DeleteSkill($name: String!) {
+  deleteSkill(name: $name)
+}
+` as GeneratedMutation<
+  APITypes.DeleteSkillMutationVariables,
+  APITypes.DeleteSkillMutation
+>;
 export const registerMcpServer = /* GraphQL */ `mutation RegisterMcpServer(
   $name: String!
   $authType: McpAuthType!

@@ -105,6 +105,14 @@ export type EvaluationNotification = {
   status?: string | null,
 };
 
+export type Skill = {
+  __typename: "Skill",
+  name: string,
+  description: string,
+  s3Key: string,
+  lastModified?: string | null,
+};
+
 export enum McpAuthType {
   SIGV4 = "SIGV4",
   NONE = "NONE",
@@ -605,6 +613,46 @@ export type PublishEvaluationUpdateMutation = {
   } | null,
 };
 
+export type CreateSkillMutationVariables = {
+  name: string,
+  description: string,
+  content: string,
+};
+
+export type CreateSkillMutation = {
+  createSkill?:  {
+    __typename: "Skill",
+    name: string,
+    description: string,
+    s3Key: string,
+    lastModified?: string | null,
+  } | null,
+};
+
+export type UpdateSkillMutationVariables = {
+  name: string,
+  description?: string | null,
+  content?: string | null,
+};
+
+export type UpdateSkillMutation = {
+  updateSkill?:  {
+    __typename: "Skill",
+    name: string,
+    description: string,
+    s3Key: string,
+    lastModified?: string | null,
+  } | null,
+};
+
+export type DeleteSkillMutationVariables = {
+  name: string,
+};
+
+export type DeleteSkillMutation = {
+  deleteSkill?: boolean | null,
+};
+
 export type RegisterMcpServerMutationVariables = {
   name: string,
   authType: McpAuthType,
@@ -851,6 +899,27 @@ export type GetDocumentMetadataQueryVariables = {
 
 export type GetDocumentMetadataQuery = {
   getDocumentMetadata: string,
+};
+
+export type ListSkillsQueryVariables = {
+};
+
+export type ListSkillsQuery = {
+  listSkills?:  Array< {
+    __typename: "Skill",
+    name: string,
+    description: string,
+    s3Key: string,
+    lastModified?: string | null,
+  } > | null,
+};
+
+export type GetSkillContentQueryVariables = {
+  name: string,
+};
+
+export type GetSkillContentQuery = {
+  getSkillContent?: string | null,
 };
 
 export type ListAvailableToolsQueryVariables = {
