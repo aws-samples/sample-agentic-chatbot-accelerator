@@ -15,6 +15,7 @@ from pydantic import ValidationError
 from routes.ai_tools import router as ai_tools_router
 from routes.feedback import router as feedback_router
 from routes.sessions import router as sessions_router
+from routes.skills import router as skills_router
 
 if TYPE_CHECKING:
     from aws_lambda_powertools.utilities.typing import LambdaContext
@@ -31,6 +32,7 @@ app = AppSyncResolver()
 app.include_router(sessions_router)
 app.include_router(feedback_router)
 app.include_router(ai_tools_router)
+app.include_router(skills_router)
 # -------------------------------------------- #
 
 

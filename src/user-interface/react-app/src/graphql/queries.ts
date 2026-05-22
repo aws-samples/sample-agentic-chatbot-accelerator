@@ -154,6 +154,45 @@ export const getDocumentMetadata = /* GraphQL */ `query GetDocumentMetadata($doc
   APITypes.GetDocumentMetadataQueryVariables,
   APITypes.GetDocumentMetadataQuery
 >;
+export const listSkills = /* GraphQL */ `query ListSkills {
+  listSkills {
+    name
+    description
+    s3Key
+    lastModified
+    __typename
+  }
+}
+` as GeneratedQuery<
+  APITypes.ListSkillsQueryVariables,
+  APITypes.ListSkillsQuery
+>;
+export const getSkillContent = /* GraphQL */ `query GetSkillContent($name: String!) {
+  getSkillContent(name: $name)
+}
+` as GeneratedQuery<
+  APITypes.GetSkillContentQueryVariables,
+  APITypes.GetSkillContentQuery
+>;
+export const listSkillResources = /* GraphQL */ `query ListSkillResources($name: String!) {
+  listSkillResources(name: $name) {
+    path
+    size
+    lastModified
+    __typename
+  }
+}
+` as GeneratedQuery<
+  APITypes.ListSkillResourcesQueryVariables,
+  APITypes.ListSkillResourcesQuery
+>;
+export const getSkillResource = /* GraphQL */ `query GetSkillResource($name: String!, $path: String!) {
+  getSkillResource(name: $name, path: $path)
+}
+` as GeneratedQuery<
+  APITypes.GetSkillResourceQueryVariables,
+  APITypes.GetSkillResourceQuery
+>;
 export const listAvailableTools = /* GraphQL */ `query ListAvailableTools {
   listAvailableTools {
     name

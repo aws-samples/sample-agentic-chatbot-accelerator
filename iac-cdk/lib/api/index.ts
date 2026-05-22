@@ -57,6 +57,8 @@ export interface ChatbotApiProps {
     readonly kbInventoryTable?: dynamodb.Table;
     readonly vectorCollection?: VectorCollection;
     readonly kbRole?: iam.IRole;
+    // Skills bucket for skill CRUD and runtime loading
+    readonly skillsBucket?: s3.Bucket;
 }
 
 /**

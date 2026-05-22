@@ -92,6 +92,19 @@ enum McpAuthType {
     NONE
 }
 
+type Skill @aws_cognito_user_pools {
+    name: String!
+    description: String!
+    s3Key: String!
+    lastModified: String
+}
+
+type SkillResource @aws_cognito_user_pools {
+    path: String!
+    size: Int!
+    lastModified: String
+}
+
 type McpServer @aws_cognito_user_pools {
     name: String!
     mcpUrl: String!
@@ -253,6 +266,12 @@ type Mutation {
     deleteEvaluator(evaluatorId: ID!): Boolean @aws_cognito_user_pools
     runEvaluation(evaluatorId: ID!): Evaluator @aws_cognito_user_pools
     publishEvaluationUpdate(evaluatorId: String!, status: String!): EvaluationNotification @aws_iam
+    # Skills
+    createSkill(name: String!, description: String!, content: String!): Skill @aws_cognito_user_pools
+    updateSkill(name: String!, description: String, content: String): Skill @aws_cognito_user_pools
+    deleteSkill(name: String!): Boolean @aws_cognito_user_pools
+    uploadSkillResource(name: String!, path: String!, content: String!): SkillResource @aws_cognito_user_pools
+    deleteSkillResource(name: String!, path: String!): Boolean @aws_cognito_user_pools
     # MCP Server Registry
     registerMcpServer(name: String!, authType: McpAuthType!, runtimeId: String, gatewayId: String, qualifier: String, mcpUrl: String, description: String): AdminOpsResult @aws_cognito_user_pools
     deleteMcpServer(name: String!): AdminOpsResult @aws_cognito_user_pools
@@ -291,6 +310,11 @@ type Query {
     checkOnSyncInProgress(kbId: String!): Boolean @aws_cognito_user_pools
     # Metadata
     getDocumentMetadata(documentId: String!): String! @aws_cognito_user_pools
+    # Skills
+    listSkills: [Skill!] @aws_cognito_user_pools
+    getSkillContent(name: String!): String @aws_cognito_user_pools
+    listSkillResources(name: String!): [SkillResource!] @aws_cognito_user_pools
+    getSkillResource(name: String!, path: String!): String @aws_cognito_user_pools
     # AgentCore
     listAvailableTools: [Tool!] @aws_cognito_user_pools
     listAvailableMcpServers: [McpServer!] @aws_cognito_user_pools

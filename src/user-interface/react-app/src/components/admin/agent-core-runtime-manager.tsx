@@ -590,6 +590,13 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
                                         Manage MCPs
                                     </Button>
                                     <Button
+                                        iconName="edit"
+                                        variant="inline-link"
+                                        onClick={() => navigate("/agent-core/skills")}
+                                    >
+                                        Manage Skills
+                                    </Button>
+                                    <Button
                                         disabled={
                                             selectedItems.length !== 1 ||
                                             selectedItems[0].status.toLowerCase() !== "ready"

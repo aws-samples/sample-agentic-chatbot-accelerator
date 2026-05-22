@@ -35,6 +35,8 @@ export interface HttpApiBackendProps {
     readonly byUserIdIndex: string;
     readonly api: appsync.GraphqlApi;
     readonly operationToExclude: string[];
+    /** Optional skills bucket for skill CRUD operations */
+    readonly skillsBucket?: cdk.aws_s3.Bucket;
 }
 
 export class HttpApiBackend extends Construct {
@@ -71,6 +73,9 @@ export class HttpApiBackend extends Construct {
             MCP_SERVER_REGISTRY_TABLE: props.mcpServerRegistryTable.tableName,
             REGION_NAME: cdk.Aws.REGION,
             AWS_ACCOUNT_ID: cdk.Aws.ACCOUNT_ID,
+            ...(props.skillsBucket && {
+                SKILLS_BUCKET_NAME: props.skillsBucket.bucketName,
+            }),
         };
 
         const lambdaResolver = new lambda.Function(this, "HttpApiResolver", {
@@ -96,6 +101,11 @@ export class HttpApiBackend extends Construct {
         props.stateClassRegistryTable.grantReadData(lambdaResolver);
         props.deterministicNodeRegistryTable.grantReadData(lambdaResolver);
         props.mcpServerRegistryTable.grantReadWriteData(lambdaResolver);
+
+        // Grant read/write access to skills bucket for CRUD operations
+        if (props.skillsBucket) {
+            props.skillsBucket.grantReadWrite(lambdaResolver);
+        }
 
         // Allow Lambda to validate AgentCore runtime endpoints and gateways
         // when registering SigV4 MCP servers via the UI

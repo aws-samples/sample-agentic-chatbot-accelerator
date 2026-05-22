@@ -3,6 +3,9 @@
 //
 // SPDX-License-Identifier: MIT-0
 // ----------------------------------------------------------------------
+import { generateClient } from "aws-amplify/api";
+import { useEffect, useMemo, useState } from "react";
+
 import {
     Alert,
     Box,
@@ -16,8 +19,10 @@ import {
     Select,
     SpaceBetween,
     Textarea,
+    TokenGroup,
 } from "@cloudscape-design/components";
 import { KnowledgeBase, McpServer, Tool } from "../../../API";
+import { listSkills as listSkillsQuery } from "../../../graphql/queries";
 import { AgentCoreRuntimeConfiguration } from "../types";
 import { AdditionalToolsSection, AgentConfigSection } from "../wizard-shared-components";
 import { PYTHON_TYPE_OPTIONS, STEP_MIN_HEIGHT, getReasoningType } from "../wizard-utils";
@@ -485,31 +490,36 @@ export function getSingleAgentSteps({
         },
     ];
 
-    // Conditionally insert the Tools step before Review
+    // Conditionally insert the Tools & Skills step before Review
     if (hasToolsStep) {
         steps.splice(steps.length - 1, 0, {
-            title: "Tools",
+            title: "Tools & Skills",
             content: (
                 <div style={{ minHeight: STEP_MIN_HEIGHT }}>
-                    <AdditionalToolsSection
-                        title="Tools"
-                        description="Add tools, knowledge bases, and MCP servers to extend your agent's capabilities"
-                        hasCustomTools={hasCustomTools}
-                        hasMcpServers={hasMcpServers}
-                        knowledgeBaseIsSupported={knowledgeBaseIsSupported}
-                        availableToolsOptions={availableToolsOptions}
-                        availableKnowledgeBasesOptions={availableKnowledgeBasesOptions}
-                        availableMcpServersOptions={availableMcpServersOptions}
-                        selectedTools={selectedToolsData}
-                        selectedKnowledgeBases={selectedKnowledgeBasesData}
-                        selectedMcpServers={config.mcpServers.map((s) => ({ name: s }))}
-                        onAddTool={addTool}
-                        onRemoveTool={removeTool}
-                        onAddKnowledgeBase={addKnowledgeBase}
-                        onAddMcpServer={addMcpServer}
-                        onRemoveMcpServer={removeMcpServer}
-                        onConfigureKnowledgeBase={openConfigureModal}
-                    />
+                    <SpaceBetween direction="vertical" size="l">
+                        <AdditionalToolsSection
+                            title="Tools"
+                            description="Add tools, knowledge bases, and MCP servers to extend your agent's capabilities"
+                            hasCustomTools={hasCustomTools}
+                            hasMcpServers={hasMcpServers}
+                            knowledgeBaseIsSupported={knowledgeBaseIsSupported}
+                            availableToolsOptions={availableToolsOptions}
+                            availableKnowledgeBasesOptions={availableKnowledgeBasesOptions}
+                            availableMcpServersOptions={availableMcpServersOptions}
+                            selectedTools={selectedToolsData}
+                            selectedKnowledgeBases={selectedKnowledgeBasesData}
+                            selectedMcpServers={config.mcpServers.map((s) => ({ name: s }))}
+                            onAddTool={addTool}
+                            onRemoveTool={removeTool}
+                            onAddKnowledgeBase={addKnowledgeBase}
+                            onAddMcpServer={addMcpServer}
+                            onRemoveMcpServer={removeMcpServer}
+                            onConfigureKnowledgeBase={openConfigureModal}
+                        />
+
+                        {/* ── Skills ────────────────────────────────────── */}
+                        <SkillsSection config={config} setConfig={setConfig} />
+                    </SpaceBetween>
                 </div>
             ),
         });
@@ -576,4 +586,110 @@ export function isSingleAgentStepValid(
     // Step 1: Additional Tools — always valid (optional)
     // Step 2: Review — always valid
     return true;
+}
+
+// ── Skills attachment section ──────────────────────────────────────
+// Self-contained component that fetches available skills and lets
+// the user attach/detach them from the agent configuration.
+
+function SkillsSection({
+    config,
+    setConfig,
+}: {
+    config: AgentCoreRuntimeConfiguration;
+    setConfig: React.Dispatch<React.SetStateAction<AgentCoreRuntimeConfiguration>>;
+}) {
+    const apiClient = useMemo(() => generateClient(), []);
+    const [availableSkills, setAvailableSkills] = useState<{ name: string; description: string }[]>(
+        [],
+    );
+    const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        const fetchSkills = async () => {
+            setLoading(true);
+            try {
+                const result = await apiClient.graphql({ query: listSkillsQuery });
+                setAvailableSkills(
+                    ((result.data as any)?.listSkills || []).map((s: any) => ({
+                        name: s.name,
+                        description: s.description || "",
+                    })),
+                );
+            } catch (err) {
+                console.error("Failed to fetch skills:", err);
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchSkills();
+    }, [apiClient]);
+
+    const attachedSkills = config.skills || [];
+
+    const unattachedOptions = availableSkills
+        .filter((s) => !attachedSkills.includes(s.name))
+        .map((s) => ({
+            label: s.name,
+            value: s.name,
+            description: s.description,
+        }));
+
+    const addSkill = (name: string | undefined) => {
+        if (!name || attachedSkills.includes(name)) return;
+        setConfig((prev) => ({ ...prev, skills: [...(prev.skills || []), name] }));
+    };
+
+    const removeSkill = (name: string) => {
+        setConfig((prev) => ({
+            ...prev,
+            skills: (prev.skills || []).filter((s) => s !== name),
+        }));
+    };
+
+    return (
+        <Container
+            header={
+                <Header
+                    variant="h2"
+                    description="Attach skills to give the agent on-demand access to specialized instructions. Skills are loaded only when the agent activates them."
+                >
+                    Skills
+                </Header>
+            }
+        >
+            <SpaceBetween direction="vertical" size="m">
+                <FormField label="Add a skill">
+                    <Select
+                        placeholder={loading ? "Loading skills..." : "Select a skill to attach..."}
+                        options={unattachedOptions}
+                        onChange={({ detail }) => addSkill(detail.selectedOption?.value)}
+                        selectedOption={null}
+                        disabled={loading || unattachedOptions.length === 0}
+                        filteringType="auto"
+                    />
+                </FormField>
+
+                {attachedSkills.length > 0 ? (
+                    <TokenGroup
+                        items={attachedSkills.map((name) => {
+                            const skill = availableSkills.find((s) => s.name === name);
+                            return {
+                                label: name,
+                                description: skill?.description,
+                                dismissLabel: `Remove ${name}`,
+                            };
+                        })}
+                        onDismiss={({ detail }) => {
+                            removeSkill(attachedSkills[detail.itemIndex]);
+                        }}
+                    />
+                ) : (
+                    <Box textAlign="center" color="text-body-secondary" padding="s">
+                        No skills attached. The agent will work without specialized instructions.
+                    </Box>
+                )}
+            </SpaceBetween>
+        </Container>
+    );
 }

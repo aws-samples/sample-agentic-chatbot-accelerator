@@ -7,6 +7,7 @@ import {
     Box,
     Button,
     ColumnLayout,
+    ExpandableSection,
     FormField,
     Modal,
     Select,
@@ -15,6 +16,7 @@ import {
     Table,
     Textarea,
 } from "@cloudscape-design/components";
+import CopyToClipboard from "@cloudscape-design/components/copy-to-clipboard";
 import { generateClient } from "aws-amplify/api";
 import { useContext, useEffect, useState } from "react";
 import { McpServer } from "../../../API";
@@ -734,8 +736,24 @@ export default function ViewVersionModal({
                                 <Box padding="m">{renderMemoryStatus(agentConfig.useMemory)}</Box>
                             </FormField>
 
-                            <FormField label="Agent Instructions">
-                                <Textarea value={agentConfig.instructions} disabled rows={6} />
+                            <FormField label={
+                                <SpaceBetween direction="horizontal" size="xs" alignItems="center">
+                                    <span>Agent Instructions</span>
+                                    <CopyToClipboard
+                                        textToCopy={agentConfig.instructions}
+                                        variant="icon"
+                                        copySuccessText="Instructions copied"
+                                        copyErrorText="Failed to copy"
+                                    />
+                                </SpaceBetween>
+                            }>
+                                <ExpandableSection headerText="Show instructions" defaultExpanded={false}>
+                                    <Box padding="m" variant="code">
+                                        <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordWrap: "break-word" }}>
+                                            {agentConfig.instructions}
+                                        </pre>
+                                    </Box>
+                                </ExpandableSection>
                             </FormField>
 
                             {toolTableItems.length > 0 && (
@@ -765,6 +783,14 @@ export default function ViewVersionModal({
                                             },
                                         ]}
                                     />
+                                </FormField>
+                            )}
+
+                            {agentConfig.skills && agentConfig.skills.length > 0 && (
+                                <FormField label="Skills">
+                                    <Box padding="m">
+                                        {agentConfig.skills.join(", ")}
+                                    </Box>
                                 </FormField>
                             )}
 

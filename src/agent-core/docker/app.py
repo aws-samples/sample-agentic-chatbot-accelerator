@@ -672,6 +672,10 @@ async def _handle_voice_mode(
             region_name=AWS_REGION,
         )
 
+    # TODO: Add AgentSkills plugin support for voice mode once BidiAgent supports
+    # the `plugins` parameter. Monitor Strands SDK releases for BidiAgent plugin support.
+    # See: https://strandsagents.com/docs/user-guide/concepts/plugins/skills/
+
     voice_agent = BidiAgent(
         model=sonic_model,
         tools=tools + [stop_conversation],

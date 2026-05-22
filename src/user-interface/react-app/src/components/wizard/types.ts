@@ -61,6 +61,7 @@ export interface AgentCoreRuntimeConfiguration {
     mcpServers: string[];
     conversationManager: "null" | "sliding_window" | "summarizing";
     useMemory?: boolean;
+    skills?: string[];
     structuredOutput?: StructuredOutputField[];
     architectureType?: ArchitectureType;
     swarmConfig?: SwarmConfiguration;

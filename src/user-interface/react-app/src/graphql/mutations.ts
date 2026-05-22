@@ -387,6 +387,62 @@ export const publishEvaluationUpdate = /* GraphQL */ `mutation PublishEvaluation
   APITypes.PublishEvaluationUpdateMutationVariables,
   APITypes.PublishEvaluationUpdateMutation
 >;
+export const createSkill = /* GraphQL */ `mutation CreateSkill($name: String!, $description: String!, $content: String!) {
+  createSkill(name: $name, description: $description, content: $content) {
+    name
+    description
+    s3Key
+    lastModified
+    __typename
+  }
+}
+` as GeneratedMutation<
+  APITypes.CreateSkillMutationVariables,
+  APITypes.CreateSkillMutation
+>;
+export const updateSkill = /* GraphQL */ `mutation UpdateSkill($name: String!, $description: String, $content: String) {
+  updateSkill(name: $name, description: $description, content: $content) {
+    name
+    description
+    s3Key
+    lastModified
+    __typename
+  }
+}
+` as GeneratedMutation<
+  APITypes.UpdateSkillMutationVariables,
+  APITypes.UpdateSkillMutation
+>;
+export const deleteSkill = /* GraphQL */ `mutation DeleteSkill($name: String!) {
+  deleteSkill(name: $name)
+}
+` as GeneratedMutation<
+  APITypes.DeleteSkillMutationVariables,
+  APITypes.DeleteSkillMutation
+>;
+export const uploadSkillResource = /* GraphQL */ `mutation UploadSkillResource(
+  $name: String!
+  $path: String!
+  $content: String!
+) {
+  uploadSkillResource(name: $name, path: $path, content: $content) {
+    path
+    size
+    lastModified
+    __typename
+  }
+}
+` as GeneratedMutation<
+  APITypes.UploadSkillResourceMutationVariables,
+  APITypes.UploadSkillResourceMutation
+>;
+export const deleteSkillResource = /* GraphQL */ `mutation DeleteSkillResource($name: String!, $path: String!) {
+  deleteSkillResource(name: $name, path: $path)
+}
+` as GeneratedMutation<
+  APITypes.DeleteSkillResourceMutationVariables,
+  APITypes.DeleteSkillResourceMutation
+>;
 export const registerMcpServer = /* GraphQL */ `mutation RegisterMcpServer(
   $name: String!
   $authType: McpAuthType!
