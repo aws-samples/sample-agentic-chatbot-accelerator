@@ -54,26 +54,28 @@ def _download_skills_to_dir(
     skill_names: list[str],
     logger: Any,
 ) -> str | None:
-    """Download skill markdown files from S3 into a local directory.
+    """Download skills from S3 into a local directory.
 
-    Creates a temporary directory with the standard AgentSkills layout::
+    Supports the full Agent Skills spec directory structure::
 
         <temp_dir>/
             analog-alarms/
                 SKILL.md
-            analog-io/
+                scripts/
+                    validate_limits.py
+                references/
+                    alarm-types-reference.md
+            pdf-processing/
                 SKILL.md
-            ...
+                scripts/
+                    extract.py
 
-    This mirrors the Agent Skills spec directory structure so that
-    ``AgentSkills(skills=str(dir_path))`` uses the exact same SDK code
-    path as loading from a local filesystem, ensuring consistent behaviour.
-
-    Each skill is stored in S3 at ``s3://{bucket}/skills/{name}.md``.
-    Skills that fail to download are logged as warnings and skipped.
+    For each skill, first tries the directory layout (``skills/{name}/``).
+    If found, downloads all files in the directory. Otherwise, falls back
+    to the flat file layout (``skills/{name}.md``) for backward compatibility.
 
     Args:
-        skill_names: List of skill names (without ``.md`` extension).
+        skill_names: List of skill names.
         logger: Logger instance.
 
     Returns:
@@ -91,32 +93,21 @@ def _download_skills_to_dir(
     loaded = 0
 
     for name in skill_names:
-        key = f"skills/{name}.md"
+        # Try directory layout first: skills/{name}/
+        dir_prefix = f"skills/{name}/"
         try:
-            obj = s3.get_object(Bucket=bucket, Key=key)
-            content = obj["Body"].read().decode("utf-8")
-
-            # Write to <skills_dir>/<name>/SKILL.md — same layout as spec
-            skill_subdir = os.path.join(skills_dir, name)
-            os.makedirs(skill_subdir, exist_ok=True)
-            skill_path = os.path.join(skill_subdir, "SKILL.md")
-            with open(skill_path, "w", encoding="utf-8") as f:
-                f.write(content)
-
-            loaded += 1
-            logger.info(
-                f"Downloaded skill '{name}' from S3",
-                extra={
-                    "skillName": name,
-                    "s3Key": key,
-                    "localPath": skill_path,
-                    "contentLength": len(content),
-                },
-            )
+            objects = s3.list_objects_v2(Bucket=bucket, Prefix=dir_prefix)
+            if objects.get("KeyCount", 0) > 0:
+                loaded += _download_skill_directory(
+                    s3, bucket, name, dir_prefix, skills_dir, logger
+                )
+            else:
+                # Fallback: flat file layout (Phase 1 backward compat)
+                loaded += _download_skill_flat(s3, bucket, name, skills_dir, logger)
         except Exception as exc:
             logger.warning(
                 f"Failed to download skill '{name}' from S3 — skipping",
-                extra={"skillName": name, "s3Key": key, "error": str(exc)},
+                extra={"skillName": name, "error": str(exc)},
             )
 
     if loaded == 0:
@@ -127,6 +118,75 @@ def _download_skills_to_dir(
         extra={"skillsDir": skills_dir, "loadedCount": loaded},
     )
     return skills_dir
+
+
+def _download_skill_directory(
+    s3: Any, bucket: str, name: str, prefix: str, skills_dir: str, logger: Any
+) -> int:
+    """Download all files in a skill directory from S3.
+
+    Preserves the directory structure (SKILL.md, scripts/, references/, assets/).
+    """
+    skill_subdir = os.path.join(skills_dir, name)
+    paginator = s3.get_paginator("list_objects_v2")
+
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        for obj in page.get("Contents", []):
+            key = obj["Key"]
+            # Relative path within the skill directory
+            relative = key[len(prefix) :]
+            if not relative:
+                continue
+
+            local_path = os.path.join(skill_subdir, relative)
+            os.makedirs(os.path.dirname(local_path), exist_ok=True)
+
+            response = s3.get_object(Bucket=bucket, Key=key)
+            with open(local_path, "wb") as f:
+                f.write(response["Body"].read())
+
+    # Verify SKILL.md exists
+    skill_md = os.path.join(skill_subdir, "SKILL.md")
+    if os.path.exists(skill_md):
+        logger.info(
+            f"Downloaded skill directory '{name}' from S3",
+            extra={"skillName": name, "layout": "directory"},
+        )
+        return 1
+    else:
+        logger.warning(f"Skill '{name}' directory missing SKILL.md — skipping")
+        return 0
+
+
+def _download_skill_flat(
+    s3: Any, bucket: str, name: str, skills_dir: str, logger: Any
+) -> int:
+    """Download a flat .md file (Phase 1 backward compatibility).
+
+    Writes to <skills_dir>/<name>/SKILL.md to match the expected layout.
+    """
+    key = f"skills/{name}.md"
+    try:
+        obj = s3.get_object(Bucket=bucket, Key=key)
+        content = obj["Body"].read().decode("utf-8")
+
+        skill_subdir = os.path.join(skills_dir, name)
+        os.makedirs(skill_subdir, exist_ok=True)
+        skill_path = os.path.join(skill_subdir, "SKILL.md")
+        with open(skill_path, "w", encoding="utf-8") as f:
+            f.write(content)
+
+        logger.info(
+            f"Downloaded skill '{name}' (flat file) from S3",
+            extra={"skillName": name, "layout": "flat"},
+        )
+        return 1
+    except Exception as exc:
+        logger.warning(
+            f"Failed to download skill '{name}': {exc}",
+            extra={"skillName": name, "error": str(exc)},
+        )
+        return 0
 
 
 def create_agent(

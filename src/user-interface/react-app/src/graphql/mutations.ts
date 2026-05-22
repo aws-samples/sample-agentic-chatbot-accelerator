@@ -420,6 +420,29 @@ export const deleteSkill = /* GraphQL */ `mutation DeleteSkill($name: String!) {
   APITypes.DeleteSkillMutationVariables,
   APITypes.DeleteSkillMutation
 >;
+export const uploadSkillResource = /* GraphQL */ `mutation UploadSkillResource(
+  $name: String!
+  $path: String!
+  $content: String!
+) {
+  uploadSkillResource(name: $name, path: $path, content: $content) {
+    path
+    size
+    lastModified
+    __typename
+  }
+}
+` as GeneratedMutation<
+  APITypes.UploadSkillResourceMutationVariables,
+  APITypes.UploadSkillResourceMutation
+>;
+export const deleteSkillResource = /* GraphQL */ `mutation DeleteSkillResource($name: String!, $path: String!) {
+  deleteSkillResource(name: $name, path: $path)
+}
+` as GeneratedMutation<
+  APITypes.DeleteSkillResourceMutationVariables,
+  APITypes.DeleteSkillResourceMutation
+>;
 export const registerMcpServer = /* GraphQL */ `mutation RegisterMcpServer(
   $name: String!
   $authType: McpAuthType!

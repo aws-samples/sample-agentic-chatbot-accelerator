@@ -14,18 +14,23 @@ import {
     Header,
     Input,
     Modal,
+    Select,
     SpaceBetween,
     Table,
+    Tabs,
     Textarea,
 } from "@cloudscape-design/components";
 
 import {
     createSkill as createSkillMut,
     deleteSkill as deleteSkillMut,
+    deleteSkillResource as deleteSkillResourceMut,
     updateSkill as updateSkillMut,
+    uploadSkillResource as uploadSkillResourceMut,
 } from "../../graphql/mutations";
 import {
     getSkillContent as getSkillContentQuery,
+    listSkillResources as listSkillResourcesQuery,
     listSkills as listSkillsQuery,
 } from "../../graphql/queries";
 
@@ -254,7 +259,7 @@ export default function SkillManager() {
                 visible={editorVisible}
                 onDismiss={() => setEditorVisible(false)}
                 header={editMode === "create" ? "Create Skill" : `Edit Skill: ${editName}`}
-                size="large"
+                size="max"
                 footer={
                     <Box float="right">
                         <SpaceBetween direction="horizontal" size="xs">
@@ -303,17 +308,39 @@ export default function SkillManager() {
                         />
                     </FormField>
 
-                    <FormField
-                        label="Instructions (Markdown)"
-                        description="The full skill instructions loaded on-demand by the agent. Use markdown formatting."
-                    >
-                        <Textarea
-                            value={editContent}
-                            onChange={({ detail }) => setEditContent(detail.value)}
-                            placeholder="# Analog Alarm Mapping\n\n## Fields Covered\n..."
-                            rows={18}
-                        />
-                    </FormField>
+                    <Tabs
+                        tabs={[
+                            {
+                                id: "instructions",
+                                label: "Instructions",
+                                content: (
+                                    <FormField
+                                        label="Instructions (Markdown)"
+                                        description="The full skill instructions loaded on-demand by the agent. Use markdown formatting."
+                                    >
+                                        <Textarea
+                                            value={editContent}
+                                            onChange={({ detail }) => setEditContent(detail.value)}
+                                            placeholder="# Analog Alarm Mapping\n\n## Fields Covered\n..."
+                                            rows={18}
+                                        />
+                                    </FormField>
+                                ),
+                            },
+                            {
+                                id: "resources",
+                                label: "Resources",
+                                disabled: editMode === "create",
+                                disabledReason: "Save the skill first, then re-open it to manage resource files",
+                                content: (
+                                    <SkillResourceManager
+                                        skillName={editName}
+                                        apiClient={apiClient}
+                                    />
+                                ),
+                            },
+                        ]}
+                    />
                 </SpaceBetween>
             </Modal>
 
@@ -341,5 +368,214 @@ export default function SkillManager() {
                 </Box>
             </Modal>
         </>
+    );
+}
+
+// ── Resource Manager Sub-Component ────────────────────────────────────
+// Manages resource files (scripts/, references/, assets/) within a skill directory.
+
+interface SkillResource {
+    path: string;
+    size: number;
+    lastModified?: string;
+}
+
+function SkillResourceManager({
+    skillName,
+    apiClient,
+}: {
+    skillName: string;
+    apiClient: any; // eslint-disable-line @typescript-eslint/no-explicit-any
+}) {
+    const [resources, setResources] = useState<SkillResource[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    // Upload form state
+    const [uploadDir, setUploadDir] = useState<string>("scripts/");
+    const [uploadFilename, setUploadFilename] = useState("");
+    const [uploadContent, setUploadContent] = useState("");
+    const [uploading, setUploading] = useState(false);
+
+    const fetchResources = useCallback(async () => {
+        if (!skillName) return;
+        setLoading(true);
+        setError(null);
+        try {
+            const result = await apiClient.graphql({
+                query: listSkillResourcesQuery,
+                variables: { name: skillName },
+            });
+            setResources(((result.data as any)?.listSkillResources as SkillResource[]) || []);
+        } catch (err: any) {
+            setError(`Failed to load resources: ${err.message || err}`);
+        } finally {
+            setLoading(false);
+        }
+    }, [apiClient, skillName]);
+
+    useEffect(() => {
+        fetchResources();
+    }, [fetchResources]);
+
+    const handleUpload = async () => {
+        if (!uploadFilename.trim() || !uploadContent.trim()) return;
+        setUploading(true);
+        setError(null);
+        try {
+            const path = `${uploadDir}${uploadFilename.trim()}`;
+            await apiClient.graphql({
+                query: uploadSkillResourceMut,
+                variables: { name: skillName, path, content: uploadContent },
+            });
+            setUploadFilename("");
+            setUploadContent("");
+            await fetchResources();
+        } catch (err: any) {
+            setError(`Failed to upload resource: ${err.message || err}`);
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    const handleDeleteResource = async (path: string) => {
+        setError(null);
+        try {
+            await apiClient.graphql({
+                query: deleteSkillResourceMut,
+                variables: { name: skillName, path },
+            });
+            await fetchResources();
+        } catch (err: any) {
+            setError(`Failed to delete resource: ${err.message || err}`);
+        }
+    };
+
+    const formatBytes = (bytes: number): string => {
+        if (bytes < 1024) return `${bytes} B`;
+        if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+        return `${(bytes / 1048576).toFixed(1)} MB`;
+    };
+
+    return (
+        <SpaceBetween direction="vertical" size="m">
+            {error && (
+                <Alert type="error" dismissible onDismiss={() => setError(null)}>
+                    {error}
+                </Alert>
+            )}
+
+            <Table
+                items={resources}
+                loading={loading}
+                loadingText="Loading resources..."
+                header={
+                    <Header
+                        variant="h3"
+                        description="Resource files available to the agent when this skill is activated (max 20 files, 1MB each)"
+                        actions={
+                            <Button iconName="refresh" onClick={fetchResources}>
+                                Refresh
+                            </Button>
+                        }
+                    >
+                        Resource Files ({resources.length}/20)
+                    </Header>
+                }
+                empty={
+                    <Box textAlign="center" color="text-body-secondary" padding="s">
+                        No resource files. Upload scripts, references, or assets below.
+                    </Box>
+                }
+                columnDefinitions={[
+                    {
+                        id: "path",
+                        header: "Path",
+                        cell: (item) => (
+                            <span style={{ fontFamily: "monospace", fontSize: 13 }}>
+                                {item.path}
+                            </span>
+                        ),
+                    },
+                    {
+                        id: "size",
+                        header: "Size",
+                        cell: (item) => formatBytes(item.size),
+                        width: 100,
+                    },
+                    {
+                        id: "lastModified",
+                        header: "Modified",
+                        cell: (item) =>
+                            item.lastModified
+                                ? new Date(item.lastModified).toLocaleDateString()
+                                : "—",
+                        width: 120,
+                    },
+                    {
+                        id: "actions",
+                        header: "",
+                        cell: (item) => (
+                            <Button
+                                variant="inline-link"
+                                onClick={() => handleDeleteResource(item.path)}
+                            >
+                                Delete
+                            </Button>
+                        ),
+                        width: 80,
+                    },
+                ]}
+            />
+
+            {/* Upload form */}
+            <Header variant="h3">Upload Resource</Header>
+            <SpaceBetween direction="vertical" size="s">
+                <SpaceBetween direction="horizontal" size="s">
+                    <FormField label="Directory">
+                        <Select
+                            selectedOption={{ label: uploadDir, value: uploadDir }}
+                            onChange={({ detail }) =>
+                                setUploadDir(detail.selectedOption?.value || "scripts/")
+                            }
+                            options={[
+                                { value: "scripts/", label: "scripts/" },
+                                { value: "references/", label: "references/" },
+                                { value: "assets/", label: "assets/" },
+                            ]}
+                        />
+                    </FormField>
+                    <FormField label="Filename">
+                        <Input
+                            value={uploadFilename}
+                            onChange={({ detail }) => setUploadFilename(detail.value)}
+                            placeholder={
+                                uploadDir === "scripts/"
+                                    ? "e.g. extract.py"
+                                    : uploadDir === "references/"
+                                      ? "e.g. API-reference.md"
+                                      : "e.g. mapping-template.json"
+                            }
+                        />
+                    </FormField>
+                </SpaceBetween>
+                <FormField label="Content">
+                    <Textarea
+                        value={uploadContent}
+                        onChange={({ detail }) => setUploadContent(detail.value)}
+                        placeholder="Paste file content here..."
+                        rows={10}
+                    />
+                </FormField>
+                <Button
+                    variant="primary"
+                    onClick={handleUpload}
+                    loading={uploading}
+                    disabled={!uploadFilename.trim() || !uploadContent.trim()}
+                >
+                    Upload
+                </Button>
+            </SpaceBetween>
+        </SpaceBetween>
     );
 }

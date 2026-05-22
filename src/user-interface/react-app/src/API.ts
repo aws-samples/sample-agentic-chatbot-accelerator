@@ -113,6 +113,13 @@ export type Skill = {
   lastModified?: string | null,
 };
 
+export type SkillResource = {
+  __typename: "SkillResource",
+  path: string,
+  size: number,
+  lastModified?: string | null,
+};
+
 export enum McpAuthType {
   SIGV4 = "SIGV4",
   NONE = "NONE",
@@ -653,6 +660,30 @@ export type DeleteSkillMutation = {
   deleteSkill?: boolean | null,
 };
 
+export type UploadSkillResourceMutationVariables = {
+  name: string,
+  path: string,
+  content: string,
+};
+
+export type UploadSkillResourceMutation = {
+  uploadSkillResource?:  {
+    __typename: "SkillResource",
+    path: string,
+    size: number,
+    lastModified?: string | null,
+  } | null,
+};
+
+export type DeleteSkillResourceMutationVariables = {
+  name: string,
+  path: string,
+};
+
+export type DeleteSkillResourceMutation = {
+  deleteSkillResource?: boolean | null,
+};
+
 export type RegisterMcpServerMutationVariables = {
   name: string,
   authType: McpAuthType,
@@ -920,6 +951,28 @@ export type GetSkillContentQueryVariables = {
 
 export type GetSkillContentQuery = {
   getSkillContent?: string | null,
+};
+
+export type ListSkillResourcesQueryVariables = {
+  name: string,
+};
+
+export type ListSkillResourcesQuery = {
+  listSkillResources?:  Array< {
+    __typename: "SkillResource",
+    path: string,
+    size: number,
+    lastModified?: string | null,
+  } > | null,
+};
+
+export type GetSkillResourceQueryVariables = {
+  name: string,
+  path: string,
+};
+
+export type GetSkillResourceQuery = {
+  getSkillResource?: string | null,
 };
 
 export type ListAvailableToolsQueryVariables = {
