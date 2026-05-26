@@ -33,10 +33,9 @@
         "typescript": "~5.6.3"
     },
     "dependencies": {
-        "@aws-cdk/aws-bedrock-agentcore-alpha": "^2.232.1-alpha.0",
         "@aws-cdk/aws-cognito-identitypool-alpha": "^2.181.1-alpha.0",
         "@cdklabs/generative-ai-cdk-constructs": "^0.1.315",
-        "aws-cdk-lib": "^2.253.1",
+        "aws-cdk-lib": "^2.255.0",
         "cdk-nag": "^2.37.55",
         "constructs": "^10.5.1",
         "js-yaml": "^4.1.1",
