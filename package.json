@@ -1,0 +1,7 @@
+{
+    "private": true,
+    "description": "Root-level dependencies for CDK synth (esbuild required by NodejsFunction bundling)",
+    "devDependencies": {
+        "esbuild": "^0.28.0"
+    }
+}

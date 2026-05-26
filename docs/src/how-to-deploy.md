@@ -12,7 +12,7 @@
   - AWS CLI configured with appropriate authentication tokens
   - `zip` command available (pre-installed on macOS and most Linux distributions)
 
-> **Note:** Docker and Finch are **not** required. All container image builds, pip layer builds, and the React frontend build run remotely on AWS CodeBuild.
+> **Note:** Docker, Finch, and Python are **not** required locally. All container image builds, pip layer builds, and the React frontend build run remotely on AWS CodeBuild. The `make deploy` command automatically installs all required Node.js dependencies.
 
 ## Deployment
 
