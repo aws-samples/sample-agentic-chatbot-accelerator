@@ -3,8 +3,8 @@
 //
 // SPDX-License-Identifier: MIT-0
 // ----------------------------------------------------------------------
-import * as agentcore from "@aws-cdk/aws-bedrock-agentcore-alpha";
-import { RuntimeNetworkConfiguration } from "@aws-cdk/aws-bedrock-agentcore-alpha";
+import * as agentcore from "aws-cdk-lib/aws-bedrockagentcore";
+import { RuntimeNetworkConfiguration } from "aws-cdk-lib/aws-bedrockagentcore";
 import * as cdk from "aws-cdk-lib";
 import { CfnOutput } from "aws-cdk-lib";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
