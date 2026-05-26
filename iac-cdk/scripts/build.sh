@@ -62,9 +62,8 @@ if [[ -z "$STACK_NAME" ]]; then
     fi
 
     if [[ -z "$STACK_NAME" ]]; then
-        err "Stack name required. Use --stack-name or set CDK_STACK_NAME."
-        err "Alternatively, set 'prefix' in iac-cdk/bin/config.yaml."
-        exit 1
+        STACK_NAME="dev-aca-builder"
+        info "No stack name provided and no config.yaml found. Falling back to default: ${STACK_NAME}"
     fi
 fi
 
