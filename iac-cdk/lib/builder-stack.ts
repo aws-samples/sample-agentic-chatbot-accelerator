@@ -20,6 +20,7 @@ import * as path from "path";
 
 import { CodeBuildDockerImage } from "./codebuild-builder";
 import { CodeBuildNpmBuild } from "./codebuild-builder";
+import { CodeBuildPipBundle } from "./codebuild-builder";
 import { CodeBuildPipLayer } from "./codebuild-builder";
 
 const pythonRuntime = lambda.Runtime.PYTHON_3_14;
@@ -42,6 +43,9 @@ export class BuilderStack extends cdk.Stack {
 
     // Pip layer
     public readonly boto3Layer: CodeBuildPipLayer;
+
+    // Pip bundle — evaluation executor (source + strands-agents-evals)
+    public readonly evaluationExecutorBundle: CodeBuildPipBundle;
 
     // Npm build — React app
     public readonly reactAppBuild: CodeBuildNpmBuild;
@@ -104,6 +108,15 @@ export class BuilderStack extends cdk.Stack {
             runtime: pythonRuntime,
             architecture: props.lambdaArchitecture,
             requirementsDir: path.join(__dirname, "../../src/shared/layers/boto3-latest"),
+        });
+
+        // -----------------------------------------------------------------
+        // Pip bundle — evaluation executor Lambda (source + strands-agents-evals)
+        // -----------------------------------------------------------------
+        this.evaluationExecutorBundle = new CodeBuildPipBundle(this, "EvalExecutorBundle", {
+            directory: path.join(__dirname, "../../src/api/functions/evaluation-executor"),
+            pipPackages: ["strands-agents-evals"],
+            architecture: props.lambdaArchitecture,
         });
 
         // -----------------------------------------------------------------

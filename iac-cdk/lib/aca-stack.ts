@@ -137,6 +137,7 @@ export class AcaStack extends cdk.Stack {
             agentToolsTopic: agentCoreInfra.agentToolsTopic,
             batchImage: props.builder.batchImage,
             skillsBucket: skillsBucket.bucket,
+            evaluationExecutorBundle: props.builder.evaluationExecutorBundle,
         });
 
         // Grant AgentCore containers permission to write session history to DynamoDB

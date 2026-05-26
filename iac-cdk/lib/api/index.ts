@@ -18,7 +18,7 @@ import * as sns from "aws-cdk-lib/aws-sns";
 import { NagSuppressions } from "cdk-nag";
 import { Construct } from "constructs";
 
-import { CodeBuildDockerImage } from "../codebuild-builder";
+import { CodeBuildDockerImage, CodeBuildPipBundle } from "../codebuild-builder";
 import { Shared } from "../shared";
 import { SystemConfig } from "../shared/types";
 import { generatePrefix } from "../shared/utils";
@@ -59,6 +59,8 @@ export interface ChatbotApiProps {
     readonly kbRole?: iam.IRole;
     // Skills bucket for skill CRUD and runtime loading
     readonly skillsBucket?: s3.Bucket;
+    // Pre-built evaluation executor Lambda bundle (from BuilderStack)
+    readonly evaluationExecutorBundle: CodeBuildPipBundle;
 }
 
 /**
@@ -152,6 +154,7 @@ export class ChatbotApi extends Construct {
             api: api,
             evaluatorsTable: chatTables.evaluatorsTable,
             byUserIdIndex: chatTables.byUserIdIndex,
+            evaluationExecutorBundle: props.evaluationExecutorBundle,
         });
 
         const experimentOps = new ExperimentOps(this, "ExperimentOps", {

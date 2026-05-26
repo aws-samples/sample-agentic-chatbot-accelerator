@@ -18,6 +18,7 @@ import { NagSuppressions } from "cdk-nag";
 import { Construct } from "constructs";
 import * as path from "path";
 
+import { CodeBuildPipBundle } from "../codebuild-builder";
 import { Shared } from "../shared";
 import { SystemConfig } from "../shared/types";
 import { generatePrefix } from "../shared/utils";
@@ -28,6 +29,8 @@ export interface EvaluationApiProps {
     readonly api: appsync.GraphqlApi;
     readonly evaluatorsTable: dynamodb.Table;
     readonly byUserIdIndex: string;
+    /** Pre-built evaluation executor Lambda bundle (from BuilderStack via CodeBuild). */
+    readonly evaluationExecutorBundle: CodeBuildPipBundle;
 }
 
 /**
@@ -154,23 +157,12 @@ export class EvaluationApi extends Construct {
 
         // Create the evaluation executor Lambda
         // Processes individual test cases from SQS queue
-        // Note: strands-agents-evals is too large for a Lambda layer, so we bundle it directly
+        // Code is pre-built by CodeBuild (BuilderStack) — includes source + strands-agents-evals
         const evaluationExecutor = new lambda.Function(this, "EvaluationExecutor", {
             functionName: `${prefix}-evaluation-executor`,
-            code: lambda.Code.fromAsset(
-                path.join(__dirname, "../../../src/api/functions/evaluation-executor"),
-                {
-                    exclude: ["**/__pycache__", "**/*.рус", "**/.pytest_cache"],
-                    bundling: {
-                        image: props.shared.pythonRuntime.bundlingImage,
-                        platform: props.shared.lambdaArchitecture.dockerPlatform,
-                        command: [
-                            "bash",
-                            "-c",
-                            "pip install strands-agents-evals -t /asset-output && cp -au . /asset-output",
-                        ],
-                    },
-                },
+            code: lambda.Code.fromBucket(
+                props.evaluationExecutorBundle.artifactBucket,
+                props.evaluationExecutorBundle.artifactKey,
             ),
             handler: "index.handler",
             architecture: props.shared.lambdaArchitecture,
