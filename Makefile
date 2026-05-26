@@ -35,7 +35,11 @@ run-ash:
 # On first deploy, Phase 2 creates the artifacts that Phase 3 needs.
 # On subsequent deploys, Phase 2 rebuilds only what changed (fast).
 
-deploy: copy-graphql-util gen-graphql
+install-deps:
+	npm install --prefix .
+	cd iac-cdk && npm install
+
+deploy: install-deps copy-graphql-util gen-graphql
 	@echo "═══════════════════════════════════════════════════════════"
 	@echo "Phase 1: Deploying BuilderStack (CodeBuild infrastructure)"
 	@echo "═══════════════════════════════════════════════════════════"

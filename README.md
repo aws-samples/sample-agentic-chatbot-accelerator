@@ -18,14 +18,13 @@ The accelerator provides a web-based interface, agent factory, knowledge base ma
 
 The following steps use **CDK** (the default deployment method). For Terraform, see [Terraform Deployment](./iac-terraform/README.md).
 
-1. **Install required packages**: Run `cd iac-cdk && npm install`
-2. **Configure features** *(optional)*: Create `iac-cdk/bin/config.yaml` to customize deployment (see [How to Deploy](./docs/src/how-to-deploy.md))
-3. **Deploy Infrastructure**: Run `make deploy` to deploy the CDK stacks (no local Docker/Finch required — builds run on AWS CodeBuild)
-4. **Create User**: Add a user to the Cognito User Pool (<environment-prefix>-aca-userPool) via AWS Console
-5. **Access Application**: Open the web application using the URL from CDK deployment outputs
-6. **Configure Agent**: Use the Agent Factory to create and configure your first AgentCore runtime
-7. **Test & Chat**: Interact with your agent through the chatbot interface
-8. **Iterate**: Refine agent settings, add tools, and redeploy as needed
+1. **Configure features** *(optional)*: Create `iac-cdk/bin/config.yaml` to customize deployment (see [How to Deploy](./docs/src/how-to-deploy.md))
+2. **Deploy Infrastructure**: Run `make deploy` to deploy the CDK stacks (dependencies are installed automatically — no local Docker, Finch, or Python required)
+3. **Create User**: Add a user to the Cognito User Pool (<environment-prefix>-aca-userPool) via AWS Console
+4. **Access Application**: Open the web application using the URL from CDK deployment outputs
+5. **Configure Agent**: Use the Agent Factory to create and configure your first AgentCore runtime
+6. **Test & Chat**: Interact with your agent through the chatbot interface
+7. **Iterate**: Refine agent settings, add tools, and redeploy as needed
 
 ## See It in Action
 
