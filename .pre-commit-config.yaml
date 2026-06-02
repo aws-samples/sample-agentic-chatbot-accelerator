@@ -64,7 +64,7 @@ repos:
         stages: [manual]  # Run with: pre-commit run checkov --hook-stage manual
 
   - repo: https://github.com/awslabs/automated-security-helper.git
-    rev: v3.1.9
+    rev: v3.5.3
     hooks:
     - id: ash
       name: scan files using ash
