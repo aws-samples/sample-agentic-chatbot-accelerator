@@ -101,19 +101,28 @@ variable "kb_role_arn" {
   type        = string
 }
 
-variable "collection_id" {
-  description = "ID of the OpenSearch Serverless collection from knowledge_base module"
+variable "vector_store_type" {
+  description = "Vector store backend in use (OPENSEARCH_SERVERLESS or S3_VECTORS). Gates OSS-specific IAM/access policies and the COLLECTION_ID Lambda env var."
   type        = string
+  default     = "OPENSEARCH_SERVERLESS"
+}
+
+variable "collection_id" {
+  description = "ID of the OpenSearch Serverless collection from knowledge_base module (null when vector_store_type = S3_VECTORS)"
+  type        = string
+  default     = null
 }
 
 variable "collection_arn" {
-  description = "ARN of the OpenSearch Serverless collection from knowledge_base module"
+  description = "ARN of the OpenSearch Serverless collection from knowledge_base module (null when vector_store_type = S3_VECTORS)"
   type        = string
+  default     = null
 }
 
 variable "collection_name" {
-  description = "Name of the OpenSearch Serverless collection from knowledge_base module"
+  description = "Name of the OpenSearch Serverless collection from knowledge_base module (null when vector_store_type = S3_VECTORS)"
   type        = string
+  default     = null
 }
 
 # -----------------------------------------------------------------------------

@@ -30,23 +30,42 @@ output "data_source_id" {
 # -----------------------------------------------------------------------------
 
 output "collection_arn" {
-  description = "ARN of the OpenSearch Serverless collection"
-  value       = var.enabled ? aws_opensearchserverless_collection.vector[0].arn : null
+  description = "ARN of the OpenSearch Serverless collection (null when vector_store_type = S3_VECTORS)"
+  value       = local.use_oss ? aws_opensearchserverless_collection.vector[0].arn : null
 }
 
 output "collection_endpoint" {
-  description = "Endpoint of the OpenSearch Serverless collection"
-  value       = var.enabled ? aws_opensearchserverless_collection.vector[0].collection_endpoint : null
+  description = "Endpoint of the OpenSearch Serverless collection (null when vector_store_type = S3_VECTORS)"
+  value       = local.use_oss ? aws_opensearchserverless_collection.vector[0].collection_endpoint : null
 }
 
 output "collection_name" {
-  description = "Name of the OpenSearch Serverless collection"
-  value       = var.enabled ? aws_opensearchserverless_collection.vector[0].name : null
+  description = "Name of the OpenSearch Serverless collection (null when vector_store_type = S3_VECTORS)"
+  value       = local.use_oss ? aws_opensearchserverless_collection.vector[0].name : null
 }
 
 output "collection_id" {
-  description = "ID of the OpenSearch Serverless collection"
-  value       = var.enabled ? aws_opensearchserverless_collection.vector[0].id : null
+  description = "ID of the OpenSearch Serverless collection (null when vector_store_type = S3_VECTORS)"
+  value       = local.use_oss ? aws_opensearchserverless_collection.vector[0].id : null
+}
+
+# -----------------------------------------------------------------------------
+# S3 Vectors Outputs
+# -----------------------------------------------------------------------------
+
+output "vector_store_type" {
+  description = "Vector store backend in use (OPENSEARCH_SERVERLESS or S3_VECTORS)."
+  value       = var.vector_store_type
+}
+
+output "s3_vector_bucket_name" {
+  description = "Name of the S3 Vectors bucket (null when vector_store_type = OPENSEARCH_SERVERLESS)."
+  value       = local.use_s3_vectors ? aws_s3vectors_vector_bucket.main[0].vector_bucket_name : null
+}
+
+output "s3_vector_index_arn" {
+  description = "ARN of the S3 Vectors index (null when vector_store_type = OPENSEARCH_SERVERLESS)."
+  value       = local.use_s3_vectors ? aws_s3vectors_index.main[0].index_arn : null
 }
 
 # -----------------------------------------------------------------------------

@@ -44,6 +44,21 @@ variable "input_prefix" {
 }
 
 # -----------------------------------------------------------------------------
+# Vector Store Backend
+# -----------------------------------------------------------------------------
+
+variable "vector_store_type" {
+  description = "Vector store backend: OPENSEARCH_SERVERLESS (default) or S3_VECTORS."
+  type        = string
+  default     = "OPENSEARCH_SERVERLESS"
+
+  validation {
+    condition     = contains(["OPENSEARCH_SERVERLESS", "S3_VECTORS"], var.vector_store_type)
+    error_message = "vector_store_type must be OPENSEARCH_SERVERLESS or S3_VECTORS."
+  }
+}
+
+# -----------------------------------------------------------------------------
 # Embedding Model Configuration
 # -----------------------------------------------------------------------------
 

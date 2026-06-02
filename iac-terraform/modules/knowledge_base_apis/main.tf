@@ -19,6 +19,9 @@ locals {
   # Lambda function name
   function_name = "${local.name_prefix}-knowledgeBaseResolver"
 
+  # Backend selector — gates OSS-only IAM permissions and access policy.
+  use_oss = var.vector_store_type == "OPENSEARCH_SERVERLESS"
+
   # Operations this resolver handles (matches CDK OPS_PROPS)
   kb_operations = [
     # Queries
@@ -106,10 +109,13 @@ data "aws_iam_policy_document" "kb_resolver" {
     resources = ["*"]
   }
 
-  # OpenSearch Serverless API Access
-  statement {
-    actions   = ["aoss:APIAccessAll"]
-    resources = [var.collection_arn]
+  # OpenSearch Serverless API Access (only when vector_store_type = OPENSEARCH_SERVERLESS)
+  dynamic "statement" {
+    for_each = local.use_oss ? [1] : []
+    content {
+      actions   = ["aoss:APIAccessAll"]
+      resources = [var.collection_arn]
+    }
   }
 
   # Pass Role (for creating KBs)
@@ -226,6 +232,8 @@ resource "aws_iam_role_policy" "kb_resolver" {
 # -----------------------------------------------------------------------------
 
 resource "aws_opensearchserverless_access_policy" "lambda_access" {
+  count = local.use_oss ? 1 : 0
+
   name = "${substr(local.name_prefix, 0, min(length(local.name_prefix), 20))}-pol-from-lambda"
   type = "data"
 
@@ -283,20 +291,22 @@ resource "aws_lambda_function" "kb_resolver" {
   ]
 
   environment {
-    variables = {
-      LOG_LEVEL                    = "INFO"
-      POWERTOOLS_SERVICE_NAME      = "kb-resolver"
-      POWERTOOLS_METRICS_NAMESPACE = local.name_prefix
-      DOCUMENT_TABLE_NAME          = var.document_table_name
-      KB_INVENTORY_TABLE_NAME      = var.kb_inventory_table_name
-      KB_ROLE_ARN                  = var.kb_role_arn
-      COLLECTION_ID                = var.collection_id
-      DATA_BUCKET_ARN              = var.data_bucket_arn
-      START_PIPELINE_QUEUE_ARN     = var.queue_start_pipeline_arn
-      STACK_NAME                   = var.stack_tag
-      ENV_PREFIX                   = var.environment_tag != "" ? var.environment_tag : "_tag"
-      REGION_NAME                  = data.aws_region.current.id
-    }
+    variables = merge(
+      {
+        LOG_LEVEL                    = "INFO"
+        POWERTOOLS_SERVICE_NAME      = "kb-resolver"
+        POWERTOOLS_METRICS_NAMESPACE = local.name_prefix
+        DOCUMENT_TABLE_NAME          = var.document_table_name
+        KB_INVENTORY_TABLE_NAME      = var.kb_inventory_table_name
+        KB_ROLE_ARN                  = var.kb_role_arn
+        DATA_BUCKET_ARN              = var.data_bucket_arn
+        START_PIPELINE_QUEUE_ARN     = var.queue_start_pipeline_arn
+        STACK_NAME                   = var.stack_tag
+        ENV_PREFIX                   = var.environment_tag != "" ? var.environment_tag : "_tag"
+        REGION_NAME                  = data.aws_region.current.id
+      },
+      local.use_oss ? { COLLECTION_ID = var.collection_id } : {}
+    )
   }
 
   kms_key_arn = var.kms_key_arn

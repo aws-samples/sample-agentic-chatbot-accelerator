@@ -561,6 +561,9 @@ module "knowledge_base" {
   embedding_model_id = try(var.knowledge_base.embedding_model_id, "amazon.titan-embed-text-v2:0")
   vector_dimension   = try(var.knowledge_base.vector_dimension, 1024)
 
+  # Vector store backend (OPENSEARCH_SERVERLESS default; S3_VECTORS opt-in)
+  vector_store_type = try(var.knowledge_base.vector_store_type, "OPENSEARCH_SERVERLESS")
+
   # Chunking strategy configuration
   chunking_strategy            = try(var.knowledge_base.chunking_strategy, "FIXED_SIZE")
   fixed_chunking_config        = try(var.knowledge_base.fixed_chunking_config, { max_tokens = 300, overlap_percentage = 20 })
@@ -609,9 +612,12 @@ module "knowledge_base_apis" {
   kb_inventory_table_name = module.knowledge_base.kb_inventory_table_name
   kb_inventory_table_arn  = module.knowledge_base.kb_inventory_table_arn
   kb_role_arn             = module.knowledge_base.kb_role_arn
-  collection_id           = module.knowledge_base.collection_id
-  collection_arn          = module.knowledge_base.collection_arn
-  collection_name         = module.knowledge_base.collection_name
+
+  # Vector store backend; collection_* are null when S3_VECTORS is selected.
+  vector_store_type = try(var.knowledge_base.vector_store_type, "OPENSEARCH_SERVERLESS")
+  collection_id     = module.knowledge_base.collection_id
+  collection_arn    = module.knowledge_base.collection_arn
+  collection_name   = module.knowledge_base.collection_name
 
   # Tags
   stack_tag       = var.prefix

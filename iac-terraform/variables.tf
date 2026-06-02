@@ -176,7 +176,7 @@ variable "knowledge_base_id" {
 }
 
 variable "knowledge_base" {
-  description = "Optional Knowledge Base configuration using Bedrock with OpenSearch Serverless. Requires data_processing to be enabled."
+  description = "Optional Knowledge Base configuration using Bedrock with OpenSearch Serverless or S3 Vectors. Requires data_processing to be enabled."
   type = object({
     # Embedding model configuration
     embedding_model_id = optional(string, "amazon.titan-embed-text-v2:0")
@@ -185,6 +185,10 @@ variable "knowledge_base" {
     # Data source configuration
     data_source_prefix = optional(string, "data-source")
     description        = optional(string, "Knowledge Base for searching helpful information.")
+
+    # Vector store backend: OPENSEARCH_SERVERLESS (default) or S3_VECTORS.
+    # S3_VECTORS is dramatically cheaper for low-QPS document KBs.
+    vector_store_type = optional(string, "OPENSEARCH_SERVERLESS")
 
     # Chunking strategy: FIXED_SIZE, HIERARCHICAL, SEMANTIC, or NONE
     chunking_strategy = optional(string, "FIXED_SIZE")
@@ -210,6 +214,11 @@ variable "knowledge_base" {
     }))
   })
   default = null
+
+  validation {
+    condition     = var.knowledge_base == null || contains(["OPENSEARCH_SERVERLESS", "S3_VECTORS"], try(var.knowledge_base.vector_store_type, "OPENSEARCH_SERVERLESS"))
+    error_message = "knowledge_base.vector_store_type must be one of: OPENSEARCH_SERVERLESS, S3_VECTORS."
+  }
 }
 
 # -----------------------------------------------------------------------------

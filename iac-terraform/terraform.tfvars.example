@@ -144,6 +144,10 @@ mcp_server_registry = []
 #   # Data source configuration
 #   data_source_prefix = "data-source"  # Must match data_processing.data_source_prefix
 #
+#   # Vector store backend: "OPENSEARCH_SERVERLESS" (default) or "S3_VECTORS".
+#   # S3_VECTORS is dramatically cheaper for low-QPS document KBs.
+#   # vector_store_type = "S3_VECTORS"
+#
 #   # Chunking strategy: "FIXED_SIZE", "HIERARCHICAL", "SEMANTIC", or "NONE"
 #   chunking_strategy = "FIXED_SIZE"
 #

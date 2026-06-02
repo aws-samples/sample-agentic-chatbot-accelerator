@@ -46,7 +46,7 @@ resource "aws_s3_bucket" "kb_build" {
   # checkov:skip=CKV_AWS_144:Cross-region replication not needed for temporary build artifacts
   # checkov:skip=CKV_AWS_18:Access logging not needed for temporary build artifacts
   # checkov:skip=CKV2_AWS_62:Event notifications not needed for build context bucket
-  count = var.enabled ? 1 : 0
+  count = local.use_oss ? 1 : 0
 
   bucket        = "${local.kb_name_prefix}-kb-codebuild-${local.account_id}"
   force_destroy = true
@@ -57,7 +57,7 @@ resource "aws_s3_bucket" "kb_build" {
 }
 
 resource "aws_s3_bucket_versioning" "kb_build" {
-  count  = var.enabled ? 1 : 0
+  count  = local.use_oss ? 1 : 0
   bucket = aws_s3_bucket.kb_build[0].id
   versioning_configuration {
     status = "Enabled"
@@ -65,7 +65,7 @@ resource "aws_s3_bucket_versioning" "kb_build" {
 }
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "kb_build" {
-  count  = var.enabled ? 1 : 0
+  count  = local.use_oss ? 1 : 0
   bucket = aws_s3_bucket.kb_build[0].id
   rule {
     apply_server_side_encryption_by_default {
@@ -77,7 +77,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "kb_build" {
 }
 
 resource "aws_s3_bucket_public_access_block" "kb_build" {
-  count                   = var.enabled ? 1 : 0
+  count                   = local.use_oss ? 1 : 0
   bucket                  = aws_s3_bucket.kb_build[0].id
   block_public_acls       = true
   block_public_policy     = true
@@ -86,7 +86,7 @@ resource "aws_s3_bucket_public_access_block" "kb_build" {
 }
 
 resource "aws_s3_bucket_lifecycle_configuration" "kb_build" {
-  count  = var.enabled ? 1 : 0
+  count  = local.use_oss ? 1 : 0
   bucket = aws_s3_bucket.kb_build[0].id
 
   rule {
@@ -114,7 +114,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "kb_build" {
 # -----------------------------------------------------------------------------
 
 data "archive_file" "vector_index_source_context" {
-  count = var.enabled ? 1 : 0
+  count = local.use_oss ? 1 : 0
 
   type        = "zip"
   source_dir  = local.vector_index_source_dir
@@ -123,7 +123,7 @@ data "archive_file" "vector_index_source_context" {
 }
 
 resource "aws_s3_object" "vector_index_source_context" {
-  count = var.enabled ? 1 : 0
+  count = local.use_oss ? 1 : 0
 
   bucket = aws_s3_bucket.kb_build[0].id
   key    = local.vector_index_source_s3_key
@@ -139,7 +139,7 @@ resource "aws_s3_object" "vector_index_source_context" {
 # -----------------------------------------------------------------------------
 
 resource "aws_iam_role" "codebuild_vector_index" {
-  count = var.enabled ? 1 : 0
+  count = local.use_oss ? 1 : 0
 
   name = "${local.kb_name_prefix}-codebuild-vector-index"
 
@@ -162,7 +162,7 @@ resource "aws_iam_role" "codebuild_vector_index" {
 }
 
 resource "aws_iam_role_policy" "codebuild_vector_index" {
-  count = var.enabled ? 1 : 0
+  count = local.use_oss ? 1 : 0
 
   name = "${local.kb_name_prefix}-codebuild-vector-index-policy"
   role = aws_iam_role.codebuild_vector_index[0].id
@@ -225,7 +225,7 @@ resource "aws_iam_role_policy" "codebuild_vector_index" {
 # -----------------------------------------------------------------------------
 
 resource "aws_codebuild_project" "vector_index_builder" {
-  count = var.enabled ? 1 : 0
+  count = local.use_oss ? 1 : 0
 
   name           = "${local.kb_name_prefix}-vector-index-builder"
   description    = "Builds the vector index creator Lambda package (pip install + zip)"
@@ -277,7 +277,7 @@ resource "aws_codebuild_project" "vector_index_builder" {
 # -----------------------------------------------------------------------------
 
 resource "null_resource" "build_vector_index_lambda" {
-  count = var.enabled ? 1 : 0
+  count = local.use_oss ? 1 : 0
 
   triggers = {
     source_hash = local.vector_index_source_hash
