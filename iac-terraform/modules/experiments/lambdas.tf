@@ -14,6 +14,7 @@ Creates:
 # -----------------------------------------------------------------------------
 
 resource "aws_cloudwatch_log_group" "experiment_resolver" {
+  # checkov:skip=CKV_AWS_338:Accelerator/POV — 30-day retention sufficient for dev workloads
   name              = "/aws/lambda/${local.name_prefix}-experiment-resolver"
   retention_in_days = 30
   kms_key_id        = var.kms_key_arn
@@ -44,6 +45,8 @@ resource "aws_lambda_function" "experiment_resolver" {
   # checkov:skip=CKV_AWS_116:DLQ not needed for synchronous AppSync resolver
   # checkov:skip=CKV_AWS_272:Code signing not required for internal functions
   # checkov:skip=CKV_AWS_173:Environment variables do not contain secrets
+  # checkov:skip=CKV_AWS_117:Lambda only calls public AWS APIs (DynamoDB, S3, Batch, AppSync) — VPC not required
+  # checkov:skip=CKV_AWS_115:Reserved concurrency optional for accelerator — relies on account-level limits
   function_name    = "${local.name_prefix}-experiment-resolver"
   role             = aws_iam_role.experiment_resolver.arn
   handler          = "index.handler"

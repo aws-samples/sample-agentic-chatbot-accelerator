@@ -43,6 +43,17 @@ resource "aws_vpc" "batch" {
   })
 }
 
+# Restrict the default SG of the VPC we create — Batch tasks use the
+# explicit aws_security_group.batch below, so this stays empty.
+resource "aws_default_security_group" "batch_default" {
+  count  = local.use_existing_vpc ? 0 : 1
+  vpc_id = aws_vpc.batch[0].id
+
+  tags = merge(var.tags, {
+    Name = "${local.name_prefix}-experiments-default-sg"
+  })
+}
+
 # Private subnets (2 AZs)
 data "aws_availability_zones" "available" {
   state = "available"
@@ -148,6 +159,7 @@ resource "aws_route_table_association" "private" {
 
 # VPC Flow Logs
 resource "aws_cloudwatch_log_group" "vpc_flow_logs" {
+  # checkov:skip=CKV_AWS_338:Accelerator/POV — 7-day retention keeps flow log costs reasonable
   count             = local.use_existing_vpc ? 0 : 1
   name              = "/aws/vpc/${local.name_prefix}-experiments-flow-logs"
   retention_in_days = 7
@@ -240,6 +252,7 @@ locals {
 # Security group for Batch compute environment
 resource "aws_security_group" "batch" {
   # checkov:skip=CKV2_AWS_5:Security group is attached to Batch compute environment
+  # checkov:skip=CKV_AWS_382:Batch tasks need outbound access to ECR, Bedrock, S3, DynamoDB
   name        = "${local.name_prefix}-experiments-batch-sg"
   description = "Security group for experiments Batch compute environment"
   vpc_id      = local.resolved_vpc_id
@@ -301,6 +314,7 @@ resource "aws_batch_job_queue" "experiments" {
 
 # Batch Job Log Group
 resource "aws_cloudwatch_log_group" "batch_job" {
+  # checkov:skip=CKV_AWS_338:Accelerator/POV — 7-day retention sufficient for short-lived Batch jobs
   name              = "/aws/batch/${local.name_prefix}-experiments"
   retention_in_days = 7
   kms_key_id        = var.kms_key_arn
@@ -366,6 +380,7 @@ resource "aws_batch_job_definition" "experiments" {
 # ECR Repository for Batch container image
 resource "aws_ecr_repository" "experiments" {
   # checkov:skip=CKV_AWS_136:Immutable tags not needed for dev containers
+  # checkov:skip=CKV_AWS_51:Mutable tags acceptable — content-based tags are used by the build pipeline
   name                 = "${local.name_prefix}-experiments-batch"
   image_tag_mutability = "MUTABLE"
   force_delete         = true

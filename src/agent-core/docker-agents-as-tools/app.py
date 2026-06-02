@@ -380,8 +380,11 @@ async def _handle_voice_mode(
     finally:
         try:
             await voice_agent.stop()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug(
+                "voice_agent.stop() failed during cleanup",
+                extra={"rawErrorMessage": str(exc)},
+            )
 
 
 # ============================================================
