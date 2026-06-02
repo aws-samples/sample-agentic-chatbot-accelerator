@@ -113,6 +113,8 @@ interface ChunkingStrategyProps {
  * @property dataSourcePrefix - S3 prefix path for the knowledge base data source
  * @property description - Optional description of the knowledge base
  */
+export type VectorStoreType = "OPENSEARCH_SERVERLESS" | "S3_VECTORS";
+
 export interface KnowledgeBaseParameters {
     chunkingStrategy: ChunkingStrategyProps;
 
@@ -127,6 +129,8 @@ export interface KnowledgeBaseParameters {
     dataSourcePrefix: string;
 
     description?: string;
+
+    vectorStoreType?: VectorStoreType;
 }
 
 /**
