@@ -99,3 +99,9 @@ variable "aws_profile" {
   type        = string
   default     = ""
 }
+
+variable "log_retention_days" {
+  description = "CloudWatch log retention in days for the resolver Lambda, VPC flow logs, and Batch jobs. Default (30) is set for accelerator/POV use; production deployments should override to 365+ to satisfy CKV_AWS_338."
+  type        = number
+  default     = 30
+}

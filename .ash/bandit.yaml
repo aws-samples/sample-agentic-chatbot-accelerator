@@ -1,0 +1,26 @@
+# Bandit config for ASH (https://github.com/awslabs/automated-security-helper).
+# ASH auto-discovers this file at .ash/bandit.yaml and passes it to bandit
+# via --configfile. pyproject.toml's [tool.bandit] is NOT read by ASH.
+
+# Standard bandit dirs to skip (cache + build artifacts already covered by
+# .ash/.ash.yaml ignore_paths but listed here for defense-in-depth).
+exclude_dirs:
+  - test-results
+  - .mypy_cache
+  - .pytest_cache
+  - .ruff_cache
+
+# Suppress B101 (assert_used) for test files. Pytest never runs with -O,
+# so the asserts-stripped concern doesn't apply. Glob patterns must cover
+# both test_*.py naming and the tests/ directory layout this repo uses
+# (e.g. src/agent-core/docker-swarm/tests/test_types.py).
+assert_used:
+  skips:
+    - "*/test_*.py"
+    - "**/test_*.py"
+    - "*/tests/*.py"
+    - "**/tests/*.py"
+    - "*/tests/**/*.py"
+    - "**/tests/**/*.py"
+    - "*/conftest.py"
+    - "**/conftest.py"

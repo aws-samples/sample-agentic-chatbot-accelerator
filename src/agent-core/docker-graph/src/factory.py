@@ -159,7 +159,10 @@ def _invoke_agent(
     # parse_agent_runtime_response with return_structured=True always
     # returns AgentRuntimeResponse, but the type signature is a union
     # for backward compatibility.
-    assert isinstance(result, AgentRuntimeResponse)
+    if not isinstance(result, AgentRuntimeResponse):
+        raise TypeError(
+            f"Expected AgentRuntimeResponse with return_structured=True, got {type(result).__name__}"
+        )
     return result
 
 
