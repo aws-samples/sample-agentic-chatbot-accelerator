@@ -209,12 +209,24 @@ export class AcaStack extends cdk.Stack {
 
         // BucketNotificationsHandler only exists when dataProcessing is defined (S3 bucket with notifications)
         if (dataProcessing) {
+            const bucketNotifPaths = [
+                `/${this.stackName}/BucketNotificationsHandler050a0587b7544547bf325f094a3db834/Role/Resource`,
+            ];
+            // DefaultPolicy only exists when CDK adds inline policies (e.g. Lambda/SQS notification targets).
+            // With eventBridgeEnabled-only buckets the role has no inline policies.
+            const defaultPolicyPath = `/${this.stackName}/BucketNotificationsHandler050a0587b7544547bf325f094a3db834/Role/DefaultPolicy/Resource`;
+            if (this.node.tryFindChild("BucketNotificationsHandler050a0587b7544547bf325f094a3db834")) {
+                const handler = this.node.findChild("BucketNotificationsHandler050a0587b7544547bf325f094a3db834");
+                if (handler.node.tryFindChild("Role")) {
+                    const role = handler.node.findChild("Role");
+                    if (role.node.tryFindChild("DefaultPolicy")) {
+                        bucketNotifPaths.push(defaultPolicyPath);
+                    }
+                }
+            }
             NagSuppressions.addResourceSuppressionsByPath(
                 this,
-                [
-                    `/${this.stackName}/BucketNotificationsHandler050a0587b7544547bf325f094a3db834/Role/Resource`,
-                    `/${this.stackName}/BucketNotificationsHandler050a0587b7544547bf325f094a3db834/Role/DefaultPolicy/Resource`,
-                ],
+                bucketNotifPaths,
                 [
                     {
                         id: "AwsSolutions-IAM4",

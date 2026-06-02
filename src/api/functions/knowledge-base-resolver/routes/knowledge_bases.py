@@ -59,7 +59,9 @@ START_PIPELINE_QUEUE_ARN = os.environ["START_PIPELINE_QUEUE_ARN"]
 # KB-related environment variables (always present when Lambda is deployed)
 KB_INVENTORY_TABLE_NAME = os.environ["KB_INVENTORY_TABLE_NAME"]
 KB_ROLE_ARN = os.environ["KB_ROLE_ARN"]
-COLLECTION_ID = os.environ["COLLECTION_ID"]
+# COLLECTION_ID is only set when using OPENSEARCH_SERVERLESS vector store.
+# When using S3_VECTORS it will be None and dynamic KB creation from the UI is disabled.
+COLLECTION_ID = os.environ.get("COLLECTION_ID")
 # ------------------------------------------------------------------------ #
 
 
@@ -494,9 +496,15 @@ def create_knowledge_base(user_id: str, kbName: str, props: str) -> Dict:
         logger.exception(err)
         return {"status": StatusResponse.UNKNOWN_ERROR.value}
 
+    if not COLLECTION_ID:
+        logger.error(
+            "COLLECTION_ID not configured — dynamic KB creation requires OPENSEARCH_SERVERLESS vector store type."
+        )
+        return {"status": StatusResponse.SERVICE_ERROR.value}
+
     logger.info("Initializing open search serverless client...")
     index_manager = IndexManager(
-        collection_id=COLLECTION_ID,  # type: ignore[arg-type]
+        collection_id=COLLECTION_ID,
         aws_region=AWS_REGION,
         logger=logger,
     )
@@ -665,15 +673,20 @@ def delete_knowledge_base(user_id: str, kbId: str) -> Dict:
 
             logger.info(f"Deleted Knowledge Base {kbId}")
 
-            index_manager = IndexManager(
-                collection_id=COLLECTION_ID,
-                aws_region=AWS_REGION,
-                logger=logger,
-            )
-            successful_index_delete = index_manager.delete_index(vector_index_name)
-            logger.info(
-                f"Deleted aoss index {vector_index_name} ? {successful_index_delete}"
-            )
+            if COLLECTION_ID:
+                index_manager = IndexManager(
+                    collection_id=COLLECTION_ID,
+                    aws_region=AWS_REGION,
+                    logger=logger,
+                )
+                successful_index_delete = index_manager.delete_index(vector_index_name)
+                logger.info(
+                    f"Deleted aoss index {vector_index_name} ? {successful_index_delete}"
+                )
+            else:
+                logger.info(
+                    "Skipping OSS index deletion — COLLECTION_ID not configured (S3 Vectors mode)."
+                )
             eventbridge_rules = []
 
             for ds_id in data_source_ids:

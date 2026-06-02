@@ -81,7 +81,6 @@ export class KnowledgeBaseOps extends Construct {
             props.dataBucket &&
             props.queueStartPipeline &&
             props.kbInventoryTable &&
-            props.vectorCollection &&
             props.kbRole
         ) {
             const logGroup = new logs.LogGroup(this, "KnowledgeBaseResolverLogGroup", {
@@ -105,7 +104,9 @@ export class KnowledgeBaseOps extends Construct {
                     DOCUMENT_TABLE_NAME: props.documentTable.tableName,
                     KB_INVENTORY_TABLE_NAME: props.kbInventoryTable.tableName,
                     KB_ROLE_ARN: props.kbRole.roleArn,
-                    COLLECTION_ID: props.vectorCollection.collectionId,
+                    ...(props.vectorCollection
+                        ? { COLLECTION_ID: props.vectorCollection.collectionId }
+                        : {}),
                     DATA_BUCKET_ARN: props.dataBucket.bucketArn,
                     START_PIPELINE_QUEUE_ARN: props.queueStartPipeline.queueArn,
                     STACK_NAME: transformedTags.Stack || "aca",
@@ -118,45 +119,48 @@ export class KnowledgeBaseOps extends Construct {
             });
 
             // Permissions
-            lambdaResolver.addToRolePolicy(
-                new iam.PolicyStatement({
-                    actions: ["aoss:APIAccessAll"],
-                    resources: [props.vectorCollection.collectionArn],
-                }),
-            );
+            if (props.vectorCollection) {
+                lambdaResolver.addToRolePolicy(
+                    new iam.PolicyStatement({
+                        actions: ["aoss:APIAccessAll"],
+                        resources: [props.vectorCollection.collectionArn],
+                    }),
+                );
+
+                new oss.CfnAccessPolicy(this, "ManageIndexPolicyFromLambda", {
+                    name: `${prefix}-pol-from-lambda`.substring(0, 32),
+                    type: "data",
+                    policy: JSON.stringify([
+                        {
+                            Rules: [
+                                {
+                                    Resource: [`index/${props.vectorCollection.collectionName}/*`],
+                                    Permission: [
+                                        "aoss:DescribeIndex",
+                                        "aoss:CreateIndex",
+                                        "aoss:DeleteIndex",
+                                    ],
+                                    ResourceType: "index",
+                                },
+                                {
+                                    Resource: [`collection/${props.vectorCollection.collectionName}`],
+                                    Permission: ["aoss:DescribeCollectionItems"],
+                                    ResourceType: "collection",
+                                },
+                            ],
+                            Principal: [lambdaResolver.role!.roleArn],
+                            Description: "Accessing from Lambda function",
+                        },
+                    ]),
+                });
+            }
+
             lambdaResolver.addToRolePolicy(
                 new iam.PolicyStatement({
                     actions: ["iam:PassRole"],
                     resources: [props.kbRole.roleArn],
                 }),
             );
-
-            new oss.CfnAccessPolicy(this, "ManageIndexPolicyFromLambda", {
-                name: `${prefix}-pol-from-lambda`.substring(0, 32),
-                type: "data",
-                policy: JSON.stringify([
-                    {
-                        Rules: [
-                            {
-                                Resource: [`index/${props.vectorCollection.collectionName}/*`],
-                                Permission: [
-                                    "aoss:DescribeIndex",
-                                    "aoss:CreateIndex",
-                                    "aoss:DeleteIndex",
-                                ],
-                                ResourceType: "index",
-                            },
-                            {
-                                Resource: [`collection/${props.vectorCollection.collectionName}`],
-                                Permission: ["aoss:DescribeCollectionItems"],
-                                ResourceType: "collection",
-                            },
-                        ],
-                        Principal: [lambdaResolver.role!.roleArn],
-                        Description: "Accessing from Lambda function",
-                    },
-                ]),
-            });
 
             lambdaResolver.addToRolePolicy(
                 new iam.PolicyStatement({

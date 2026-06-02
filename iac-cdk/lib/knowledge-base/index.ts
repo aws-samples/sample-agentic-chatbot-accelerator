@@ -7,6 +7,7 @@ import {
     bedrock,
     opensearchserverless as oss,
     opensearch_vectorindex as osvi,
+    s3vectors,
 } from "@cdklabs/generative-ai-cdk-constructs";
 import * as cdk from "aws-cdk-lib";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
@@ -52,7 +53,8 @@ interface VectorKnowledgeBaseProps {
  * @property {dynamodb.Table} kbInventoryTable - DynamoDB table for KB inventory
  * @property {sqs.Queue} queueSyncPipeline - SQS queue for sync operations
  * @property {lambda.Function} funcStartSync - Lambda function for starting sync
- * @property {oss.VectorCollection} vectorCollection - OpenSearch Serverless vector collection
+ * @property {oss.VectorCollection} [vectorCollection] - OpenSearch Serverless vector collection (only when vectorStoreType="OPENSEARCH_SERVERLESS")
+ * @property {s3vectors.VectorBucket} [s3VectorBucket] - S3 Vectors bucket (only when vectorStoreType="S3_VECTORS")
  * @property {iam.Role} kbRole - IAM role for the Knowledge Base
  */
 export class VectorKnowledgeBase extends Construct {
@@ -61,7 +63,8 @@ export class VectorKnowledgeBase extends Construct {
     public readonly kbInventoryTable: dynamodb.Table;
     public readonly queueSyncPipeline: sqs.Queue;
     public readonly funcStartSync: lambda.Function;
-    public readonly vectorCollection: oss.VectorCollection;
+    public readonly vectorCollection?: oss.VectorCollection;
+    public readonly s3VectorBucket?: s3vectors.VectorBucket;
     public readonly kbRole: iam.Role;
 
     constructor(scope: Construct, id: string, props: VectorKnowledgeBaseProps) {
@@ -75,16 +78,8 @@ export class VectorKnowledgeBase extends Construct {
 
         const prefix = generatePrefix(scope);
         const kbName = "kb";
-
-        // Create resources
-        this.vectorCollection = this.createOssVectorStore(prefix);
-        this.kbInventoryTable = this.createInventoryTable(prefix);
-        [this.queueSyncPipeline, this.funcStartSync] = this.createSyncQueue(
-            props.shared,
-            prefix,
-            this.kbInventoryTable,
-        );
-        this.kbRole = this.createKbRole(prefix, props.dataSourceBucket, this.vectorCollection);
+        const vectorStoreType =
+            props.knowledgeBaseParameters.vectorStoreType ?? "OPENSEARCH_SERVERLESS";
 
         const embeddingModelConfig = props.knowledgeBaseParameters.embeddingModel;
 
@@ -100,30 +95,82 @@ export class VectorKnowledgeBase extends Construct {
             vectorDimensions: embeddingModelConfig.vectorDimension,
         });
 
-        const vectorField = "vector-field";
-        const indexName = `${prefix}-${kbName}-index`;
-        const vectorIndex = new osvi.VectorIndex(this, "vectorIndex", {
-            collection: this.vectorCollection,
-            indexName: indexName,
-            vectorField: vectorField,
-            vectorDimensions: embeddingModelConfig.vectorDimension,
-            mappings: [],
-            precision: "float",
-            distanceType: "l2",
-        });
+        // Per-backend resource creation
+        this.kbInventoryTable = this.createInventoryTable(prefix);
+        [this.queueSyncPipeline, this.funcStartSync] = this.createSyncQueue(
+            props.shared,
+            prefix,
+            this.kbInventoryTable,
+        );
 
-        this.knowledgeBase = new bedrock.VectorKnowledgeBase(this, "knowledgeBase", {
-            embeddingsModel: embeddingModel,
-            name: `${prefix}-${kbName}`,
-            vectorStore: this.vectorCollection,
-            vectorIndex: vectorIndex,
-            vectorField: vectorField,
-            indexName: indexName,
-            description:
-                props.knowledgeBaseParameters.description ||
-                "Knowledge Base for searching helpful information.",
-            existingRole: this.kbRole,
-        });
+        if (vectorStoreType === "S3_VECTORS") {
+            const s3VectorBucket = new s3vectors.VectorBucket(this, "S3VectorBucket", {
+                vectorBucketName: `${prefix.toLowerCase().replace(/[^a-z0-9-]/g, "")}-kb-vectors`,
+            });
+            this.s3VectorBucket = s3VectorBucket;
+
+            const s3VectorIndex = new s3vectors.VectorIndex(this, "s3VectorIndex", {
+                vectorBucket: s3VectorBucket,
+                vectorIndexName: `${prefix}-${kbName}-index`,
+                dimension: embeddingModelConfig.vectorDimension,
+                distanceMetric: s3vectors.VectorIndexDistanceMetric.COSINE,
+                nonFilterableMetadataKeys: ["AMAZON_BEDROCK_TEXT"],
+            });
+
+            this.kbRole = this.createKbRoleForS3Vectors(prefix, props.dataSourceBucket);
+
+            // The s3vectors integration handles bucket/index grants automatically when
+            // the construct creates the role. Here we pass an existingRole, so wire the
+            // grants explicitly to keep parity with the OSS branch.
+            s3VectorIndex.grant(
+                this.kbRole,
+                "s3vectors:GetIndex",
+                "s3vectors:QueryVectors",
+                "s3vectors:PutVectors",
+            );
+
+            this.knowledgeBase = new bedrock.VectorKnowledgeBase(this, "knowledgeBase", {
+                embeddingsModel: embeddingModel,
+                name: `${prefix}-${kbName}`,
+                vectorStore: s3VectorIndex,
+                description:
+                    props.knowledgeBaseParameters.description ||
+                    "Knowledge Base for searching helpful information.",
+                existingRole: this.kbRole,
+            });
+        } else {
+            this.vectorCollection = this.createOssVectorStore(prefix);
+            this.kbRole = this.createKbRole(
+                prefix,
+                props.dataSourceBucket,
+                this.vectorCollection,
+            );
+
+            const vectorField = "vector-field";
+            const indexName = `${prefix}-${kbName}-index`;
+            const vectorIndex = new osvi.VectorIndex(this, "vectorIndex", {
+                collection: this.vectorCollection,
+                indexName: indexName,
+                vectorField: vectorField,
+                vectorDimensions: embeddingModelConfig.vectorDimension,
+                mappings: [],
+                precision: "float",
+                distanceType: "l2",
+            });
+
+            this.knowledgeBase = new bedrock.VectorKnowledgeBase(this, "knowledgeBase", {
+                embeddingsModel: embeddingModel,
+                name: `${prefix}-${kbName}`,
+                vectorStore: this.vectorCollection,
+                vectorIndex: vectorIndex,
+                vectorField: vectorField,
+                indexName: indexName,
+                description:
+                    props.knowledgeBaseParameters.description ||
+                    "Knowledge Base for searching helpful information.",
+                existingRole: this.kbRole,
+            });
+        }
 
         let chunkingStrategy = undefined;
         let chunkingStrategyProps = undefined;
@@ -304,6 +351,72 @@ export class VectorKnowledgeBase extends Construct {
                 resources: [this.knowledgeBase.knowledgeBaseArn],
             }),
         );
+    }
+
+    private createKbRoleForS3Vectors(prefix: string, bucket: s3.Bucket): iam.Role {
+        const kbRole = new iam.Role(this, "KnowledgeBaseRole", {
+            roleName: `${prefix}-kbRole`,
+            assumedBy: new iam.ServicePrincipal("bedrock.amazonaws.com").withConditions({
+                StringEquals: {
+                    "aws:SourceAccount": cdk.Aws.ACCOUNT_ID,
+                },
+                ArnLike: {
+                    "aws:SourceArn": `arn:aws:bedrock:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:knowledge-base/*`,
+                },
+            }),
+        });
+
+        kbRole.addToPolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: ["bedrock:CreateKnowledgeBase"],
+                resources: ["*"],
+            }),
+        );
+
+        kbRole.addToPolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: [
+                    "bedrock:DeleteKnowledgeBase",
+                    "bedrock:TagResource",
+                    "bedrock:UpdateKnowledgeBase",
+                ],
+                resources: [
+                    `arn:${cdk.Aws.PARTITION}:bedrock:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:knowledge-base/*`,
+                ],
+            }),
+        );
+
+        kbRole.addToPolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: ["iam:PassRole"],
+                resources: [`arn:aws:iam::${cdk.Aws.ACCOUNT_ID}:role/${prefix}-kbRole`],
+            }),
+        );
+
+        kbRole.addToPolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: ["bedrock:InvokeModel"],
+                resources: [`arn:aws:bedrock:${cdk.Aws.REGION}::foundation-model/*`],
+            }),
+        );
+
+        kbRole.addToPolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: ["s3:GetBucket*", "s3:GetObject*", "s3:List*"],
+                resources: [
+                    `arn:aws:s3:::${bucket.bucketName}`,
+                    `arn:aws:s3:::${bucket.bucketName}/*`,
+                ],
+            }),
+        );
+
+        // s3vectors:* perms are granted by the VectorIndex.grant() call site.
+        return kbRole;
     }
 
     private createOssVectorStore(prefix: string): oss.VectorCollection {
