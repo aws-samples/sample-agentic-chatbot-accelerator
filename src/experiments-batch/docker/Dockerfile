@@ -1,3 +1,4 @@
+# checkov:skip=CKV_DOCKER_2:AWS Batch job container — HEALTHCHECK doesn't apply (job lifecycle managed by Batch)
 FROM public.ecr.aws/docker/library/python:3.13-slim
 WORKDIR /app
 

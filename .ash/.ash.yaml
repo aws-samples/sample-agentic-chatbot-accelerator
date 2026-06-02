@@ -50,6 +50,8 @@ global_settings:
       reason: 'Python virtual environment'
     - path: '.ruff_cache/'
       reason: 'Ruff cache'
+    - path: '**/.ruff_cache/**'
+      reason: 'Ruff cache (glob — high-entropy hashes in CACHEDIR.TAG, not secrets)'
 
     # ASH itself
     - path: '.ash/'
