@@ -23,6 +23,7 @@ resource "local_file" "aws_exports" {
   content = jsonencode(merge(
     {
       aws_project_region           = data.aws_region.current.id
+      aws_account_id               = data.aws_caller_identity.current.account_id
       aws_cognito_region           = data.aws_region.current.id
       aws_user_pools_id            = var.user_pool_id
       aws_user_pools_web_client_id = var.user_pool_client_id
