@@ -48,7 +48,7 @@ src/api/functions/notify-runtime-update/graphql.ts
 CustomMcpServer/
 
 # ASH scan results
-.ash/
+.ash/ash_output
 
 # Terraform
 **/.terraform/*
