@@ -75,6 +75,45 @@ As shown in the GIF, users can also manage document metadata. For example, they 
 
 Users can create new Bedrock Knowledge Bases to attach to agents. This allows users to test different chunking and vector embedding options. Knowledge bases created by a user are only visible to that user by default. Note that the CDK will clean up Bedrock Knowledge Bases created from the application upon destruction using a [custom cleanup Lambda function](../../src/cleanup/functions/cleanup-handler/index.py).
 
+## Vector Store Backend
+
+The CDK-provisioned knowledge base supports two backends, selected via the `vectorStoreType` field on `knowledgeBaseParameters` in `bin/config.yaml`:
+
+| Value | Resource provisioned | When to use |
+|-------|---------------------|-------------|
+| `OPENSEARCH_SERVERLESS` *(default)* | Amazon OpenSearch Serverless vector collection + index | Higher-QPS workloads, hybrid search, or when you already operate OSS |
+| `S3_VECTORS` | Amazon S3 Vectors bucket + index (cosine distance) | Low-QPS document KBs — dramatically cheaper than OSS for typical demo/PoC traffic |
+
+```yaml
+knowledgeBaseParameters:
+    vectorStoreType: S3_VECTORS    # omit or set to OPENSEARCH_SERVERLESS for the default
+    chunkingStrategy:
+        type: HIERARCHICAL
+        # ...
+    embeddingModel:
+        modelId: amazon.titan-embed-text-v2:0
+        vectorDimension: 1024
+    dataSourcePrefix: knowledge-base-data-source
+```
+
+The Terraform mirror exposes the same option as `vector_store_type` on `knowledge_base_parameters` in `terraform.tfvars`.
+
+The setting only affects the **default knowledge base provisioned by the stack**. Knowledge bases created from the UI ([Creating New Knowledge Bases](#creating-new-knowledge-bases)) are not affected by this flag.
+
+### S3 Vectors limitations
+
+S3 Vectors is optimized for **cost over latency** and is best suited for infrequent-query RAG workloads. Before switching from OpenSearch Serverless, be aware of the following constraints (per the [Bedrock Knowledge Bases documentation](https://docs.aws.amazon.com/bedrock/latest/userguide/knowledge-base-setup.html) and [S3 Vectors limits](https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-vectors-limitations.html)):
+
+- **Hybrid search is not supported.** Per AWS: *"Hybrid search is only supported for Amazon RDS, Amazon OpenSearch Serverless, and MongoDB vector stores."* If you set `overrideSearchType: HYBRID` on a query against an S3 Vectors KB, Bedrock silently falls back to semantic search.
+- **Binary vector embeddings are not supported** — only floating-point (`float32`). Only OpenSearch (Serverless and Managed) supports binary vectors.
+- **Metadata filtering operators are limited.** `startsWith` and `stringContains` are not supported on S3 Vectors. The other operators (`equals`, `notEquals`, range, `in`, `notIn`, `listContains`) work, with up to 2 KB filterable metadata + 10 non-filterable metadata keys per vector.
+- **Per-vector metadata size cap (Bedrock KB-specific)**: up to **1 KB** of custom metadata and **35 metadata keys** per vector. Hierarchical chunking with very large parent/child token sizes can exceed this and fail ingestion — the parent–child relationships are stored as non-filterable metadata.
+- **Distance metrics**: Cosine or Euclidean only (the CDK construct provisions Cosine).
+- **Throughput ceiling**: combined PutVectors + DeleteVectors capped at 1,000 req/s per index, with up to 2,500 vectors written/deleted per second per index. Fine for batch ingestion; not for high-write streaming use cases.
+- **Reranking still works** — it's applied post-retrieval and is independent of the vector backend (see [Reranking Configuration](#reranking-configuration) below).
+
+> ⚠️ **Switching `vectorStoreType` on an existing deployment replaces the underlying vector store**, so previously ingested embeddings are dropped and the knowledge base must be re-synced from `dataSourcePrefix`. There is no in-place migration path between vector stores in Bedrock — the recommended approach is to redeploy and re-ingest.
+
 ## Reranking Configuration
 
 Reranking improves retrieval relevance by re-scoring documents after the initial vector search. When enabled, the system first retrieves a larger set of candidate documents using vector similarity, then applies a reranking model to reorder them based on semantic relevance to the query.

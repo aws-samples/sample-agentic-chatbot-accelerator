@@ -100,7 +100,7 @@ Enabled when `knowledgeBaseParameters` and `dataProcessingParameters` are config
 |----------|------|
 | Amazon S3 (Document Bucket) | Document upload storage |
 | Step Function — Document Processing | Orchestrates chunking, embedding, and ingestion into Knowledge Base |
-| Amazon Bedrock Knowledge Base | Semantic/hybrid search for RAG |
+| Amazon Bedrock Knowledge Base | Semantic/hybrid search for RAG. Backend selectable via `vectorStoreType`: Amazon OpenSearch Serverless (default, supports hybrid search) or Amazon S3 Vectors (cheaper, semantic-only) — see [Vector Store Backend](./kb-management.md#vector-store-backend) |
 | Lambda functions | Document processing steps (chunking, metadata extraction) |
 
 ## Observability & Monitoring
