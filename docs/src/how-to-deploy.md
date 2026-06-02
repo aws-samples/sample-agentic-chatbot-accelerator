@@ -48,7 +48,7 @@ The CDK stack is configured through the `SystemConfig` interface defined in [`ia
 - **enableGeoRestrictions**: Boolean flag for geographic access restrictions
 - **allowedGeoRegions**: Array of allowed geographic regions when restrictions are enabled
 - **dataProcessingParameters**: *(Optional)* Configuration for data processing workflows including file prefixes and language settings. If omitted, the data processing pipeline will not be deployed.
-- **knowledgeBaseParameters**: *(Optional)* Knowledge base configuration including chunking strategies (FIXED_SIZE, HIERARCHICAL, SEMANTIC, NONE), embedding models, and descriptions. If omitted, the Knowledge Base feature will not be deployed.
+- **knowledgeBaseParameters**: *(Optional)* Knowledge base configuration including chunking strategies (FIXED_SIZE, HIERARCHICAL, SEMANTIC, NONE), embedding models, descriptions, and the optional `vectorStoreType` (`OPENSEARCH_SERVERLESS` (default) or `S3_VECTORS`). See [Vector Store Backend](./kb-management.md#vector-store-backend) for tradeoffs. If omitted, the Knowledge Base feature will not be deployed.
 - **supportedModels**: Map of foundation model names to Bedrock model identifiers used by agents, with [REGION-PREFIX] placeholder for cross-region inference profiles
 - **rerankingModels**: *(Optional)* Map of reranking model names to Bedrock model identifiers for improving knowledge base retrieval relevance. Supported models include Cohere Rerank 3.5 and Amazon Rerank 1.0.
 - **toolRegistry**: Array of available tools with name, description, and sub-agent invocation flags
