@@ -133,7 +133,8 @@ tf-checkov:
 
 # Clean Terraform build artifacts
 tf-clean:
-	rm -rf iac-terraform/build iac-terraform/.terraform
+	rm -rf iac-terraform/build
+	find iac-terraform -type d -name .terraform -exec rm -rf {} +
 
 # Full validation (format + validate + checkov)
 tf-lint: tf-fmt tf-validate tf-checkov
