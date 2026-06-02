@@ -122,11 +122,16 @@ export class VectorKnowledgeBase extends Construct {
             // The s3vectors integration handles bucket/index grants automatically when
             // the construct creates the role. Here we pass an existingRole, so wire the
             // grants explicitly to keep parity with the OSS branch.
+            // Bedrock validates the role at CreateKnowledgeBase time by calling
+            // GetVectors against the index, so all five vector ops must be granted —
+            // not just GetIndex/QueryVectors/PutVectors.
             s3VectorIndex.grant(
                 this.kbRole,
                 "s3vectors:GetIndex",
-                "s3vectors:QueryVectors",
+                "s3vectors:GetVectors",
+                "s3vectors:ListVectors",
                 "s3vectors:PutVectors",
+                "s3vectors:QueryVectors",
             );
 
             this.knowledgeBase = new bedrock.VectorKnowledgeBase(this, "knowledgeBase", {
