@@ -5,61 +5,45 @@ fail_on_findings: true
 global_settings:
   severity_threshold: MEDIUM
   ignore_paths:
-    # Terraform downloaded modules / state / build artifacts
+    # Terraform state / downloaded modules
     - path: 'iac-terraform/.terraform/'
       reason: 'Downloaded Terraform modules'
     - path: 'iac-terraform/terraform.tfstate'
       reason: 'Terraform state file'
     - path: 'iac-terraform/terraform.tfstate.backup'
       reason: 'Terraform state backup'
-    - path: 'iac-terraform/build/'
-      reason: 'Terraform build artifacts (zips for CodeBuild)'
 
-    # CDK synth output and node_modules
+    # Lambda build artifacts (vendored Python deps zipped for upload, not source)
+    - path: '**/iac-terraform/build/**'
+      reason: 'Terraform Lambda package build dirs — vendored third-party deps'
+    - path: '**/iac-terraform/modules/knowledge_base/build/**'
+      reason: 'create-vector-index Lambda package — vendored opensearchpy/urllib3/google.protobuf'
+
+    # CDK synth output, Lambda asset bundles, and node_modules
     - path: 'iac-cdk/cdk.out/'
       reason: 'CDK synthesized templates'
     - path: '**/cdk.out/asset.*/**'
       reason: 'CDK Lambda asset bundles — vendored third-party Python deps (ASH default-includes these; we override)'
-    - path: 'iac-cdk/node_modules/'
-      reason: 'Third-party dependencies'
-    - path: 'node_modules/'
-      reason: 'Third-party dependencies'
     - path: '**/node_modules/**'
-      reason: 'Third-party dependencies (nested)'
-
-    # Lambda build artifacts (vendored Python deps zipped for upload)
-    - path: 'iac-terraform/build/'
-      reason: 'Terraform Lambda package build dir — vendored third-party deps'
-    - path: '**/iac-terraform/build/**'
-      reason: 'Terraform Lambda package build dir (glob)'
-    - path: 'iac-terraform/modules/knowledge_base/build/'
-      reason: 'create-vector-index Lambda package — vendored opensearchpy/urllib3/google.protobuf'
-    - path: '**/iac-terraform/modules/knowledge_base/build/**'
-      reason: 'create-vector-index Lambda package (glob)'
+      reason: 'Third-party dependencies'
 
     # React frontend (covered by npm-audit, not file scanners)
     - path: 'src/user-interface/react-app/dist/'
       reason: 'Vite build output'
-    - path: 'src/user-interface/react-app/node_modules/'
-      reason: 'Frontend dependencies — scanned by npm-audit'
 
-    # Python tooling
-    - path: '.venv/'
+    # Python tooling caches and venvs
+    - path: '**/.venv/**'
       reason: 'Python virtual environment'
-    - path: 'venv/'
+    - path: '**/venv/**'
       reason: 'Python virtual environment'
-    - path: '.ruff_cache/'
-      reason: 'Ruff cache'
     - path: '**/.ruff_cache/**'
-      reason: 'Ruff cache (glob — high-entropy hashes in CACHEDIR.TAG, not secrets)'
+      reason: 'Ruff cache — high-entropy hashes in CACHEDIR.TAG, not secrets'
 
     # ASH itself
     - path: '.ash/'
-      reason: 'ASH working directory'
-    - path: 'ash_output/'
-      reason: 'ASH working directory (container path)'
+      reason: 'ASH working directory and config'
     - path: '**/ash_output/**'
-      reason: 'ASH working directory (glob)'
+      reason: 'ASH scan output (also covers container path)'
 
     # Repo caches and docs assets
     - path: 'cache/'

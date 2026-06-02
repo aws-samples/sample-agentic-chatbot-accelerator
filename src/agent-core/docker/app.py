@@ -16,7 +16,7 @@ from opentelemetry.context import attach
 from shared.agentcore_memory import create_session_manager
 from shared.mcp_client import MCPClientManager
 from shared.session_history import save_conversation_exchange
-from shared.utils import enrich_trajectory
+from shared.utils import enrich_trajectory, get_uvicorn_host
 from src.data_source import parse_configuration
 from src.factory import create_agent
 from src.registry import AVAILABLE_MCPS
@@ -190,7 +190,7 @@ async def invocations(request: Request):
                                 "structuredOutput"
                             ] = raw_result.structured_output.model_dump_json()
                         except Exception as exc:
-                            logger.debug(
+                            logger.warning(
                                 "structured_output serialization failed",
                                 extra={"rawErrorMessage": str(exc)},
                             )
@@ -716,7 +716,7 @@ async def _handle_voice_mode(
         try:
             await voice_agent.stop()
         except Exception as exc:
-            logger.debug(
+            logger.warning(
                 "voice_agent.stop() failed during cleanup",
                 extra={"rawErrorMessage": str(exc)},
             )
@@ -832,5 +832,4 @@ def _initialize_voice_tools(configuration):
 if __name__ == "__main__":
     import uvicorn
 
-    host = "0.0.0.0" if os.getenv("DOCKER_CONTAINER") else "127.0.0.1"  # nosec B104
-    uvicorn.run(app, host=host, port=8080)
+    uvicorn.run(app, host=get_uvicorn_host(), port=8080)

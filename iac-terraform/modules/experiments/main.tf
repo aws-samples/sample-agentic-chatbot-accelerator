@@ -159,10 +159,10 @@ resource "aws_route_table_association" "private" {
 
 # VPC Flow Logs
 resource "aws_cloudwatch_log_group" "vpc_flow_logs" {
-  # checkov:skip=CKV_AWS_338:Accelerator/POV — 7-day retention keeps flow log costs reasonable
+  # checkov:skip=CKV_AWS_338:retention controlled by var.log_retention_days; default 30d is the accelerator/POV value
   count             = local.use_existing_vpc ? 0 : 1
   name              = "/aws/vpc/${local.name_prefix}-experiments-flow-logs"
-  retention_in_days = 7
+  retention_in_days = var.log_retention_days
   kms_key_id        = var.kms_key_arn
 
   tags = merge(var.tags, {
@@ -314,9 +314,9 @@ resource "aws_batch_job_queue" "experiments" {
 
 # Batch Job Log Group
 resource "aws_cloudwatch_log_group" "batch_job" {
-  # checkov:skip=CKV_AWS_338:Accelerator/POV — 7-day retention sufficient for short-lived Batch jobs
+  # checkov:skip=CKV_AWS_338:retention controlled by var.log_retention_days; default 30d is the accelerator/POV value
   name              = "/aws/batch/${local.name_prefix}-experiments"
-  retention_in_days = 7
+  retention_in_days = var.log_retention_days
   kms_key_id        = var.kms_key_arn
 
   tags = merge(var.tags, {

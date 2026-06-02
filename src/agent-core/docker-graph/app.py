@@ -13,6 +13,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from opentelemetry import baggage
 from opentelemetry.context import attach
 from shared.session_history import save_conversation_exchange
+from shared.utils import get_uvicorn_host
 from src.data_source import parse_configuration
 from src.factory import (
     compile_graph,
@@ -297,5 +298,4 @@ async def graph_text_chat(websocket: WebSocket):
 if __name__ == "__main__":
     import uvicorn
 
-    host = "0.0.0.0" if os.getenv("DOCKER_CONTAINER") else "127.0.0.1"  # nosec B104
-    uvicorn.run(app, host=host, port=8080)
+    uvicorn.run(app, host=get_uvicorn_host(), port=8080)

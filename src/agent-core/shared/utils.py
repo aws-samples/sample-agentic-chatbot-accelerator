@@ -7,10 +7,22 @@
 # ---------------------------------------------------------------------------- #
 import codecs
 import json
+import os
 import re
 from typing import Any, Optional, Tuple
 
 from pydantic import BaseModel, ValidationError
+
+
+def get_uvicorn_host() -> str:
+    """Return the bind address for the uvicorn server.
+
+    AgentCore-hosted containers must listen on all interfaces so the platform
+    can route traffic to them; everywhere else (local dev) we bind loopback.
+    Centralized so all four agent-pattern entrypoints share one decision and
+    one bandit suppression.
+    """
+    return "0.0.0.0" if os.getenv("DOCKER_CONTAINER") else "127.0.0.1"  # nosec B104
 
 
 def deserialize(value: str, object_type: type[BaseModel]) -> BaseModel:

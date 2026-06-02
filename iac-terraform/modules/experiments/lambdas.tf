@@ -14,9 +14,9 @@ Creates:
 # -----------------------------------------------------------------------------
 
 resource "aws_cloudwatch_log_group" "experiment_resolver" {
-  # checkov:skip=CKV_AWS_338:Accelerator/POV — 30-day retention sufficient for dev workloads
+  # checkov:skip=CKV_AWS_338:retention controlled by var.log_retention_days; default 30d is the accelerator/POV value
   name              = "/aws/lambda/${local.name_prefix}-experiment-resolver"
-  retention_in_days = 30
+  retention_in_days = var.log_retention_days
   kms_key_id        = var.kms_key_arn
 
   tags = merge(var.tags, {
