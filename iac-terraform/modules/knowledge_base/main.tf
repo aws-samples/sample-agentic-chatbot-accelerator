@@ -38,6 +38,15 @@ locals {
 
   # Get the issuer ARN (role ARN without session name for assumed roles)
   terraform_principal_arn = data.aws_iam_session_context.current.issuer_arn
+
+  # Vector store backend selectors. Gates OSS-only resources (collection,
+  # access policies, index-creator Lambda) and the S3 Vectors branch.
+  use_oss        = var.enabled && var.vector_store_type == "OPENSEARCH_SERVERLESS"
+  use_s3_vectors = var.enabled && var.vector_store_type == "S3_VECTORS"
+
+  # S3 Vectors bucket name: lowercase, alnum + hyphens, 3–63 chars.
+  s3_vector_bucket_name = lower(replace("${var.prefix}-kb-vectors", "/[^a-z0-9-]/", ""))
+  s3_vector_index_name  = "${var.prefix}-${local.kb_name}-index"
 }
 
 # ============================================================================
@@ -49,7 +58,7 @@ locals {
 # -----------------------------------------------------------------------------
 
 resource "aws_opensearchserverless_security_policy" "encryption" {
-  count = var.enabled ? 1 : 0
+  count = local.use_oss ? 1 : 0
 
   name        = "${local.collection_name}-enc"
   type        = "encryption"
@@ -71,7 +80,7 @@ resource "aws_opensearchserverless_security_policy" "encryption" {
 # -----------------------------------------------------------------------------
 
 resource "aws_opensearchserverless_security_policy" "network" {
-  count = var.enabled ? 1 : 0
+  count = local.use_oss ? 1 : 0
 
   name        = "${local.collection_name}-net"
   type        = "network"
@@ -133,7 +142,7 @@ resource "aws_iam_role" "kb_role" {
 # -----------------------------------------------------------------------------
 
 resource "aws_opensearchserverless_collection" "vector" {
-  count = var.enabled ? 1 : 0
+  count = local.use_oss ? 1 : 0
 
   name        = local.collection_name
   type        = "VECTORSEARCH"
@@ -153,7 +162,7 @@ resource "aws_opensearchserverless_collection" "vector" {
 # -----------------------------------------------------------------------------
 
 resource "time_sleep" "wait_for_collection" {
-  count = var.enabled ? 1 : 0
+  count = local.use_oss ? 1 : 0
 
   depends_on = [
     aws_opensearchserverless_collection.vector,
@@ -175,44 +184,67 @@ resource "aws_iam_role_policy" "kb_role_policy" {
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "bedrock:InvokeModel",
-          "bedrock:InvokeModelWithResponseStream"
-        ]
-        Resource = "arn:aws:bedrock:${local.region}::foundation-model/${var.embedding_model_id}"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "aoss:APIAccessAll"
-        ]
-        Resource = aws_opensearchserverless_collection.vector[0].arn
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "s3:GetObject",
-          "s3:ListBucket"
-        ]
-        Resource = [
-          var.data_bucket_arn,
-          "${var.data_bucket_arn}/*"
-        ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "kms:Decrypt"
-        ]
-        Resource = [var.kms_key_arn]
-      }
-    ]
+    Statement = concat(
+      [
+        {
+          Effect = "Allow"
+          Action = [
+            "bedrock:InvokeModel",
+            "bedrock:InvokeModelWithResponseStream"
+          ]
+          Resource = "arn:aws:bedrock:${local.region}::foundation-model/${var.embedding_model_id}"
+        },
+        {
+          Effect = "Allow"
+          Action = [
+            "s3:GetObject",
+            "s3:ListBucket"
+          ]
+          Resource = [
+            var.data_bucket_arn,
+            "${var.data_bucket_arn}/*"
+          ]
+        },
+        {
+          Effect = "Allow"
+          Action = [
+            "kms:Decrypt"
+          ]
+          Resource = [var.kms_key_arn]
+        }
+      ],
+      local.use_oss ? [
+        {
+          Effect = "Allow"
+          Action = [
+            "aoss:APIAccessAll"
+          ]
+          Resource = aws_opensearchserverless_collection.vector[0].arn
+        }
+      ] : [],
+      local.use_s3_vectors ? [
+        # Bedrock KB validates the role at CreateKnowledgeBase time by calling
+        # GetVectors against the index, so all five vector ops must be granted —
+        # not just the GetIndex/QueryVectors/PutVectors set the CDK construct grants.
+        {
+          Effect = "Allow"
+          Action = [
+            "s3vectors:GetIndex",
+            "s3vectors:GetVectors",
+            "s3vectors:ListVectors",
+            "s3vectors:PutVectors",
+            "s3vectors:QueryVectors"
+          ]
+          Resource = aws_s3vectors_index.main[0].index_arn
+        }
+      ] : []
+    )
   })
 
-  depends_on = [aws_opensearchserverless_collection.vector]
+  depends_on = [
+    aws_opensearchserverless_collection.vector,
+    aws_s3vectors_index.main
+  ]
 }
 
 # ============================================================================
@@ -224,7 +256,7 @@ resource "aws_iam_role_policy" "kb_role_policy" {
 # -----------------------------------------------------------------------------
 
 resource "aws_iam_role" "vector_index_lambda_role" {
-  count = var.enabled ? 1 : 0
+  count = local.use_oss ? 1 : 0
 
   name = "${var.prefix}-vectorIndexLambdaRole"
 
@@ -245,7 +277,7 @@ resource "aws_iam_role" "vector_index_lambda_role" {
 }
 
 resource "aws_iam_role_policy" "vector_index_lambda_policy" {
-  count = var.enabled ? 1 : 0
+  count = local.use_oss ? 1 : 0
 
   name = "${var.prefix}-vectorIndexLambdaPolicy"
   role = aws_iam_role.vector_index_lambda_role[0].id
@@ -281,7 +313,7 @@ resource "aws_iam_role_policy" "vector_index_lambda_policy" {
 # -----------------------------------------------------------------------------
 
 resource "aws_opensearchserverless_access_policy" "data" {
-  count = var.enabled ? 1 : 0
+  count = local.use_oss ? 1 : 0
 
   name        = "${local.collection_name}-data"
   type        = "data"
@@ -330,7 +362,7 @@ resource "aws_lambda_function" "create_vector_index" {
   # checkov:skip=CKV_AWS_116:DLQ not needed - one-time initialization function
   # checkov:skip=CKV_AWS_117:VPC not required for OpenSearch Serverless access
   # checkov:skip=CKV_AWS_272:Code signing not required for internal functions
-  count = var.enabled ? 1 : 0
+  count = local.use_oss ? 1 : 0
 
   function_name = "${var.prefix}-createVectorIndex"
   description   = "Creates vector index in OpenSearch Serverless collection"
@@ -376,7 +408,7 @@ resource "aws_lambda_function" "create_vector_index" {
 # -----------------------------------------------------------------------------
 
 data "aws_lambda_invocation" "create_vector_index" {
-  count = var.enabled ? 1 : 0
+  count = local.use_oss ? 1 : 0
 
   function_name = aws_lambda_function.create_vector_index[0].function_name
 
@@ -399,7 +431,7 @@ data "aws_lambda_invocation" "create_vector_index" {
 
 # Verify the Lambda invocation was successful
 resource "null_resource" "verify_vector_index" {
-  count = var.enabled ? 1 : 0
+  count = local.use_oss ? 1 : 0
 
   triggers = {
     lambda_result = data.aws_lambda_invocation.create_vector_index[0].result
@@ -448,23 +480,73 @@ resource "aws_bedrockagent_knowledge_base" "main" {
     }
   }
 
-  storage_configuration {
-    type = "OPENSEARCH_SERVERLESS"
-    opensearch_serverless_configuration {
-      collection_arn    = aws_opensearchserverless_collection.vector[0].arn
-      vector_index_name = local.index_name
-      field_mapping {
-        vector_field   = local.vector_field
-        text_field     = local.text_field
-        metadata_field = local.metadata_field
+  dynamic "storage_configuration" {
+    for_each = local.use_oss ? [1] : []
+    content {
+      type = "OPENSEARCH_SERVERLESS"
+      opensearch_serverless_configuration {
+        collection_arn    = aws_opensearchserverless_collection.vector[0].arn
+        vector_index_name = local.index_name
+        field_mapping {
+          vector_field   = local.vector_field
+          text_field     = local.text_field
+          metadata_field = local.metadata_field
+        }
+      }
+    }
+  }
+
+  # S3 Vectors backend. Best-effort against terraform-provider-aws main —
+  # `s3_vectors_configuration` may need awscc fallback if the SDK provider
+  # hasn't surfaced the block yet. Verify on apply.
+  dynamic "storage_configuration" {
+    for_each = local.use_s3_vectors ? [1] : []
+    content {
+      type = "S3_VECTORS"
+      s3_vectors_configuration {
+        index_arn = aws_s3vectors_index.main[0].index_arn
       }
     }
   }
 
   depends_on = [
     null_resource.verify_vector_index,
-    aws_iam_role_policy.kb_role_policy
+    aws_iam_role_policy.kb_role_policy,
+    aws_s3vectors_index.main
   ]
+
+  tags = var.tags
+}
+
+# ============================================================================
+# S3 Vectors Backend (alternative to OpenSearch Serverless)
+# Only created when var.vector_store_type == "S3_VECTORS".
+# Resource schemas verified against:
+#   github.com/hashicorp/terraform-provider-aws/internal/service/s3vectors/
+# Requires aws provider >= 6.24.0 (vector bucket + index) and >= 6.26.0
+# (metadata_configuration block); current pin "~> 6.0" already permits this.
+# ============================================================================
+
+resource "aws_s3vectors_vector_bucket" "main" {
+  count = local.use_s3_vectors ? 1 : 0
+
+  vector_bucket_name = local.s3_vector_bucket_name
+
+  tags = var.tags
+}
+
+resource "aws_s3vectors_index" "main" {
+  count = local.use_s3_vectors ? 1 : 0
+
+  vector_bucket_name = aws_s3vectors_vector_bucket.main[0].vector_bucket_name
+  index_name         = local.s3_vector_index_name
+  data_type          = "float32"
+  dimension          = var.vector_dimension
+  distance_metric    = "cosine"
+
+  metadata_configuration {
+    non_filterable_metadata_keys = ["AMAZON_BEDROCK_TEXT"]
+  }
 
   tags = var.tags
 }
