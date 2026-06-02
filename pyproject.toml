@@ -41,3 +41,8 @@ line_length = 88  # To match black's default line length
 [tool.ruff]
 select = ["E", "F"]  # Example: select error and flake8 rules
 ignore = ["E501"]
+
+[tool.bandit]
+# Test files use `assert` (B101) idiomatically — pytest never runs with -O
+# so the rewrite-asserts-as-no-op concern doesn't apply here.
+exclude_dirs = ["tests", "**/tests"]

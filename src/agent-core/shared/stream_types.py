@@ -23,8 +23,8 @@ class EStreamEvent(Enum):
     """
 
     STREAM_COMPLETE = "STREAM_COMPLETE"
-    THINKING_TOKEN = "THINKING_TOKEN"
-    FINAL_RESPONSE_TOKEN = "FINAL_RESPONSE_TOKEN"
+    THINKING_TOKEN = "THINKING_TOKEN"  # nosec B105
+    FINAL_RESPONSE_TOKEN = "FINAL_RESPONSE_TOKEN"  # nosec B105
 
 
 class EConversationManagerType(str, Enum):
@@ -161,6 +161,6 @@ class ChatbotAction(Enum):
 
     HEARTBEAT = "heartbeat"
     RUN = "run"
-    ON_THINKING_TOKEN = "on_thinking_token"
-    ON_NEW_LLM_TOKEN = "on_new_llm_token"
+    ON_THINKING_TOKEN = "on_thinking_token"  # nosec B105
+    ON_NEW_LLM_TOKEN = "on_new_llm_token"  # nosec B105
     FINAL_RESPONSE = "final_response"

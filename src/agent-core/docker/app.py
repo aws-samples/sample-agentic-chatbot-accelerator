@@ -189,8 +189,11 @@ async def invocations(request: Request):
                             final_data[
                                 "structuredOutput"
                             ] = raw_result.structured_output.model_dump_json()
-                        except Exception:
-                            pass
+                        except Exception as exc:
+                            logger.debug(
+                                "structured_output serialization failed",
+                                extra={"rawErrorMessage": str(exc)},
+                            )
 
                     final_event = json.dumps(
                         {"action": "final_response", "data": final_data}
@@ -712,8 +715,11 @@ async def _handle_voice_mode(
     finally:
         try:
             await voice_agent.stop()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug(
+                "voice_agent.stop() failed during cleanup",
+                extra={"rawErrorMessage": str(exc)},
+            )
 
 
 def _extract_reasoning(raw_result: "AgentResult") -> str:
