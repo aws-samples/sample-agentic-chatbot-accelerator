@@ -826,7 +826,5 @@ def _initialize_voice_tools(configuration):
 if __name__ == "__main__":
     import uvicorn
 
-    host = (
-        "0.0.0.0" if os.getenv("DOCKER_CONTAINER") else "127.0.0.1"
-    )  # nosec B104 — AgentCore container must listen on all interfaces
+    host = "0.0.0.0" if os.getenv("DOCKER_CONTAINER") else "127.0.0.1"  # nosec B104
     uvicorn.run(app, host=host, port=8080)
