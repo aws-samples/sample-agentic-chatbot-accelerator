@@ -236,6 +236,10 @@ class AgentConfiguration(BaseModel):
     useMemory: bool = False
     skills: list[str] = []
     structuredOutput: Optional[list[StructuredOutputFieldSpec]] = None
+    # Capability description shown to other agents discovering this one over A2A.
+    # Becomes the agent card's `description`, which orchestrators read when
+    # deciding whether to delegate to this sub-agent.
+    description: Optional[str] = None
 
     @model_validator(mode="after")
     def validate_tool_parameters(self):
@@ -558,15 +562,17 @@ class GraphConfiguration(BaseModel):
 class AgentAsToolReference(BaseModel):
     """Reference to a sub-agent runtime exposed as a tool to the orchestrator.
 
+    The orchestrator's A2A client builds tool descriptions from each
+    sub-agent's agent card (populated by the sub-agent's own ``description``
+    field), so this reference only needs to identify which runtime to wire.
+
     Attributes:
         runtimeId: Identifier of the AgentCore runtime to invoke.
         endpoint: Name of the endpoint on the runtime.
-        role: Description of the role this sub-agent fulfils from the orchestrator's perspective.
     """
 
     runtimeId: str = Field(..., min_length=1)
     endpoint: str = Field(..., min_length=1)
-    role: str = Field(..., min_length=1)
 
 
 class AgentsAsToolsConfiguration(BaseModel):

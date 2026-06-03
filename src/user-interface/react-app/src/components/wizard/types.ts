@@ -54,6 +54,8 @@ export interface AgentCoreRuntimeConfiguration {
         reasoningBudget?: number | string;
     };
     instructions: string;
+    /** Capability blurb published in this agent's A2A agent card. */
+    description?: string;
     tools: string[];
     toolParameters: {
         [toolName: string]: any;
@@ -187,7 +189,6 @@ export interface PredefinedStructuredOutput {
 export interface AgentAsToolDefinition {
     runtimeId: string;
     endpoint: string;
-    role: string;
 }
 
 export interface AgentsAsToolsConfiguration {

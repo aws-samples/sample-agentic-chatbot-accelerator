@@ -229,6 +229,10 @@ export function getSingleAgentSteps({
                             onInstructionsChange={(instructions) =>
                                 setConfig((prev) => ({ ...prev, instructions }))
                             }
+                            description={config.description}
+                            onDescriptionChange={(description) =>
+                                setConfig((prev) => ({ ...prev, description }))
+                            }
                             conversationManager={config.conversationManager}
                             onConversationManagerChange={(conversationManager) =>
                                 setConfig((prev) => ({ ...prev, conversationManager }))
