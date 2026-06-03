@@ -96,7 +96,7 @@ knowledgeBaseParameters:
     dataSourcePrefix: knowledge-base-data-source
 ```
 
-The Terraform mirror exposes the same option as `vector_store_type` on `knowledge_base_parameters` in `terraform.tfvars`.
+The Terraform mirror exposes the same option as `vector_store_type` on `knowledge_base` in `terraform.tfvars`.
 
 The setting only affects the **default knowledge base provisioned by the stack**. Knowledge bases created from the UI ([Creating New Knowledge Bases](#creating-new-knowledge-bases)) are not affected by this flag.
 
