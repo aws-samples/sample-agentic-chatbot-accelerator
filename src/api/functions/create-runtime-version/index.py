@@ -46,11 +46,21 @@ PAGE_SIZE = 20
 # ---------------------------------------------------------- #
 
 
+SERVER_PROTOCOL_HTTP = "HTTP"
+SERVER_PROTOCOL_A2A = "A2A"
+A2A_NAME_SUFFIX = "_a2a"
+# AgentCore agentRuntimeName: ^[a-zA-Z][a-zA-Z0-9_]{0,47}$ (max 48 chars, no '-').
+RUNTIME_NAME_MAX = 48
+
+
 class InputModel(BaseModel):
     agentName: str
     agentCfg: Union[AgentConfiguration, dict]
     memoryId: Optional[str] = None
     architectureType: str = ArchitectureType.SINGLE.value
+    # HTTP for default UI/orchestrator runtimes; A2A for the sub-agent twin
+    # created alongside SINGLE images so orchestrators can call them via A2A.
+    protocol: str = SERVER_PROTOCOL_HTTP
 
 
 class Body(BaseModel):
@@ -126,6 +136,23 @@ def tags_match(runtime_arn: str) -> bool:
     return tags.get("Environment") == ENVIRONMENT_TAG and tags.get("Stack") == STACK_TAG
 
 
+def _resolve_runtime_name(agent_name: str, protocol: str) -> str:
+    """Map (agent name, protocol) to the AgentCore runtime name.
+
+    A2A twins live under ``{agent_name}_a2a`` so the HTTP and A2A runtimes
+    share the same prefix in the console listing. Underscore is required —
+    AgentCore rejects '-' in runtime names.
+    """
+    if protocol == SERVER_PROTOCOL_A2A:
+        if len(agent_name) + len(A2A_NAME_SUFFIX) > RUNTIME_NAME_MAX:
+            raise AcaException(
+                f"agentName '{agent_name}' is too long for an A2A twin "
+                f"(max {RUNTIME_NAME_MAX - len(A2A_NAME_SUFFIX)} chars)"
+            )
+        return f"{agent_name}{A2A_NAME_SUFFIX}"
+    return agent_name
+
+
 @event_parser(model=InputModel)
 @tracer.capture_lambda_handler
 def handler(event: InputModel, _) -> dict:
@@ -154,8 +181,11 @@ def handler(event: InputModel, _) -> dict:
             - agentRuntimeVersion: The created/updated version
             - createdAt: Timestamp of creation
     """
+    runtime_name = _resolve_runtime_name(event.agentName, event.protocol)
+    is_a2a = event.protocol == SERVER_PROTOCOL_A2A
+
     try:
-        agent = get_runtime_id(event.agentName)
+        agent = get_runtime_id(runtime_name)
     except ClientError as err:
         logger.error(
             "Failed to list AgentCore Runtimes", extra={"rawErrorMessage": str(err)}
@@ -207,13 +237,20 @@ def handler(event: InputModel, _) -> dict:
             "tableName": AGENT_CORE_RUNTIME_TABLE,
             "toolRegistry": TOOL_REGISTRY_TABLE,
             "mcpServerRegistry": MCP_SERVER_REGISTRY_TABLE,
+            # `agentName` keeps the user-facing name even on the A2A twin so
+            # observability (logs / SNS tool events) attributes work to the
+            # logical agent rather than the synthetic twin name.
             "agentName": event.agentName,
             "createdAt": str(created_at),
             "accountId": ACCOUNT_ID,
             "agentToolsTopicArn": AGENT_TOOLS_TOPIC_ARN,
             "sessionsTableName": os.environ.get("SESSIONS_TABLE_NAME", ""),
+            "agentcoreServerProtocol": event.protocol,
         },
     }
+
+    if is_a2a:
+        api_args["protocolConfiguration"] = {"serverProtocol": SERVER_PROTOCOL_A2A}
 
     if is_swarm or is_graph or is_agents_as_tools:
         if not AGENTS_TABLE_NAME or not AGENTS_SUMMARY_TABLE_NAME:
@@ -228,7 +265,7 @@ def handler(event: InputModel, _) -> dict:
 
     if agent:
         logger.info(
-            f"Agent {event.agentName} already exists --> updating version of runtime"
+            f"Runtime {runtime_name} already exists --> updating version of runtime"
         )
         api_args["agentRuntimeId"] = agent.agentRuntimeId
 
@@ -237,28 +274,31 @@ def handler(event: InputModel, _) -> dict:
             logger.error(err_msg)
             raise AcaException(err_msg)
     else:
-        logger.info(f"Creating a new AgentCore runtime for agent {event.agentName}")
-        api_args["agentRuntimeName"] = event.agentName
+        logger.info(f"Creating a new AgentCore runtime '{runtime_name}'")
+        api_args["agentRuntimeName"] = runtime_name
         api_args["tags"] = {
             "Stack": STACK_TAG,
         }
         if ENVIRONMENT_TAG:
             api_args["tags"]["Environment"] = ENVIRONMENT_TAG
 
-    if (
-        isinstance(event.agentCfg, AgentConfiguration)
-        and event.agentCfg.useMemory
-        and event.memoryId
-    ):
-        logger.info(f"Attaching created AgentCore memory {event.memoryId}")
-        api_args["environmentVariables"]["memoryId"] = event.memoryId
-    elif (
-        isinstance(event.agentCfg, dict)
-        and event.agentCfg.get("useMemory")
-        and event.memoryId
-    ):
-        logger.info(f"Attaching created AgentCore memory {event.memoryId}")
-        api_args["environmentVariables"]["memoryId"] = event.memoryId
+    # Sub-agents reached over A2A are stateless workers — memory belongs to
+    # the orchestrator that owns the user-facing session.
+    if not is_a2a:
+        if (
+            isinstance(event.agentCfg, AgentConfiguration)
+            and event.agentCfg.useMemory
+            and event.memoryId
+        ):
+            logger.info(f"Attaching created AgentCore memory {event.memoryId}")
+            api_args["environmentVariables"]["memoryId"] = event.memoryId
+        elif (
+            isinstance(event.agentCfg, dict)
+            and event.agentCfg.get("useMemory")
+            and event.memoryId
+        ):
+            logger.info(f"Attaching created AgentCore memory {event.memoryId}")
+            api_args["environmentVariables"]["memoryId"] = event.memoryId
 
     # Propagate skills bucket name for runtime skill loading
     if SKILLS_BUCKET_NAME:
