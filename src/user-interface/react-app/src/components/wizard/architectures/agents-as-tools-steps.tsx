@@ -83,7 +83,15 @@ export function getAgentsAsToolsSteps({
     const addAgentAsTool = (agentName: string) => {
         const agent = availableAgents.find((a) => a.agentName === agentName);
         if (!agent) return;
-        if (agentsAsToolsConfig.agentsAsTools.some((a) => a.runtimeId === agent.agentRuntimeId))
+        // The persisted runtimeId may be either the HTTP id (just-added) or
+        // the A2A ARN (loaded from a saved config) — block both shapes.
+        if (
+            agentsAsToolsConfig.agentsAsTools.some(
+                (a) =>
+                    a.runtimeId === agent.agentRuntimeId ||
+                    (!!agent.agentRuntimeArnA2A && a.runtimeId === agent.agentRuntimeArnA2A),
+            )
+        )
             return;
 
         const newTool: AgentAsToolDefinition = {
@@ -121,8 +129,13 @@ export function getAgentsAsToolsSteps({
         });
     };
 
+    // Resolve a sub-agent reference back to its display name. New entries
+    // hold the HTTP `agentRuntimeId`; entries loaded from a saved config
+    // hold the A2A twin ARN (rewritten by the AppSync resolver at save time).
     const getAgentNameByRuntimeId = (runtimeId: string): string => {
-        const agent = availableAgents.find((a) => a.agentRuntimeId === runtimeId);
+        const agent = availableAgents.find(
+            (a) => a.agentRuntimeId === runtimeId || a.agentRuntimeArnA2A === runtimeId,
+        );
         return agent?.agentName || runtimeId;
     };
 

@@ -129,6 +129,7 @@ type DeterministicNode @aws_cognito_user_pools {
 type RuntimeSummary @aws_cognito_user_pools {
     agentName: String!
     agentRuntimeId: String!
+    agentRuntimeArnA2A: String
     numberOfVersion: String!
     qualifierToVersion: String!
     status: String!

@@ -248,6 +248,7 @@ export const listRuntimeAgents = /* GraphQL */ `query ListRuntimeAgents {
   listRuntimeAgents {
     agentName
     agentRuntimeId
+    agentRuntimeArnA2A
     numberOfVersion
     qualifierToVersion
     status

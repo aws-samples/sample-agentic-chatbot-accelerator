@@ -98,6 +98,19 @@ def create_agent_runtime(
             parsed_config = SwarmConfiguration.model_validate_json(configValue)
         elif resolved_architecture == ArchitectureType.AGENTS_AS_TOOLS.value:
             parsed_config = AgentsAsToolsConfiguration.model_validate_json(configValue)
+            # The orchestrator's A2A client reads runtimeId expecting the A2A
+            # twin ARN. The wizard sends the human-friendly HTTP runtime ID
+            # because that's what RuntimeSummary surfaces. Translate here so
+            # neither the wizard nor the orchestrator container needs to know
+            # about the dual-runtime topology.
+            try:
+                _rewrite_subagent_runtime_ids(parsed_config)
+            except (ClientError, ValueError) as err:
+                logger.error(
+                    "Failed to resolve A2A runtime ARNs for sub-agents",
+                    extra={"rawErrorMessage": str(err)},
+                )
+                return ""
         elif resolved_architecture == ArchitectureType.GRAPH.value:
             parsed_config = GraphConfiguration.model_validate_json(configValue)
             # Only check agent nodes (fork, deterministic, dynamic_map have no agentName)
@@ -203,6 +216,9 @@ def list_runtime_agents() -> list[dict]:
         {
             "agentName": item.get("AgentName", "???"),
             "agentRuntimeId": item.get("AgentRuntimeId", "???"),
+            # Empty string when no A2A twin exists (orchestrator architectures
+            # are HTTP-only). Treated as None by GraphQL String layer.
+            "agentRuntimeArnA2A": item.get("AgentRuntimeArnA2A") or None,
             "numberOfVersion": item.get("NumberOfVersions", "0"),
             "qualifierToVersion": json.dumps(
                 item.get("QualifierToVersion", {}), default=str
@@ -436,6 +452,50 @@ def delete_agent_runtime_endpoint(
 
 
 # Helpers
+def _rewrite_subagent_runtime_ids(
+    parsed_config: AgentsAsToolsConfiguration,
+) -> None:
+    """Replace each agentsAsTools[].runtimeId with the sub-agent's A2A twin ARN.
+
+    The wizard writes the HTTP-twin ``agentRuntimeId`` (which is what users
+    pick from the runtime catalogue). The orchestrator container's A2A client
+    expects ``runtimeId`` to be the **A2A** twin ARN — that's the URL it'll
+    sign requests against. This translation runs server-side at config-save
+    time so the wizard, the DynamoDB record, and the orchestrator stay in
+    sync without leaking the dual-runtime topology to either edge.
+    """
+    for sub in parsed_config.agentsAsTools:
+        # Idempotent: when the wizard re-saves an already-translated config
+        # (creating a new version), runtimeId is already an ARN. Skip.
+        if sub.runtimeId.startswith("arn:"):
+            continue
+        a2a_arn = _resolve_a2a_arn_for_runtime_id(sub.runtimeId)
+        if not a2a_arn:
+            raise ValueError(
+                f"Sub-agent runtime '{sub.runtimeId}' has no A2A twin — "
+                f"recreate the sub-agent so the A2A twin is provisioned."
+            )
+        sub.runtimeId = a2a_arn
+
+
+def _resolve_a2a_arn_for_runtime_id(runtime_id: str) -> Optional[str]:
+    """Look up the A2A twin ARN for a sub-agent by HTTP runtime ID.
+
+    Scans the summary table — the table is small (one item per agent) and
+    this code path only runs when an operator submits a new agents-as-tools
+    runtime version, so no GSI is justified yet.
+    """
+    response = SUMMARY_TABLE.scan(
+        FilterExpression="AgentRuntimeId = :rid",
+        ExpressionAttributeValues={":rid": runtime_id},
+        ProjectionExpression="AgentRuntimeArnA2A",
+    )
+    items = response.get("Items", [])
+    if not items:
+        return None
+    return items[0].get("AgentRuntimeArnA2A") or None
+
+
 def _get_runtime_cfg_by_qualifier_impl(agentName: str, qualifier: str) -> str:
     try:
         response = SUMMARY_TABLE.query(

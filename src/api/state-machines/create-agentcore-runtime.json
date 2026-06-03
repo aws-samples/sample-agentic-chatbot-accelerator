@@ -49,7 +49,7 @@
             "Assign": {
                 "memoryId": null
             },
-            "Next": "Create New Runtime"
+            "Next": "Create Runtimes"
         },
         "Check on Short Memory Exists": {
             "Type": "Task",
@@ -78,7 +78,7 @@
             "Choices": [
                 {
                     "Condition": "{% $boolean($memoryId) %}",
-                    "Next": "Create New Runtime"
+                    "Next": "Create Runtimes"
                 }
             ],
             "Default": "Start Create Memory"
@@ -141,80 +141,186 @@
                 },
                 {
                     "Condition": "{% $memoryCreationStatus = 'ACTIVE' %}",
-                    "Next": "Create New Runtime"
+                    "Next": "Create Runtimes"
                 }
             ],
             "Default": "Wait for Memory Ready"
         },
-        "Create New Runtime": {
-            "Type": "Task",
-            "Resource": "arn:aws:states:::lambda:invoke",
-            "Arguments": {
-                "FunctionName": "${startRuntimeCreationFuncArn}",
-                "Payload": {
-                    "agentName": "{% $agentName %}",
-                    "agentCfg": "{% $agentCfg %}",
-                    "memoryId": "{% $memoryId %}",
-                    "architectureType": "{% $architectureType %}"
-                }
-            },
-            "Catch": [
+        "Create Runtimes": {
+            "Type": "Parallel",
+            "Comment": "HTTP runtime is always created. A2A twin is created in parallel for SINGLE-architecture sub-agents so orchestrators can call them via A2A; other architectures short-circuit the second branch.",
+            "Branches": [
                 {
-                    "ErrorEquals": [
-                        "States.ALL"
-                    ],
-                    "Next": "Set Status to Failed"
-                }
-            ],
-            "Assign": {
-                "agentRuntimeId": "{% $states.result.Payload.body.agentRuntimeId %}",
-                "agentRuntimeArn": "{% $states.result.Payload.body.agentRuntimeArn %}",
-                "agentRuntimeVersion": "{% $states.result.Payload.body.agentRuntimeVersion %}",
-                "createdAt": "{% $states.result.Payload.body.createdAt %}"
-            },
-            "Next": "Wait for Runtime Ready"
-        },
-        "Wait for Runtime Ready": {
-            "Type": "Wait",
-            "Seconds": 10,
-            "Next": "Check Runtime Creation Status"
-        },
-        "Check Runtime Creation Status": {
-            "Type": "Task",
-            "Resource": "arn:aws:states:::lambda:invoke",
-            "Arguments": {
-                "FunctionName": "${checkOnRuntimeCreationFunc}",
-                "Payload": {
-                    "agentRuntimeId": "{% $agentRuntimeId %}",
-                    "agentRuntimeVersion": "{% $agentRuntimeVersion %}"
-                }
-            },
-            "Catch": [
-                {
-                    "ErrorEquals": [
-                        "States.ALL"
-                    ],
-                    "Next": "Set Status to Failed"
-                }
-            ],
-            "Assign": {
-                "runtimeCreationStatus": "{% $states.result.Payload.body.status %}"
-            },
-            "Next": "Runtime Ready?"
-        },
-        "Runtime Ready?": {
-            "Type": "Choice",
-            "Choices": [
-                {
-                    "Condition": "{% $runtimeCreationStatus = 'FAILED' %}",
-                    "Next": "Set Status to Failed"
+                    "StartAt": "Create HTTP Runtime",
+                    "States": {
+                        "Create HTTP Runtime": {
+                            "Type": "Task",
+                            "Resource": "arn:aws:states:::lambda:invoke",
+                            "Arguments": {
+                                "FunctionName": "${startRuntimeCreationFuncArn}",
+                                "Payload": {
+                                    "agentName": "{% $agentName %}",
+                                    "agentCfg": "{% $agentCfg %}",
+                                    "memoryId": "{% $memoryId %}",
+                                    "architectureType": "{% $architectureType %}",
+                                    "protocol": "HTTP"
+                                }
+                            },
+                            "Assign": {
+                                "agentRuntimeId": "{% $states.result.Payload.body.agentRuntimeId %}",
+                                "agentRuntimeArn": "{% $states.result.Payload.body.agentRuntimeArn %}",
+                                "agentRuntimeVersion": "{% $states.result.Payload.body.agentRuntimeVersion %}",
+                                "createdAt": "{% $states.result.Payload.body.createdAt %}"
+                            },
+                            "Next": "Wait for HTTP Runtime"
+                        },
+                        "Wait for HTTP Runtime": {
+                            "Type": "Wait",
+                            "Seconds": 10,
+                            "Next": "Check HTTP Runtime Status"
+                        },
+                        "Check HTTP Runtime Status": {
+                            "Type": "Task",
+                            "Resource": "arn:aws:states:::lambda:invoke",
+                            "Arguments": {
+                                "FunctionName": "${checkOnRuntimeCreationFunc}",
+                                "Payload": {
+                                    "agentRuntimeId": "{% $agentRuntimeId %}",
+                                    "agentRuntimeVersion": "{% $agentRuntimeVersion %}"
+                                }
+                            },
+                            "Assign": {
+                                "runtimeCreationStatus": "{% $states.result.Payload.body.status %}"
+                            },
+                            "Next": "HTTP Runtime Ready?"
+                        },
+                        "HTTP Runtime Ready?": {
+                            "Type": "Choice",
+                            "Choices": [
+                                {
+                                    "Condition": "{% $runtimeCreationStatus = 'FAILED' %}",
+                                    "Next": "HTTP Runtime Failed"
+                                },
+                                {
+                                    "Condition": "{% $runtimeCreationStatus = 'READY' %}",
+                                    "Next": "HTTP Runtime Done"
+                                }
+                            ],
+                            "Default": "Wait for HTTP Runtime"
+                        },
+                        "HTTP Runtime Failed": {
+                            "Type": "Fail",
+                            "Error": "RuntimeCreationFailed",
+                            "Cause": "HTTP runtime creation failed"
+                        },
+                        "HTTP Runtime Done": {
+                            "Type": "Pass",
+                            "End": true
+                        }
+                    }
                 },
                 {
-                    "Condition": "{% $runtimeCreationStatus = 'READY' %}",
-                    "Next": "Is New Runtime?"
+                    "StartAt": "A2A Twin Required?",
+                    "States": {
+                        "A2A Twin Required?": {
+                            "Type": "Choice",
+                            "Comment": "Only SINGLE images become sub-agents reachable over A2A. Orchestrator architectures (agents-as-tools, graph, swarm) stay HTTP-only.",
+                            "Choices": [
+                                {
+                                    "Condition": "{% $architectureType = 'SINGLE' %}",
+                                    "Next": "Create A2A Runtime"
+                                }
+                            ],
+                            "Default": "No A2A Twin"
+                        },
+                        "No A2A Twin": {
+                            "Type": "Pass",
+                            "Output": {
+                                "agentRuntimeArnA2A": null
+                            },
+                            "End": true
+                        },
+                        "Create A2A Runtime": {
+                            "Type": "Task",
+                            "Resource": "arn:aws:states:::lambda:invoke",
+                            "Arguments": {
+                                "FunctionName": "${startRuntimeCreationFuncArn}",
+                                "Payload": {
+                                    "agentName": "{% $agentName %}",
+                                    "agentCfg": "{% $agentCfg %}",
+                                    "memoryId": "{% $memoryId %}",
+                                    "architectureType": "{% $architectureType %}",
+                                    "protocol": "A2A"
+                                }
+                            },
+                            "Assign": {
+                                "agentRuntimeIdA2A": "{% $states.result.Payload.body.agentRuntimeId %}",
+                                "agentRuntimeArnA2A": "{% $states.result.Payload.body.agentRuntimeArn %}",
+                                "agentRuntimeVersionA2A": "{% $states.result.Payload.body.agentRuntimeVersion %}"
+                            },
+                            "Next": "Wait for A2A Runtime"
+                        },
+                        "Wait for A2A Runtime": {
+                            "Type": "Wait",
+                            "Seconds": 10,
+                            "Next": "Check A2A Runtime Status"
+                        },
+                        "Check A2A Runtime Status": {
+                            "Type": "Task",
+                            "Resource": "arn:aws:states:::lambda:invoke",
+                            "Arguments": {
+                                "FunctionName": "${checkOnRuntimeCreationFunc}",
+                                "Payload": {
+                                    "agentRuntimeId": "{% $agentRuntimeIdA2A %}",
+                                    "agentRuntimeVersion": "{% $agentRuntimeVersionA2A %}"
+                                }
+                            },
+                            "Assign": {
+                                "runtimeCreationStatusA2A": "{% $states.result.Payload.body.status %}"
+                            },
+                            "Next": "A2A Runtime Ready?"
+                        },
+                        "A2A Runtime Ready?": {
+                            "Type": "Choice",
+                            "Choices": [
+                                {
+                                    "Condition": "{% $runtimeCreationStatusA2A = 'FAILED' %}",
+                                    "Next": "A2A Runtime Failed"
+                                },
+                                {
+                                    "Condition": "{% $runtimeCreationStatusA2A = 'READY' %}",
+                                    "Next": "A2A Runtime Done"
+                                }
+                            ],
+                            "Default": "Wait for A2A Runtime"
+                        },
+                        "A2A Runtime Failed": {
+                            "Type": "Fail",
+                            "Error": "RuntimeCreationFailed",
+                            "Cause": "A2A twin runtime creation failed"
+                        },
+                        "A2A Runtime Done": {
+                            "Type": "Pass",
+                            "Output": {
+                                "agentRuntimeArnA2A": "{% $agentRuntimeArnA2A %}"
+                            },
+                            "End": true
+                        }
+                    }
                 }
             ],
-            "Default": "Wait for Runtime Ready"
+            "Catch": [
+                {
+                    "ErrorEquals": [
+                        "States.ALL"
+                    ],
+                    "Next": "Set Status to Failed"
+                }
+            ],
+            "Assign": {
+                "agentRuntimeArnA2A": "{% $states.result[1].agentRuntimeArnA2A %}"
+            },
+            "Next": "Is New Runtime?"
         },
         "Set Status to Failed": {
             "Type": "Task",
@@ -258,11 +364,12 @@
                         "S": "{% $agentName %}"
                     }
                 },
-                "UpdateExpression": "SET #status = :status, #id = :id, #arn = :arn, #nb = :nb, #qtv = :qtv, #at = :at",
+                "UpdateExpression": "SET #status = :status, #id = :id, #arn = :arn, #arnA2A = :arnA2A, #nb = :nb, #qtv = :qtv, #at = :at",
                 "ExpressionAttributeNames": {
                     "#status": "Status",
                     "#id": "AgentRuntimeId",
                     "#arn": "AgentRuntimeArn",
+                    "#arnA2A": "AgentRuntimeArnA2A",
                     "#nb": "NumberOfVersions",
                     "#qtv": "QualifierToVersion",
                     "#at": "ArchitectureType"
@@ -273,6 +380,9 @@
                     },
                     ":arn": {
                         "S": "{% $agentRuntimeArn %}"
+                    },
+                    ":arnA2A": {
+                        "S": "{% $agentRuntimeArnA2A ? $agentRuntimeArnA2A : '' %}"
                     },
                     ":status": {
                         "S": "Ready"
@@ -320,12 +430,13 @@
                         "S": "{% $agentName %}"
                     }
                 },
-                "UpdateExpression": "SET #status = :status, QualifierToVersion.#default = :version, #nb = :count, #at = :at",
+                "UpdateExpression": "SET #status = :status, QualifierToVersion.#default = :version, #nb = :count, #at = :at, #arnA2A = :arnA2A",
                 "ExpressionAttributeNames": {
                     "#status": "Status",
                     "#default": "DEFAULT",
                     "#nb": "NumberOfVersions",
-                    "#at": "ArchitectureType"
+                    "#at": "ArchitectureType",
+                    "#arnA2A": "AgentRuntimeArnA2A"
                 },
                 "ExpressionAttributeValues": {
                     ":version": {
@@ -339,6 +450,9 @@
                     },
                     ":at": {
                         "S": "{% $architectureType %}"
+                    },
+                    ":arnA2A": {
+                        "S": "{% $agentRuntimeArnA2A ? $agentRuntimeArnA2A : '' %}"
                     }
                 }
             },
