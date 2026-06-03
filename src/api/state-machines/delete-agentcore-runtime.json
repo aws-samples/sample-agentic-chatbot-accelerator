@@ -9,6 +9,23 @@
                 "agentName": "{% $states.input.agentName %}",
                 "agentRuntimeId": "{% $states.input.agentRuntimeId %}"
             },
+            "Next": "Lookup A2A Twin"
+        },
+        "Lookup A2A Twin": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::dynamodb:getItem",
+            "Comment": "Read AgentRuntimeArnA2A from the summary table so the runtime-delete Parallel can also remove the A2A twin (only present for SINGLE-architecture sub-agents).",
+            "Arguments": {
+                "TableName": "${summaryTableArn}",
+                "Key": {
+                    "AgentName": {
+                        "S": "{% $agentName %}"
+                    }
+                }
+            },
+            "Assign": {
+                "agentRuntimeIdA2A": "{% ($arn := $exists($states.result.Item.AgentRuntimeArnA2A.S) ? $states.result.Item.AgentRuntimeArnA2A.S : ''; $arn != '' ? $substringAfter($arn, 'runtime/') : '') %}"
+            },
             "Next": "Set Status to Deleting"
         },
         "Set Status to Deleting": {
@@ -213,7 +230,8 @@
             "Type": "Parallel",
             "Assign": {
                 "runtimeResult": "{% $states.result[0] %}",
-                "memoryResult": "{% $states.result[1] %}"
+                "memoryResult": "{% $states.result[1] %}",
+                "a2aResult": "{% $states.result[2] %}"
             },
             "Next": "Check Parallel Task Results",
             "Branches": [
@@ -450,6 +468,106 @@
                             "End": true
                         }
                     }
+                },
+                {
+                    "StartAt": "A2A Twin Exists?",
+                    "States": {
+                        "A2A Twin Exists?": {
+                            "Type": "Choice",
+                            "Comment": "Older summary items predate the A2A twin column. Skip silently when no twin is recorded.",
+                            "Choices": [
+                                {
+                                    "Condition": "{% $agentRuntimeIdA2A != '' %}",
+                                    "Next": "Start A2A Runtime Delete"
+                                }
+                            ],
+                            "Default": "A2A Twin Skipped"
+                        },
+                        "A2A Twin Skipped": {
+                            "Type": "Pass",
+                            "Output": {
+                                "a2aBranchStatus": "success",
+                                "reason": "No A2A twin recorded for this agent"
+                            },
+                            "End": true
+                        },
+                        "Start A2A Runtime Delete": {
+                            "Type": "Task",
+                            "Resource": "arn:aws:states:::lambda:invoke",
+                            "Arguments": {
+                                "FunctionName": "${startDeleteRuntimeFunctionArn}",
+                                "Payload": {
+                                    "agentRuntimeId": "{% $agentRuntimeIdA2A %}"
+                                }
+                            },
+                            "Catch": [
+                                {
+                                    "ErrorEquals": [
+                                        "States.ALL"
+                                    ],
+                                    "Next": "A2A Runtime Delete Failed"
+                                }
+                            ],
+                            "Next": "Wait on A2A Deletion"
+                        },
+                        "Wait on A2A Deletion": {
+                            "Type": "Wait",
+                            "Seconds": 30,
+                            "Next": "Check on A2A Runtime Deletion Status"
+                        },
+                        "Check on A2A Runtime Deletion Status": {
+                            "Type": "Task",
+                            "Resource": "arn:aws:states:::lambda:invoke",
+                            "Arguments": {
+                                "FunctionName": "${checkOnDeleteRuntimeFunctionArn}",
+                                "Payload": {
+                                    "agentRuntimeId": "{% $agentRuntimeIdA2A %}"
+                                }
+                            },
+                            "Catch": [
+                                {
+                                    "ErrorEquals": [
+                                        "States.ALL"
+                                    ],
+                                    "Next": "A2A Runtime Delete Failed"
+                                }
+                            ],
+                            "Assign": {
+                                "a2aDeletionStatus": "{% $states.result.Payload.body.status %}"
+                            },
+                            "Next": "A2A Runtime Deletion Done?"
+                        },
+                        "A2A Runtime Deletion Done?": {
+                            "Type": "Choice",
+                            "Choices": [
+                                {
+                                    "Condition": "{% $a2aDeletionStatus = 'DELETED' %}",
+                                    "Next": "A2A Runtime Delete Successful"
+                                },
+                                {
+                                    "Condition": "{% $a2aDeletionStatus = 'FAILED' %}",
+                                    "Next": "A2A Runtime Delete Failed"
+                                }
+                            ],
+                            "Default": "Wait on A2A Deletion"
+                        },
+                        "A2A Runtime Delete Successful": {
+                            "Type": "Pass",
+                            "Output": {
+                                "a2aBranchStatus": "success",
+                                "reason": "A2A twin runtime deletion succeeded"
+                            },
+                            "End": true
+                        },
+                        "A2A Runtime Delete Failed": {
+                            "Type": "Pass",
+                            "Output": {
+                                "a2aBranchStatus": "error",
+                                "reason": "A2A twin runtime deletion failed"
+                            },
+                            "End": true
+                        }
+                    }
                 }
             ]
         },
@@ -457,7 +575,7 @@
             "Type": "Choice",
             "Choices": [
                 {
-                    "Condition": "{% $runtimeResult.runtimeBranchStatus = 'success' and $memoryResult.memoryBranchStatus = 'success' %}",
+                    "Condition": "{% $runtimeResult.runtimeBranchStatus = 'success' and $memoryResult.memoryBranchStatus = 'success' and $a2aResult.a2aBranchStatus = 'success' %}",
                     "Next": "Notify Client"
                 }
             ],
