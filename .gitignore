@@ -26,6 +26,7 @@ cache
 src/user-interface/react-app/dist
 src/user-interface/react-app/public/aws-exports.json
 !src/user-interface/react-app/src/vite-env.d.ts
+!src/user-interface/react-app/public/audio-processor.worklet.js
 
 # Local Configurations
 iac-cdk/bin/config.json
