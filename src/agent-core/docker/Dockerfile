@@ -13,16 +13,21 @@ EOF
 
 COPY docker/app.py .
 COPY docker/src/ src/.
+COPY docker/entrypoint.sh .
 COPY shared/ shared/.
 
 ENV DOCKER_CONTAINER=1
 
+RUN chmod +x ./entrypoint.sh
+
 RUN useradd -m -u 1000 bedrock_agentcore
 USER bedrock_agentcore
 
-EXPOSE 8080
+# AgentCore HTTP runtimes listen on 8080; A2A twins listen on 9000. The same
+# image serves both — entrypoint.sh selects via `agentcoreServerProtocol`.
+EXPOSE 8080 9000
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD curl -f  || exit 1
 
-CMD ["opentelemetry-instrument", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["./entrypoint.sh"]

@@ -215,6 +215,12 @@
                         },
                         "HTTP Runtime Done": {
                             "Type": "Pass",
+                            "Output": {
+                                "agentRuntimeId": "{% $agentRuntimeId %}",
+                                "agentRuntimeArn": "{% $agentRuntimeArn %}",
+                                "agentRuntimeVersion": "{% $agentRuntimeVersion %}",
+                                "createdAt": "{% $createdAt %}"
+                            },
                             "End": true
                         }
                     }
@@ -318,6 +324,10 @@
                 }
             ],
             "Assign": {
+                "agentRuntimeId": "{% $states.result[0].agentRuntimeId %}",
+                "agentRuntimeArn": "{% $states.result[0].agentRuntimeArn %}",
+                "agentRuntimeVersion": "{% $states.result[0].agentRuntimeVersion %}",
+                "createdAt": "{% $states.result[0].createdAt %}",
                 "agentRuntimeArnA2A": "{% $states.result[1].agentRuntimeArnA2A %}"
             },
             "Next": "Is New Runtime?"

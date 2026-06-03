@@ -15,14 +15,13 @@ from opentelemetry import baggage
 from opentelemetry.context import attach
 from shared.agentcore_a2a import (
     A2A_PORT,
-    HTTP_PORT,
     SERVER_PROTOCOL_A2A,
     SERVER_PROTOCOL_HTTP,
 )
 from shared.agentcore_memory import create_session_manager
 from shared.mcp_client import MCPClientManager
 from shared.session_history import save_conversation_exchange
-from shared.utils import enrich_trajectory, get_uvicorn_host
+from shared.utils import enrich_trajectory
 from src.data_source import parse_configuration
 from src.factory import create_agent
 from src.registry import AVAILABLE_MCPS
@@ -907,18 +906,16 @@ def _build_a2a_app() -> FastAPI:
 
 
 # ============================================================
-# Entry point
+# Module-level apps
 # ============================================================
-if __name__ == "__main__":
-    import uvicorn
-
-    server_protocol = os.environ.get(
-        "agentcoreServerProtocol", SERVER_PROTOCOL_HTTP
-    ).upper()
-
-    if server_protocol == SERVER_PROTOCOL_A2A:
-        logger.info("Starting in A2A protocol mode (port %d)", A2A_PORT)
-        uvicorn.run(_build_a2a_app(), host=get_uvicorn_host(), port=A2A_PORT)
-    else:
-        logger.info("Starting in HTTP protocol mode (port %d)", HTTP_PORT)
-        uvicorn.run(app, host=get_uvicorn_host(), port=HTTP_PORT)
+# `app` (FastAPI defined above) is the HTTP-protocol entry. `a2a_app` is its
+# A2A-protocol sibling — built lazily only when the runtime is in A2A mode so
+# HTTP twins don't pay the A2A startup cost. The container's entrypoint.sh
+# picks one of these symbols (`app:app` vs `app:a2a_app`) based on the
+# `agentcoreServerProtocol` env var.
+_SERVER_PROTOCOL = os.environ.get(
+    "agentcoreServerProtocol", SERVER_PROTOCOL_HTTP
+).upper()
+a2a_app: FastAPI | None = (
+    _build_a2a_app() if _SERVER_PROTOCOL == SERVER_PROTOCOL_A2A else None
+)
