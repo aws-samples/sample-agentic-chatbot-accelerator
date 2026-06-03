@@ -8,7 +8,7 @@ Shared tool and registry utilities for agent implementations.
 
 This module provides:
 - Tool implementations (get_current_time, get_weather_forecast)
-- Tool object classes (AbstractToolObject, RetrieverTool, InvokeSubAgentTool)
+- Tool object classes (AbstractToolObject, RetrieverTool)
 - Tool factory for creating tool instances
 - Registry loading utilities from DynamoDB
 """

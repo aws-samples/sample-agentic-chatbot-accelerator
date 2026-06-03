@@ -5,26 +5,33 @@
 # ------------------------------------------------------------------------ #
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING, Any
 
+import boto3
+from shared.agentcore_a2a import runtime_arn_to_a2a_url
 from shared.base_constants import RETRIEVE_FROM_KB_PREFIX
 from shared.base_factory import BaseAgentFactory
 from shared.mcp_client import MCPClientManager
+from shared.sigv4_auth import SigV4HTTPXAuth
 from strands import Agent
 from strands.hooks.events import (
     AfterToolCallEvent,
     BeforeToolCallEvent,
 )
+from strands_tools.a2a_client import A2AClientToolProvider
 
 from .callbacks import AgentCallbacks
-from .registry import InvokeSubAgentTool
 from .types import (
+    AgentAsTool,
     OrchestratorConfiguration,
     RetrievalConfiguration,
 )
 
 if TYPE_CHECKING:
     from logging import Logger
+
+AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 
 
 def create_orchestrator(
@@ -144,15 +151,50 @@ def _initialize_tools(
 
     custom_tools = _initialize_custom_tools(agent_configuration, logger)
 
-    tools = mcp_tools + custom_tools
+    sub_agent_tools = build_a2a_subagent_tools(
+        agent_configuration.agentsAsTools, logger
+    )
 
-    for sub_agent in agent_configuration.agentsAsTools:
-        tools.append(
-            InvokeSubAgentTool(
-                agent_runtime=sub_agent.runtimeId,
-                agent_role=sub_agent.role,
-                qualifier=sub_agent.endpoint,
-            ).tool
-        )
+    return mcp_tools + custom_tools + sub_agent_tools
 
-    return tools
+
+def build_a2a_subagent_tools(
+    sub_agents: list[AgentAsTool],
+    logger: Logger,
+) -> list[Any]:
+    """Build A2A client tools for all configured sub-agents.
+
+    Each ``agentsAsTools`` entry's ``runtimeId`` is interpreted as the ARN of
+    the **A2A** twin runtime (the HTTP twin is used by the React UI for
+    standalone access; the orchestrator never calls that one). The URL is
+    derived from the ARN at startup; no SSM lookup, no per-call signing
+    setup.
+
+    A single ``A2AClientToolProvider`` fronts all sub-agents — its
+    ``known_agent_urls`` becomes one tool per URL inside the orchestrator's
+    tool list. SigV4 signing is wired through ``httpx_client_args`` so every
+    A2A request is signed against ``bedrock-agentcore``.
+    """
+    if not sub_agents:
+        return []
+
+    urls = [
+        runtime_arn_to_a2a_url(sub_agent.runtimeId, AWS_REGION)
+        for sub_agent in sub_agents
+    ]
+    logger.info(
+        "Wiring A2A sub-agent tools",
+        extra={"subAgentUrls": urls},
+    )
+
+    auth = SigV4HTTPXAuth(
+        credentials=boto3.Session().get_credentials(),
+        service="bedrock-agentcore",
+        region=AWS_REGION,
+    )
+
+    provider = A2AClientToolProvider(
+        known_agent_urls=urls,
+        httpx_client_args={"auth": auth},
+    )
+    return list(provider.tools)
