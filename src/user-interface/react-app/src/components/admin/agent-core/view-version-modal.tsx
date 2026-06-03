@@ -736,6 +736,17 @@ export default function ViewVersionModal({
                                 <Box padding="m">{renderMemoryStatus(agentConfig.useMemory)}</Box>
                             </FormField>
 
+                            <FormField
+                                label="Agent Description"
+                                description="Capability blurb published in this agent's A2A agent card."
+                            >
+                                <Box padding="m">
+                                    {agentConfig.description || (
+                                        <Box color="text-status-inactive">Not set</Box>
+                                    )}
+                                </Box>
+                            </FormField>
+
                             <FormField label={
                                 <SpaceBetween direction="horizontal" size="xs" alignItems="center">
                                     <span>Agent Instructions</span>

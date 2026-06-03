@@ -160,6 +160,7 @@ export default function AgentCoreRuntimeCreatorWizard({
     const [config, setConfig] = useState<AgentCoreRuntimeConfiguration>({
         agentName: initialData?.agentName || "",
         instructions: initialData?.instructions || "",
+        description: initialData?.description,
         tools: initialData?.tools || [],
         toolParameters: initialData?.toolParameters || {},
         mcpServers: initialData?.mcpServers || [],
