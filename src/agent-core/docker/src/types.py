@@ -88,6 +88,10 @@ class AgentConfiguration(BaseModel):
     )
     structuredOutput: list[StructuredOutputFieldSpec] | None = None
     skills: list[str] = []
+    # Capability description published in this agent's A2A agent card. Read by
+    # `_build_a2a_app` to populate `agent.description`, which orchestrators
+    # discover via `/.well-known/agent-card.json`.
+    description: str | None = None
 
     @model_validator(mode="after")
     def validate_tool_parameters(self):
