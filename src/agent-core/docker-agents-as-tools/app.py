@@ -493,10 +493,12 @@ async def voice_chat(websocket: WebSocket):
 def _initialize_voice_tools(configuration):
     """Initialize tools from agent configuration for voice mode.
 
-    Loads both regular tools (from configuration.tools) and sub-agent tools
-    (from configuration.agentsAsTools) so the BidiAgent can delegate to sub-agents.
+    Loads both regular tools (from configuration.tools) and A2A sub-agent
+    tools (from configuration.agentsAsTools) so BidiAgent can delegate to
+    sub-agents over A2A — the same wiring as text mode.
     """
-    from src.registry import AVAILABLE_TOOLS, InvokeSubAgentTool
+    from src.factory import build_a2a_subagent_tools
+    from src.registry import AVAILABLE_TOOLS
 
     tools = []
     for tool_name in configuration.tools or []:
@@ -506,15 +508,12 @@ def _initialize_voice_tools(configuration):
             params.pop("invokesSubAgent", None)
             tools.append(record["factory"](**params))
 
-    # Add sub-agent tools for agents-as-tools voice mode
-    for sub_agent in getattr(configuration, "agentsAsTools", []) or []:
-        tools.append(
-            InvokeSubAgentTool(
-                agent_runtime=sub_agent.runtimeId,
-                agent_role=sub_agent.role,
-                qualifier=sub_agent.endpoint,
-            ).tool
+    tools.extend(
+        build_a2a_subagent_tools(
+            getattr(configuration, "agentsAsTools", []) or [],
+            logger,
         )
+    )
 
     return tools
 
