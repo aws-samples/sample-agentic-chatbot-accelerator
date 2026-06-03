@@ -890,6 +890,19 @@ def _build_a2a_app() -> FastAPI:
         session_manager=None,
     )
 
+    # Populate the agent card. The orchestrator's A2A client reads `description`
+    # to build the tool description its LLM sees when deciding whether to
+    # delegate, so the operator-authored capability blurb (configuration.description)
+    # is the right value here. Strands' A2AServer rejects empty descriptions —
+    # fall back to a generic one only if the operator left the field blank.
+    agent_name = os.environ.get("agentName", "agent")
+    agent.name = agent_name
+    agent.description = (
+        configuration.description
+        if configuration.description
+        else f"AgentCore sub-agent {agent_name}"
+    )
+
     runtime_arn = os.environ.get("agentRuntimeArn", "")
     region = AWS_REGION or "us-east-1"
     http_url = runtime_arn_to_a2a_url(runtime_arn, region) if runtime_arn else None

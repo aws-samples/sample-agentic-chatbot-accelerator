@@ -40,6 +40,11 @@ export interface AgentConfigSectionProps {
     instructions: string;
     onInstructionsChange: (value: string) => void;
     instructionsPlaceholder?: string;
+    /** Optional capability description shown to other agents discovering this
+     *  one over A2A. Becomes the agent card's `description`. Pass undefined
+     *  to omit the field entirely (e.g. orchestrator architectures). */
+    description?: string;
+    onDescriptionChange?: (value: string) => void;
     conversationManager: "null" | "sliding_window" | "summarizing";
     onConversationManagerChange: (value: "null" | "sliding_window" | "summarizing") => void;
     useMemory: boolean;
@@ -62,6 +67,8 @@ export function AgentConfigSection({
     instructions,
     onInstructionsChange,
     instructionsPlaceholder,
+    description,
+    onDescriptionChange,
     conversationManager,
     onConversationManagerChange,
     useMemory,
@@ -210,6 +217,20 @@ export function AgentConfigSection({
                             invalid={instructions.trim() === ""}
                         />
                     </FormField>
+
+                    {onDescriptionChange && (
+                        <FormField
+                            label={`${label} Description`}
+                            description="Short capability blurb shown to other agents that discover this one over A2A. Orchestrators read it to decide whether to delegate to this sub-agent."
+                        >
+                            <Textarea
+                                value={description ?? ""}
+                                onChange={({ detail }) => onDescriptionChange(detail.value)}
+                                placeholder={`Describe what this ${label.toLowerCase()} does, in one or two sentences.`}
+                                rows={3}
+                            />
+                        </FormField>
+                    )}
 
                     <FormField label="Conversation Manager">
                         <Select

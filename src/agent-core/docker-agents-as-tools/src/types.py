@@ -51,17 +51,20 @@ from shared.stream_types import (
 
 
 class AgentAsTool(BaseModel):
-    """Configuration of sub-agents uses as tools in an agents as tool framework
+    """Configuration of sub-agents used as tools in an agents-as-tools framework.
 
-    Attribute:
-        runtimeId (str): identifier of the runtime
-        endpoint (str): name of the endpoint
-        role (str): role that the tool covers from the perspective of the orchestrator
+    The orchestrator's A2A client builds tool descriptions from each sub-agent's
+    agent card (populated by the sub-agent's own ``description`` field), so this
+    struct only needs to identify which runtime to wire.
+
+    Attributes:
+        runtimeId (str): identifier of the AgentCore runtime (the A2A twin ARN
+            after the AppSync resolver rewrite)
+        endpoint (str): name of the endpoint on the runtime
     """
 
     runtimeId: str
     endpoint: str
-    role: str
 
 
 class OrchestratorConfiguration(BaseModel):

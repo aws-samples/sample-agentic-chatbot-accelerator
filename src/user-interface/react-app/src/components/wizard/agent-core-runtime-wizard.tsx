@@ -17,7 +17,6 @@ import {
     Modal,
     Select,
     SpaceBetween,
-    Textarea,
     Tiles,
     Wizard,
 } from "@cloudscape-design/components";
@@ -409,7 +408,7 @@ export default function AgentCoreRuntimeCreatorWizard({
                                         value: "AGENTS_AS_TOOLS",
                                         label: "Agents as Tools",
                                         description:
-                                            "An orchestrator agent that delegates to existing agents exposed as tools, each with a defined role",
+                                            "An orchestrator agent that delegates to existing agents exposed as tools",
                                     },
                                     {
                                         value: "SWARM",
@@ -823,19 +822,6 @@ export default function AgentCoreRuntimeCreatorWizard({
                                     }
                                 }}
                                 disabled={availableEndpoints.length === 0}
-                            />
-                        </FormField>
-                        <FormField
-                            label="Role"
-                            description="Describe the role of this sub-agent for the orchestrator"
-                        >
-                            <Textarea
-                                value={currentToolParams?.role || ""}
-                                onChange={({ detail }) =>
-                                    updateToolParameter(selectedToolForConfig, "role", detail.value)
-                                }
-                                placeholder="Enter the role of this sub-agent..."
-                                rows={4}
                             />
                         </FormField>
                     </SpaceBetween>

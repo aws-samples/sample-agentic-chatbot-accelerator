@@ -14,7 +14,6 @@ import {
     Select,
     SpaceBetween,
     Table,
-    Textarea,
 } from "@cloudscape-design/components";
 import { RuntimeSummary } from "../../../API";
 import {
@@ -97,7 +96,6 @@ export function getAgentsAsToolsSteps({
         const newTool: AgentAsToolDefinition = {
             runtimeId: agent.agentRuntimeId,
             endpoint: "DEFAULT",
-            role: "",
         };
 
         setAgentsAsToolsConfig((prev) => ({
@@ -117,14 +115,6 @@ export function getAgentsAsToolsSteps({
         setAgentsAsToolsConfig((prev) => {
             const updated = [...prev.agentsAsTools];
             updated[index] = { ...updated[index], endpoint };
-            return { ...prev, agentsAsTools: updated };
-        });
-    };
-
-    const updateAgentToolRole = (index: number, role: string) => {
-        setAgentsAsToolsConfig((prev) => {
-            const updated = [...prev.agentsAsTools];
-            updated[index] = { ...updated[index], role };
             return { ...prev, agentsAsTools: updated };
         });
     };
@@ -285,7 +275,7 @@ export function getAgentsAsToolsSteps({
                             header={
                                 <Header
                                     variant="h2"
-                                    description="Select existing agents to expose as tools to the orchestrator. Each agent needs an endpoint and a role description."
+                                    description="Select existing agents to expose as tools to the orchestrator. Each sub-agent's capability description (set on the sub-agent itself) is what the orchestrator's LLM reads when deciding whether to delegate."
                                 >
                                     Sub-Agents as Tools
                                 </Header>
@@ -396,23 +386,6 @@ export function getAgentsAsToolsSteps({
                                                         />
                                                     );
                                                 },
-                                            },
-                                            {
-                                                id: "role",
-                                                header: "Role",
-                                                cell: (item) => (
-                                                    <Textarea
-                                                        value={item.role}
-                                                        onChange={({ detail }) =>
-                                                            updateAgentToolRole(
-                                                                item._index,
-                                                                detail.value,
-                                                            )
-                                                        }
-                                                        placeholder="Describe the role of this agent..."
-                                                        rows={2}
-                                                    />
-                                                ),
                                             },
                                             {
                                                 id: "actions",
@@ -581,16 +554,6 @@ export function getAgentsAsToolsSteps({
                                             header: "Endpoint",
                                             cell: (item) => item.endpoint,
                                         },
-                                        {
-                                            id: "role",
-                                            header: "Role",
-                                            cell: (item) =>
-                                                item.role || (
-                                                    <Box color="text-status-inactive">
-                                                        Not specified
-                                                    </Box>
-                                                ),
-                                        },
                                     ]}
                                 />
                             )}
@@ -638,8 +601,7 @@ export function isAgentsAsToolsStepValid(
         const hasAgentName =
             config.agentName.trim() !== "" && agentNamePattern.test(config.agentName);
         const hasAgentsAsTools = agentsAsToolsConfig.agentsAsTools.length > 0;
-        const allHaveRoles = agentsAsToolsConfig.agentsAsTools.every((a) => a.role.trim() !== "");
-        return hasAgentName && hasAgentsAsTools && allHaveRoles;
+        return hasAgentName && hasAgentsAsTools;
     }
 
     // Step 1: Orchestrator Configuration
