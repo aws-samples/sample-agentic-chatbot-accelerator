@@ -13,6 +13,12 @@ from typing import TYPE_CHECKING
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from opentelemetry import baggage
 from opentelemetry.context import attach
+from shared.agentcore_a2a import (
+    A2A_PORT,
+    HTTP_PORT,
+    SERVER_PROTOCOL_A2A,
+    SERVER_PROTOCOL_HTTP,
+)
 from shared.agentcore_memory import create_session_manager
 from shared.mcp_client import MCPClientManager
 from shared.session_history import save_conversation_exchange
@@ -827,9 +833,92 @@ def _initialize_voice_tools(configuration):
 
 
 # ============================================================
+# A2A protocol mode
+# ============================================================
+
+
+def _build_a2a_app() -> FastAPI:
+    """Build the FastAPI app served when this container runs in A2A protocol mode.
+
+    AgentCore Runtime allocates one microVM per ``runtimeSessionId``. The agent
+    we build here therefore lives exactly as long as the session does — when
+    a new session arrives, AgentCore spins up a new microVM and this function
+    runs again from scratch. So a single eagerly-built agent at startup is
+    *the* per-session agent for this microVM, with no need for lazy
+    construction or a session->agent cache.
+
+    Sub-agents reached over A2A are treated as stateless workers: no
+    AgentCore Memory is wired in (sessions in the orchestrator are the
+    user-facing notion of conversation state). The ``session_id`` and
+    ``user_id`` passed into ``create_agent`` are therefore observability-only
+    placeholders — they flow into log lines and SNS tool-event metadata but
+    are not used for memory scoping.
+    """
+    from shared.agentcore_a2a import runtime_arn_to_a2a_url
+    from strands.multiagent.a2a import A2AServer
+
+    a2a_app = FastAPI(title="AgentCore A2A Server")
+
+    @a2a_app.get("/ping")
+    async def a2a_ping():
+        """Health check used by AgentCore container probes."""
+        return {
+            "status": "Healthy",
+            "time_of_last_update": int(datetime.now().timestamp()),
+        }
+
+    configuration = parse_configuration(logger)
+    logger.info(
+        "Initializing A2A sub-agent",
+        extra={"agentName": os.environ.get("agentName", "")},
+    )
+
+    mcp_client_manager: MCPClientManager | None = None
+    if configuration.mcpServers:
+        mcp_client_manager = MCPClientManager(
+            mcp_servers=configuration.mcpServers,
+            logger=logger,
+            mcp_registry=AVAILABLE_MCPS,
+        )
+        mcp_client_manager.init_mcp_clients()
+
+    agent, _callbacks = create_agent(
+        configuration,
+        logger,
+        session_id="a2a",
+        user_id="a2a",
+        mcp_client_manager=mcp_client_manager,
+        session_manager=None,
+    )
+
+    runtime_arn = os.environ.get("agentRuntimeArn", "")
+    region = AWS_REGION or "us-east-1"
+    http_url = runtime_arn_to_a2a_url(runtime_arn, region) if runtime_arn else None
+
+    a2a_server = A2AServer(
+        agent=agent,
+        host="0.0.0.0",  # nosec B104 — required by AgentCore container networking
+        port=A2A_PORT,
+        http_url=http_url,
+        serve_at_root=True,
+    )
+    a2a_app.mount("/", a2a_server.to_fastapi_app())
+    return a2a_app
+
+
+# ============================================================
 # Entry point
 # ============================================================
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host=get_uvicorn_host(), port=8080)
+    server_protocol = os.environ.get(
+        "agentcoreServerProtocol", SERVER_PROTOCOL_HTTP
+    ).upper()
+
+    if server_protocol == SERVER_PROTOCOL_A2A:
+        logger.info("Starting in A2A protocol mode (port %d)", A2A_PORT)
+        uvicorn.run(_build_a2a_app(), host=get_uvicorn_host(), port=A2A_PORT)
+    else:
+        logger.info("Starting in HTTP protocol mode (port %d)", HTTP_PORT)
+        uvicorn.run(app, host=get_uvicorn_host(), port=HTTP_PORT)
