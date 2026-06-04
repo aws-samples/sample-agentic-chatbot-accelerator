@@ -118,11 +118,19 @@ def create_agent_runtime(
                 node.agentName for node in parsed_config.nodes if node.agentName
             }
             missing_agents = set()
+            missing_twins = set()
             try:
                 for agent_name in referenced_names:
                     response = SUMMARY_TABLE.get_item(Key={"AgentName": agent_name})
-                    if "Item" not in response:
+                    item = response.get("Item")
+                    if not item:
                         missing_agents.add(agent_name)
+                        continue
+                    # Graph nodes call sub-agents over A2A, so every referenced
+                    # agent must have an A2A twin runtime. Catch this at config-
+                    # save time rather than letting graph nodes fail at runtime.
+                    if not item.get("AgentRuntimeArnA2A"):
+                        missing_twins.add(agent_name)
             except ClientError as err:
                 logger.error(
                     "Failed to validate graph agent references",
@@ -133,6 +141,13 @@ def create_agent_runtime(
                 logger.error(
                     "Graph references non-existent agents",
                     extra={"missingAgents": list(missing_agents)},
+                )
+                return ""
+            if missing_twins:
+                logger.error(
+                    "Graph references agents without an A2A twin runtime; "
+                    "recreate them so the A2A twin is provisioned",
+                    extra={"missingA2ATwins": list(missing_twins)},
                 )
                 return ""
         elif resolved_architecture == ArchitectureType.SINGLE.value:

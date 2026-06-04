@@ -916,6 +916,25 @@ def _build_a2a_app() -> FastAPI:
         http_url=http_url,
         serve_at_root=True,
     )
+
+    # Swap the default executor for one that surfaces structured output as an
+    # A2A DataPart. Graph nodes need the structured payload to merge into
+    # shared state — the stock executor only emits TextPart artifacts, so
+    # without this graph A2A calls would lose any structured_output the
+    # sub-agent produces. Done in-place because A2AServer doesn't accept a
+    # custom executor on the constructor.
+    if configuration.structuredOutput:
+        from shared.a2a_executor import StructuredOutputA2AExecutor
+
+        so_model = build_structured_output_model(configuration.structuredOutput)
+        a2a_server.request_handler.agent_executor = StructuredOutputA2AExecutor(
+            agent, structured_output_model=so_model
+        )
+        logger.info(
+            "A2A executor patched with structured-output support",
+            extra={"fields": [f.model_dump() for f in configuration.structuredOutput]},
+        )
+
     a2a_app.mount("/", a2a_server.to_fastapi_app())
     return a2a_app
 
