@@ -61,6 +61,13 @@ class InputModel(BaseModel):
     # HTTP for default UI/orchestrator runtimes; A2A for the sub-agent twin
     # created alongside SINGLE images so orchestrators can call them via A2A.
     protocol: str = SERVER_PROTOCOL_HTTP
+    # Caller-supplied creation timestamp. The SFN mints this once before the
+    # parallel HTTP/A2A branch and passes it into both Lambda invocations so
+    # both containers inject the same `createdAt` env var — matching the
+    # partition key under which the agent config row is saved. Without this,
+    # each branch called `int(time.time())` independently and drifted by a
+    # few seconds, leaving the A2A twin unable to load its config at startup.
+    createdAt: Optional[int] = None
 
 
 class Body(BaseModel):
@@ -193,7 +200,10 @@ def handler(event: InputModel, _) -> dict:
         logger.exception(err)
         raise err
 
-    created_at = int(time.time())
+    # Use the SFN-supplied timestamp when present so HTTP and A2A twins
+    # share a single createdAt. Fall back to `int(time.time())` only for
+    # back-compat with callers that don't yet pass it.
+    created_at = event.createdAt if event.createdAt is not None else int(time.time())
 
     # Select container URI based on architecture type
     is_swarm = event.architectureType == ArchitectureType.SWARM.value
