@@ -8,6 +8,7 @@ A single agent configuration consists of:
 
 - **Model & Inference Parameters**: The LLM model, temperature, max tokens, stop sequences, and optional reasoning budget for extended thinking
 - **Instructions**: A system prompt defining the agent's role and behavior
+- **Description**: A short capability blurb published on the agent's A2A agent card; orchestrators and graph nodes read it to decide whether to delegate to this agent
 - **Tools**: Function-based or object-based tools registered in the tool registry
 - **MCP Servers**: External MCP servers providing additional tool capabilities (e.g. AWS Knowledge, custom APIs)
 - **Conversation Manager**: How conversation history is managed (Sliding Window is recommended)
@@ -43,18 +44,27 @@ In the **Agent Configuration** step:
 5. **Extended Thinking** (optional): Enable for models that support reasoning. When enabled, select a **Reasoning Effort** level (Low, Medium, High)
 6. **Agent Instructions**: Write a system prompt that defines the agent's role, behavior, and how it should use its tools
 
-### 3. Configure conversation manager
+### 3. Add an agent description
+
+The **Agent Description** is a short capability blurb (1–2 sentences) that becomes this agent's [A2A](https://a2a-protocol.org/) agent-card description. It's the source of truth that other agents read to decide whether to delegate to this one — concretely:
+
+- **Agents-as-tools orchestrators** read each sub-agent's description from its A2A card and surface it as the tool description their LLM uses to pick the right sub-agent.
+- **Graph nodes** invoke sub-agents over A2A, so the description shows up in the same card and is what operators inspect when wiring nodes.
+
+If you'll never expose this agent as a sub-agent (it's a top-level chat agent), the description is optional but still recommended for documentation. Keep it action-oriented: describe what the agent *does*, not what it *is*.
+
+### 4. Configure conversation manager
 
 Select the **Conversation Manager** to control how conversation history is managed:
 
 - **Sliding Window** (recommended): Maintains a rolling window of recent messages
 - **Null**: No conversation history management
 
-### 4. Enable memory (optional)
+### 5. Enable memory (optional)
 
 Check **Enable AgentCore Memory** to persist conversation context across sessions. When enabled, an AgentCore Memory resource is created and attached to your agent runtime, allowing it to maintain context even when sessions are terminated and resumed.
 
-### 5. Configure structured output (optional)
+### 6. Configure structured output (optional)
 
 Check **Enable Structured Output** to have the agent return structured JSON responses validated against typed fields:
 
@@ -69,7 +79,7 @@ The agent's final response will be automatically parsed into a Pydantic model wi
 
 ![Agent Configuration — Step 1: Model, instructions, conversation manager, memory, and structured output](../../imgs/agentic-patterns/single-agent-01.png)
 
-### 6. Add tools (optional)
+### 7. Add tools (optional)
 
 In the **Tools** step, extend your agent's capabilities:
 
@@ -81,11 +91,11 @@ You can add multiple tools — the agent will decide which one(s) to use based o
 
 ![Tools — Step 2: Adding MCP servers, custom tools, and knowledge bases](../../imgs/agentic-patterns/single-agent-02.png)
 
-### 7. Review and create
+### 8. Review and create
 
 The review step shows a **JSON preview** of the complete agent configuration. Click **Create Runtime** to submit. The agent goes through the creation pipeline (Step Function → AgentCore Runtime) and will reach "Ready" status when deployment is complete.
 
-### 8. Test the agent
+### 9. Test the agent
 
 Once the agent reaches "Ready" status:
 
