@@ -49,7 +49,7 @@
             "Assign": {
                 "memoryId": null
             },
-            "Next": "Create Runtimes"
+            "Next": "Mint createdAt"
         },
         "Check on Short Memory Exists": {
             "Type": "Task",
@@ -78,7 +78,7 @@
             "Choices": [
                 {
                     "Condition": "{% $boolean($memoryId) %}",
-                    "Next": "Create Runtimes"
+                    "Next": "Mint createdAt"
                 }
             ],
             "Default": "Start Create Memory"
@@ -141,10 +141,18 @@
                 },
                 {
                     "Condition": "{% $memoryCreationStatus = 'ACTIVE' %}",
-                    "Next": "Create Runtimes"
+                    "Next": "Mint createdAt"
                 }
             ],
             "Default": "Wait for Memory Ready"
+        },
+        "Mint createdAt": {
+            "Type": "Pass",
+            "Comment": "Generate the agent version's createdAt once so HTTP and A2A branches inject the same value into their containers and the saved config row is keyed under the same partition. Without this, each branch's Lambda called int(time.time()) independently and the A2A twin's container could not load its config at startup.",
+            "Assign": {
+                "createdAt": "{% $floor($millis() / 1000) %}"
+            },
+            "Next": "Create Runtimes"
         },
         "Create Runtimes": {
             "Type": "Parallel",
@@ -163,14 +171,14 @@
                                     "agentCfg": "{% $agentCfg %}",
                                     "memoryId": "{% $memoryId %}",
                                     "architectureType": "{% $architectureType %}",
-                                    "protocol": "HTTP"
+                                    "protocol": "HTTP",
+                                    "createdAt": "{% $createdAt %}"
                                 }
                             },
                             "Assign": {
                                 "agentRuntimeId": "{% $states.result.Payload.body.agentRuntimeId %}",
                                 "agentRuntimeArn": "{% $states.result.Payload.body.agentRuntimeArn %}",
-                                "agentRuntimeVersion": "{% $states.result.Payload.body.agentRuntimeVersion %}",
-                                "createdAt": "{% $states.result.Payload.body.createdAt %}"
+                                "agentRuntimeVersion": "{% $states.result.Payload.body.agentRuntimeVersion %}"
                             },
                             "Next": "Wait for HTTP Runtime"
                         },
@@ -218,8 +226,7 @@
                             "Output": {
                                 "agentRuntimeId": "{% $agentRuntimeId %}",
                                 "agentRuntimeArn": "{% $agentRuntimeArn %}",
-                                "agentRuntimeVersion": "{% $agentRuntimeVersion %}",
-                                "createdAt": "{% $createdAt %}"
+                                "agentRuntimeVersion": "{% $agentRuntimeVersion %}"
                             },
                             "End": true
                         }
@@ -256,7 +263,8 @@
                                     "agentCfg": "{% $agentCfg %}",
                                     "memoryId": "{% $memoryId %}",
                                     "architectureType": "{% $architectureType %}",
-                                    "protocol": "A2A"
+                                    "protocol": "A2A",
+                                    "createdAt": "{% $createdAt %}"
                                 }
                             },
                             "Assign": {
@@ -327,7 +335,6 @@
                 "agentRuntimeId": "{% $states.result[0].agentRuntimeId %}",
                 "agentRuntimeArn": "{% $states.result[0].agentRuntimeArn %}",
                 "agentRuntimeVersion": "{% $states.result[0].agentRuntimeVersion %}",
-                "createdAt": "{% $states.result[0].createdAt %}",
                 "agentRuntimeArnA2A": "{% $states.result[1].agentRuntimeArnA2A %}"
             },
             "Next": "Is New Runtime?"
