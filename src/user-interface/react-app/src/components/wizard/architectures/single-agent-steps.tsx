@@ -156,8 +156,8 @@ export function getSingleAgentSteps({
                                 errorText={
                                     config.agentName.trim() === ""
                                         ? "Agent name is required"
-                                        : !/^[a-zA-Z][a-zA-Z0-9_]{0,47}$/.test(config.agentName)
-                                          ? "Agent name must start with a letter and contain only letters, numbers, and underscores (max 48 characters)"
+                                        : !/^[a-zA-Z][a-zA-Z0-9_]{0,43}$/.test(config.agentName)
+                                          ? "Agent name must start with a letter and contain only letters, numbers, and underscores (max 44 characters; the A2A twin runtime appends '_a2a' and the combined name must fit AgentCore's 48-char limit)"
                                           : ""
                                 }
                             >
@@ -539,7 +539,7 @@ export function isSingleAgentStepValid(
 ): boolean {
     // Step 0: Agent Configuration
     if (stepIndex === 0) {
-        const agentNamePattern = /^[a-zA-Z][a-zA-Z0-9_]{0,47}$/;
+        const agentNamePattern = /^[a-zA-Z][a-zA-Z0-9_]{0,43}$/;
         const basicValid =
             config.agentName.trim() !== "" &&
             agentNamePattern.test(config.agentName) &&

@@ -498,17 +498,27 @@ def _resolve_a2a_arn_for_runtime_id(runtime_id: str) -> Optional[str]:
 
     Scans the summary table — the table is small (one item per agent) and
     this code path only runs when an operator submits a new agents-as-tools
-    runtime version, so no GSI is justified yet.
+    runtime version, so no GSI is justified yet. The pagination loop guards
+    against the table eventually growing past DynamoDB's 1MB scan page cap,
+    where a non-paginated scan would silently miss matching items.
     """
-    response = SUMMARY_TABLE.scan(
-        FilterExpression="AgentRuntimeId = :rid",
-        ExpressionAttributeValues={":rid": runtime_id},
-        ProjectionExpression="AgentRuntimeArnA2A",
-    )
-    items = response.get("Items", [])
-    if not items:
-        return None
-    return items[0].get("AgentRuntimeArnA2A") or None
+    last_key: Optional[dict] = None
+    while True:
+        kwargs = {
+            "FilterExpression": "AgentRuntimeId = :rid",
+            "ExpressionAttributeValues": {":rid": runtime_id},
+            "ProjectionExpression": "AgentRuntimeArnA2A",
+        }
+        if last_key:
+            kwargs["ExclusiveStartKey"] = last_key
+        response = SUMMARY_TABLE.scan(**kwargs)
+        for item in response.get("Items", []) or []:
+            arn = item.get("AgentRuntimeArnA2A")
+            if arn:
+                return arn
+        last_key = response.get("LastEvaluatedKey")
+        if not last_key:
+            return None
 
 
 def _get_runtime_cfg_by_qualifier_impl(agentName: str, qualifier: str) -> str:

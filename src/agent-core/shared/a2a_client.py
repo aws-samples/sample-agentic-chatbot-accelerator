@@ -134,12 +134,14 @@ def _extract_result(result: dict[str, Any]) -> A2AInvocationResult:
     """
     text_chunks: list[str] = []
     structured_output: dict | None = None
+    saw_any_part = False
 
     def _absorb_parts(parts: list[dict[str, Any]] | None) -> None:
-        nonlocal structured_output
+        nonlocal structured_output, saw_any_part
         if not parts:
             return
         for part in parts:
+            saw_any_part = True
             kind = part.get("kind") or part.get("type")
             if kind == "text":
                 text = part.get("text") or ""
@@ -158,6 +160,16 @@ def _extract_result(result: dict[str, Any]) -> A2AInvocationResult:
     # Streaming task shape: result.artifacts[*].parts
     for artifact in result.get("artifacts") or []:
         _absorb_parts(artifact.get("parts"))
+
+    if not saw_any_part:
+        # The bespoke /invocations path raised on empty responses so callers
+        # would see cold-start / malformed-response failures instead of a
+        # blank successful turn. Preserve that behaviour for A2A.
+        raise RuntimeError(
+            "Empty A2A sub-agent response — no text or data parts in "
+            "result.message or result.artifacts; the agent may still be "
+            "initializing or the invocation timed out"
+        )
 
     return A2AInvocationResult(
         content="".join(text_chunks),
