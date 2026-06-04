@@ -4,7 +4,6 @@
 # SPDX-License-Identifier: MIT-0
 # ------------------------------------------------------------------------ #
 """Shared fixtures for graph tests."""
-import json
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -169,48 +168,40 @@ def mock_dynamodb_table(sample_graph_configuration):
 
 @pytest.fixture
 def mock_agentcore_client():
-    """Mock AgentCore data-plane and control-plane clients."""
-    mock_response_body = MagicMock()
-    mock_response_body.read.return_value = json.dumps(
-        {"data": {"content": "Mock agent response"}}
-    ).encode()
+    """Mock the A2A sub-agent invocation pipeline.
 
-    mock_ac_client = MagicMock()
-    mock_ac_client.invoke_agent_runtime.return_value = {
-        "response": mock_response_body,
+    Patches both the runtime-arn resolver (which would otherwise hit the
+    summary DynamoDB table) and the A2A invocation function (which would
+    otherwise issue a SigV4-signed httpx call). Yields the mock invoker so
+    tests can assert call counts / inspect arguments.
+    """
+    from shared.a2a_client import A2AInvocationResult
+
+    fake_arns = {
+        "research_agent": "arn:aws:bedrock-agentcore:us-east-1:1:runtime/research_agent_a2a-X",
+        "writer_agent": "arn:aws:bedrock-agentcore:us-east-1:1:runtime/writer_agent_a2a-X",
+        "reviewer_agent": "arn:aws:bedrock-agentcore:us-east-1:1:runtime/reviewer_agent_a2a-X",
+        "solo_agent": "arn:aws:bedrock-agentcore:us-east-1:1:runtime/solo_agent_a2a-X",
     }
 
-    mock_acc_client = MagicMock()
-    mock_acc_client.list_agent_runtimes.return_value = {
-        "agentRuntimes": [
-            {
-                "agentRuntimeName": "research_agent",
-                "agentRuntimeId": "rt-research-001",
-            },
-            {
-                "agentRuntimeName": "writer_agent",
-                "agentRuntimeId": "rt-writer-002",
-            },
-            {
-                "agentRuntimeName": "reviewer_agent",
-                "agentRuntimeId": "rt-reviewer-003",
-            },
-        ],
-    }
+    invoke_mock = MagicMock(
+        return_value=A2AInvocationResult(content="Mock agent response")
+    )
 
-    with patch("src.factory.get_agentcore_client", return_value=mock_ac_client), patch(
-        "src.factory.get_agentcore_control_client", return_value=mock_acc_client
-    ), patch.dict(
+    with patch(
+        "src.factory._fetch_a2a_runtime_arn",
+        side_effect=lambda name: fake_arns.get(name, f"arn:fake:{name}"),
+    ), patch("src.factory.invoke_a2a_subagent", invoke_mock), patch.dict(
         "os.environ",
         {
             "accountId": "123456789012",
             "AWS_REGION": "us-east-1",
+            "agentsSummaryTableName": "test-agents-summary",
         },
     ):
         import src.factory as factory_module
 
-        factory_module._agent_runtime_cache.clear()
+        factory_module._agent_a2a_arn_cache.clear()
         yield {
-            "ac_client": mock_ac_client,
-            "acc_client": mock_acc_client,
+            "invoke_a2a": invoke_mock,
         }

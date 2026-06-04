@@ -5,15 +5,14 @@
 # ------------------------------------------------------------------------ #
 from __future__ import annotations
 
-import json
 import os
 import uuid
 from typing import TYPE_CHECKING, Any, TypedDict
 
+import boto3
 from langgraph.graph import END, StateGraph
 from langgraph.types import Send
-from shared.base_registry import get_agentcore_client, get_agentcore_control_client
-from shared.utils import AgentRuntimeResponse, parse_agent_runtime_response
+from shared.a2a_client import A2AInvocationResult, invoke_a2a_subagent
 
 from . import (  # noqa: F401 — triggers state + deterministic node registration
     states as _states,
@@ -30,6 +29,8 @@ if TYPE_CHECKING:
     from logging import Logger
 
 ACCOUNT_ID = os.environ.get("accountId")
+AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
+AGENTS_SUMMARY_TABLE_NAME = os.environ.get("agentsSummaryTableName")
 
 
 # ── Invocation-scoped extra state ───────────────────────────────────
@@ -79,91 +80,83 @@ def get_invocation_extra_state() -> dict[str, Any]:
     return dict(_invocation_extra_state)
 
 
-_agent_runtime_cache: dict[str, str] = {}
+_agent_a2a_arn_cache: dict[str, str] = {}
 
 
-def _fetch_agent_runtime_id(agent_name: str) -> str:
-    """Resolve an agent name to its AgentCore runtime ID (cached)."""
-    if agent_name in _agent_runtime_cache:
-        return _agent_runtime_cache[agent_name]
+def _fetch_a2a_runtime_arn(agent_name: str) -> str:
+    """Resolve a sub-agent name to its A2A twin runtime ARN (cached).
 
-    acc_client = get_agentcore_control_client()
-    next_token = None
+    The agents summary table holds one row per sub-agent with both the HTTP
+    runtime id and the A2A twin ARN. Graph nodes always need the A2A twin —
+    the HTTP runtime is for UI standalone access, not orchestrator calls.
 
-    while True:
-        api_args: dict[str, Any] = {"maxResults": 10}
-        if next_token:
-            api_args["nextToken"] = next_token
+    Caches per agent name so repeated calls within the same microVM (e.g. a
+    revision loop visiting the same node) don't re-hit DynamoDB.
+    """
+    if agent_name in _agent_a2a_arn_cache:
+        return _agent_a2a_arn_cache[agent_name]
 
-        response = acc_client.list_agent_runtimes(**api_args)
-        next_token = response.get("nextToken")
+    if not AGENTS_SUMMARY_TABLE_NAME:
+        raise RuntimeError(
+            "agentsSummaryTableName env var is required to resolve A2A sub-agent ARNs"
+        )
 
-        for elem in response.get("agentRuntimes", []):
-            if elem.get("agentRuntimeName") == agent_name:
-                runtime_id = elem["agentRuntimeId"]
-                _agent_runtime_cache[agent_name] = runtime_id
-                return runtime_id
+    table = boto3.resource("dynamodb", region_name=AWS_REGION).Table(  # type: ignore
+        AGENTS_SUMMARY_TABLE_NAME
+    )
+    # Query (not get_item) because the agent-core execution role grants
+    # DynamoDB:Query on the summary table — see iac-cdk/lib/agent-core/index.ts
+    # ("DynamoDBQueryForSwarmAgentReferences" statement). The graph container
+    # reuses the same role, and using query keeps IAM unchanged.
+    response = table.query(
+        KeyConditionExpression="AgentName = :agent",
+        ExpressionAttributeValues={":agent": agent_name},
+    )
+    items = response.get("Items", [])
+    if not items:
+        raise RuntimeError(f"Agent runtime not found for agent name: {agent_name}")
 
-        if not next_token:
-            break
-
-    raise RuntimeError(f"Agent runtime not found for agent name: {agent_name}")
+    a2a_arn = items[0].get("AgentRuntimeArnA2A")
+    if not a2a_arn:
+        raise RuntimeError(
+            f"Sub-agent '{agent_name}' has no A2A twin — recreate it so the "
+            "twin runtime is provisioned."
+        )
+    _agent_a2a_arn_cache[agent_name] = a2a_arn
+    return a2a_arn
 
 
 def _invoke_agent(
     agent_name: str,
-    endpoint_name: str,
+    endpoint_name: str,  # noqa: ARG001 — kept in signature for caller symmetry; A2A twins don't use endpoints
     prompt: str,
     session_id: str,
     user_id: str,
     logger: Any = None,
     state: dict | None = None,
-) -> AgentRuntimeResponse:
-    """Invoke a referenced AgentCore runtime and return a rich response.
+) -> A2AInvocationResult:
+    """Invoke a referenced sub-agent over A2A and return a rich response.
 
-    When *state* is provided it is JSON-serialised and included in the
-    payload so the sub-agent can hydrate its own agent state.
-
-    Delegates stream parsing to :func:`shared.utils.parse_agent_runtime_response`,
-    which handles incremental UTF-8 decoding and SSE event extraction.
+    *state* — when provided — is shipped as a ``DataPart`` next to the prompt
+    so the sub-agent's executor sees it inline as ``[Structured Data]``.
+    Structured output comes back as a ``DataPart`` thanks to
+    :class:`shared.a2a_executor.StructuredOutputA2AExecutor`.
     """
-    ac_client = get_agentcore_client()
-    runtime_id = _fetch_agent_runtime_id(agent_name)
+    runtime_arn = _fetch_a2a_runtime_arn(agent_name)
 
-    # Unique sub-session so the referenced agent maintains its own conversation context
+    # Unique sub-session per node call so each AgentCore microVM is scoped
+    # to one node invocation. A revision loop revisiting the same node
+    # therefore lands in a fresh microVM rather than reusing a polluted one.
     node_session_id = f"{session_id}-graph-{agent_name}-{uuid.uuid4().hex[:8]}"
 
-    payload_dict: dict[str, Any] = {
-        "prompt": prompt,
-        "userId": user_id,
-    }
-    if state:
-        payload_dict["state"] = json.dumps(state)
-
-    payload = json.dumps(payload_dict).encode()
-
-    response = ac_client.invoke_agent_runtime(
-        agentRuntimeArn=runtime_id,
-        runtimeSessionId=node_session_id,
-        runtimeUserId=user_id,
-        payload=payload,
-        qualifier=endpoint_name,
-        accountId=ACCOUNT_ID,
+    return invoke_a2a_subagent(
+        runtime_arn=runtime_arn,
+        region=AWS_REGION,
+        prompt=prompt,
+        session_id=node_session_id,
+        user_id=user_id,
+        state=state,
     )
-
-    result = parse_agent_runtime_response(
-        response.get("response"),
-        agent_name=agent_name,
-        return_structured=True,
-    )
-    # parse_agent_runtime_response with return_structured=True always
-    # returns AgentRuntimeResponse, but the type signature is a union
-    # for backward compatibility.
-    if not isinstance(result, AgentRuntimeResponse):
-        raise TypeError(
-            f"Expected AgentRuntimeResponse with return_structured=True, got {type(result).__name__}"
-        )
-    return result
 
 
 def _concat_reducer(current: str, new: str) -> str:
