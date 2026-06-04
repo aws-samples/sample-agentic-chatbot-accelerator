@@ -853,7 +853,6 @@ def _build_a2a_app() -> FastAPI:
     placeholders — they flow into log lines and SNS tool-event metadata but
     are not used for memory scoping.
     """
-    from shared.agentcore_a2a import runtime_arn_to_a2a_url
     from strands.multiagent.a2a import A2AServer
 
     a2a_app = FastAPI(title="AgentCore A2A Server")
@@ -903,9 +902,12 @@ def _build_a2a_app() -> FastAPI:
         else f"AgentCore sub-agent {agent_name}"
     )
 
-    runtime_arn = os.environ.get("agentRuntimeArn", "")
-    region = AWS_REGION or "us-east-1"
-    http_url = runtime_arn_to_a2a_url(runtime_arn, region) if runtime_arn else None
+    # AgentCore auto-populates AGENTCORE_RUNTIME_URL with the public invocation
+    # URL of this runtime (e.g. https://bedrock-agentcore.<region>.amazonaws.com
+    # /runtimes/<urlencoded-arn>/invocations/). Surfacing it as the agent
+    # card's `url` ensures A2A clients post `message/send` back through the
+    # AgentCore proxy instead of trying to reach 0.0.0.0:9000 directly.
+    http_url = os.environ.get("AGENTCORE_RUNTIME_URL")
 
     a2a_server = A2AServer(
         agent=agent,
