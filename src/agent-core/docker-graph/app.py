@@ -259,6 +259,7 @@ async def graph_text_chat(websocket: WebSocket):
                             message_id=message_id,
                             user_message=user_message,
                             ai_response=final_data.get("content", ""),
+                            structured_output=final_data.get("structuredOutput"),
                             runtime_id=message.get(
                                 "agentRuntimeId", os.environ.get("agentName", "")
                             ),

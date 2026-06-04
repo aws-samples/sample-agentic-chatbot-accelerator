@@ -20,10 +20,8 @@ global_settings:
       reason: 'create-vector-index Lambda package — vendored opensearchpy/urllib3/google.protobuf'
 
     # CDK synth output, Lambda asset bundles, and node_modules
-    - path: 'iac-cdk/cdk.out/'
-      reason: 'CDK synthesized templates'
-    - path: '**/cdk.out/asset.*/**'
-      reason: 'CDK Lambda asset bundles — vendored third-party Python deps (ASH default-includes these; we override)'
+    - path: '**/cdk.out/**'
+      reason: 'CDK synthesized templates and Lambda asset bundles — generated outputs, not source. Glob form matches the absolute paths checkov reports (it mounts the source as /).'
     - path: '**/node_modules/**'
       reason: 'Third-party dependencies'
 
