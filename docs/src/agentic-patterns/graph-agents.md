@@ -37,7 +37,9 @@ The graph engine now supports advanced pipeline patterns:
 Before creating a graph agent, you need:
 
 1. **At least one deployed agent** (single or swarm) with status "Ready" and a tagged endpoint (e.g. DEFAULT)
-2. **The accelerator deployed** with the graph feature enabled (CDK/Terraform stack includes the graph container image)
+2. **An A2A twin runtime** for every agent referenced by an agent node. Single agents are deployed as twin runtimes by default (one HTTP, one A2A) — you don't need to do anything extra. The graph container talks to sub-agents over A2A, so a referenced agent without a twin will fail validation at config-save time
+3. **A capability description on each referenced sub-agent** (set on the sub-agent when you create it — see [Single Agent → Add an agent description](single-agent.md)). Graph routing is decided at config time by the edges you draw, not by the description, but the description is what operators read in the wizard and View Version modal when wiring nodes — so without it the graph topology is opaque
+4. **The accelerator deployed** with the graph feature enabled (CDK/Terraform stack includes the graph container image)
 
 ## Step-by-Step: Creating a Graph Agent
 
@@ -48,7 +50,8 @@ Each agent node in the graph references an existing agent. Create them through t
 1. Go to **Agent Factory** → **Create Agent**
 2. Select **Single Agent** (or **Swarm**) architecture
 3. Configure each agent with its own instructions, model, and tools
-4. Wait for each agent to reach "Ready" status
+4. **Fill in the Agent Description** — this isn't what routes traffic in a graph (edges do that), but it's what shows up next to the agent name in the node-picker dropdown and in the View Version modal. A good description makes the graph topology self-documenting; an empty description makes it nearly impossible to remember what each node does six months later.
+5. Wait for each agent to reach "Ready" status
 
 ### 2. Create the graph agent
 
@@ -509,7 +512,7 @@ To update a graph agent's configuration:
 ## How It Works Under the Hood
 
 1. The UI sends a `createAgentCoreRuntime` mutation with `architectureType: GRAPH` and the graph config as `configValue`
-2. The Agent Factory Resolver validates the config against `GraphConfiguration` (Pydantic) and verifies all referenced agents exist
+2. The Agent Factory Resolver validates the config against `GraphConfiguration` (Pydantic), verifies all referenced agents exist, and **rejects the config if any referenced agent has no A2A twin runtime** (graph nodes call sub-agents over A2A, so the twin is required)
 3. The Step Function invokes the Create Runtime Version Lambda, which selects the graph Docker container (`docker-graph/`)
 4. At runtime, the graph container's `data_source.py` loads the graph configuration from DynamoDB
 5. `factory.py` compiles the configuration into a LangGraph `StateGraph`:
@@ -519,7 +522,8 @@ To update a graph agent's configuration:
 6. When a message arrives:
    - `set_invocation_extra_state()` stores any caller-provided state
    - The compiled graph executes from the entry point
-   - Agent nodes forward state to sub-agents and merge structured outputs back
+   - Agent nodes resolve the referenced sub-agent's A2A twin ARN from the agents summary table, then call it via SigV4-signed JSON-RPC `message/send` — the prompt rides as a `TextPart` and graph state as a sibling `DataPart`
+   - The sub-agent's structured output (when configured) comes back as a `DataPart` artifact; the graph factory merges those fields into the graph state for downstream nodes
    - Fork nodes fan out, dynamic map nodes use `Send()`, deterministic nodes run Python functions
    - `get_invocation_extra_state()` extracts accumulated structured outputs
 7. The final response (text + optional `structuredOutput`) is returned via WebSocket
@@ -544,7 +548,8 @@ Conditional edges use simple keyword matching against the previous node's output
 |---|---|---|
 | Graph creation fails | Referenced agent doesn't exist or has no endpoint | Ensure all referenced agents are in "Ready" status with a tagged endpoint |
 | Agent not appearing in dropdown | Agent hasn't finished creating | Wait for the agent to reach "Ready" status |
-| Empty or partial response | SSE response parsing issue | Check the graph container logs in CloudWatch (`/aws/bedrock-agentcore/runtimes/`) |
+| Empty or partial response | A2A response missing parts | Check the graph container logs in CloudWatch (`/aws/bedrock-agentcore/runtimes/`) — the graph factory walks `result.message.parts`, `artifacts[*].parts`, and `history[*].parts` so a malformed sub-agent response surfaces as an empty `A2AInvocationResult` |
+| "Graph references agents without an A2A twin runtime" | Sub-agent was created before A2A twins were rolled out | Recreate the sub-agent so the A2A twin is provisioned (the agent-factory creates twins automatically for new SINGLE-architecture agents) |
 | Timeout errors | Complex workflows exceeding defaults | Increase execution timeout and node timeout in orchestrator settings |
 | Wrong node executed | Conditional routing matched wrong keyword | Use more distinctive condition keywords and check agent instructions |
 | Infinite loop | Unconditional cycle in the graph | Add a conditional edge with an exit condition to break the cycle |

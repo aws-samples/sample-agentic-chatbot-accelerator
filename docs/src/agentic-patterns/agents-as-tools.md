@@ -7,13 +7,15 @@ This guide explains how to create and test agents using the **agents-as-tools** 
 An agents-as-tools configuration consists of:
 
 - **Orchestrator Agent**: A central agent with its own model, instructions, and reasoning capabilities that decides which sub-agents to invoke
-- **Sub-Agents as Tools**: Existing deployed agents that are exposed as tools to the orchestrator, each with a defined **role** describing its specialization
+- **Sub-Agents as Tools**: Existing deployed agents wired in as tools. Each sub-agent's **Description** (set on the sub-agent itself when you create it) is published on its A2A agent card, and the orchestrator reads that description to decide when to delegate. There is no separate "role" field on the orchestrator — the sub-agent owns its own capability blurb.
 - **Endpoint**: The qualifier/endpoint of each sub-agent (e.g. `DEFAULT`)
 - **Optional Tools**: Additional tools, knowledge bases, and MCP servers available to the orchestrator alongside the sub-agent tools
 
-Unlike graph agents where the execution flow is predefined by edges, the orchestrator dynamically decides which sub-agent(s) to invoke based on the user's request and each sub-agent's role description. The orchestrator can invoke multiple sub-agents in sequence, combine their outputs, and reason about the results before responding to the user.
+Under the hood the orchestrator talks to each sub-agent over the [A2A protocol](https://a2a-protocol.org/) — it discovers each sub-agent's agent card, builds a tool out of it (using the card's `description`), and the LLM picks among those tools. So a sub-agent's `Description` is the single source of truth for delegation. If two sub-agents have overlapping descriptions, the orchestrator can't disambiguate; if a description is empty, the agent card publishes a generic fallback and delegation becomes unreliable.
 
-This pattern is inspired by the [Strands Agents multi-agent agents-as-tools](https://strandsagents.com/docs/user-guide/concepts/multi-agent/agents-as-tools/) approach: each sub-agent is wrapped as a tool with a description derived from its role, allowing the orchestrator to select the right agent for each task.
+Unlike graph agents where the execution flow is predefined by edges, the orchestrator dynamically decides which sub-agent(s) to invoke based on the user's request and each sub-agent's description. The orchestrator can invoke multiple sub-agents in sequence, combine their outputs, and reason about the results before responding to the user.
+
+This pattern is inspired by the [Strands Agents multi-agent agents-as-tools](https://strandsagents.com/docs/user-guide/concepts/multi-agent/agents-as-tools/) approach.
 
 ## Prerequisites
 
@@ -31,7 +33,10 @@ Each sub-agent is an independent agent that can be invoked on its own. Create th
 1. Go to **Agent Factory** → **Create Agent**
 2. Select **Single Agent** architecture
 3. Configure the agent with its own name, instructions, and model
-4. Wait for it to reach "Ready" status and ensure it has a tagged endpoint (e.g. DEFAULT)
+4. **Fill in the Agent Description** — this is the capability blurb the orchestrator's LLM will read to decide when to delegate. Write it in present tense and lead with what the agent *does*, not what it *is*. See [Single Agent → Add an agent description](single-agent.md) for the full guidance.
+5. Wait for it to reach "Ready" status and ensure it has a tagged endpoint (e.g. DEFAULT)
+
+> **Why the description matters here:** when an agent is wired as a sub-agent, its A2A twin runtime publishes an agent card with this description. If you skip the description on the sub-agent, the orchestrator's LLM has no reliable signal for picking it over other sub-agents.
 
 ### 2. Create the orchestrator agent
 
@@ -45,8 +50,9 @@ In the **Agents as Tools** step:
 
 1. Use the **Select an agent** dropdown to add existing agents as tools
 2. For each agent, select the **Endpoint** from the dropdown (typically "DEFAULT")
-3. Enter a **Role** description — this is critical as the orchestrator uses it to decide when to invoke each sub-agent. Be specific and descriptive about what the agent can do.
-4. You can add multiple sub-agents; the orchestrator will reason about which one(s) to call
+3. You can add multiple sub-agents; the orchestrator will reason about which one(s) to call
+
+There is **no role field on this step** — the orchestrator reads each sub-agent's own Description (the one you set when creating the sub-agent) from its A2A agent card. To change how the orchestrator perceives a sub-agent, edit that sub-agent's Description (create a new version of the sub-agent), don't try to override it here.
 
 ![Agents as Tools — Step 1: Adding sub-agents with endpoint and role configuration](../../imgs/agentic-patterns/agents-as-tools-01.png)
 
@@ -65,7 +71,7 @@ In the **Orchestrator Configuration** step:
 
 The review step shows:
 
-- A **Sub-Agent Tools** summary table (agent name, endpoint, role)
+- A **Sub-Agent Tools** summary table (agent name, endpoint, and description sourced from each sub-agent's A2A card)
 - A **JSON preview** of the complete configuration
 
 Click **Create Runtime** to submit. The orchestrator agent goes through the same creation pipeline as other agents (Step Function → AgentCore Runtime).
@@ -84,15 +90,17 @@ A travel planning orchestrator that delegates to specialized sub-agents for book
 
 ### Step 1 — Create two sub-agents
 
-| Agent Name | Instructions |
-|---|---|
-| `booking_agent` | "You are a booking assistant specializing in travel reservations. When given a travel request, simulate looking up available flights and hotels for the requested destination and dates. Provide realistic-looking options with prices, airlines, hotel names, and ratings. Format your response clearly with separate sections for flights and accommodations. Since you don't have access to real booking systems, generate plausible options based on the destination." |
-| `activities_agent` | "You are a local activities and excursions expert. When given a travel destination and dates, simulate researching and recommending local activities, tours, restaurants, and cultural experiences. Provide realistic suggestions with estimated costs, durations, and brief descriptions. Organize recommendations by category (sightseeing, food, adventure, culture). Since you don't have access to real activity databases, generate plausible recommendations based on the destination." |
+For each sub-agent, fill in **both** Instructions (how it should behave) and Description (the capability blurb the orchestrator will read).
+
+| Agent Name | Instructions | Description (drives delegation) |
+|---|---|---|
+| `booking_agent` | "You are a booking assistant specializing in travel reservations. When given a travel request, simulate looking up available flights and hotels for the requested destination and dates. Provide realistic-looking options with prices, airlines, hotel names, and ratings. Format your response clearly with separate sections for flights and accommodations. Since you don't have access to real booking systems, generate plausible options based on the destination." | "Handles travel booking research including flights and hotel availability. Use this agent when the user needs help finding or comparing flights, hotels, or rental cars for specific destinations and dates." |
+| `activities_agent` | "You are a local activities and excursions expert. When given a travel destination and dates, simulate researching and recommending local activities, tours, restaurants, and cultural experiences. Provide realistic suggestions with estimated costs, durations, and brief descriptions. Organize recommendations by category (sightseeing, food, adventure, culture). Since you don't have access to real activity databases, generate plausible recommendations based on the destination." | "Researches and recommends local activities, tours, and dining options at travel destinations. Use this agent when the user wants suggestions for things to do, places to eat, or experiences to have at their destination." |
 
 Create each one through the UI:
 
 1. **Agent Factory** → **Create Agent** → **Single Agent**
-2. Set the agent name, instructions, and model (e.g. `us.anthropic.claude-haiku-4-5-20251001-v1:0`)
+2. Set the agent name, instructions, **description**, and model (e.g. `us.anthropic.claude-haiku-4-5-20251001-v1:0`)
 3. Do **not** add any tools — the agents will simulate their responses
 4. Wait for "Ready" status
 
@@ -103,10 +111,12 @@ Create each one through the UI:
 
 #### Add sub-agents
 
-| Agent | Endpoint | Role |
-|---|---|---|
-| `booking_agent` | DEFAULT | "Handles travel booking research including flights and hotel availability. Invoke this agent when the user needs help finding or comparing travel options like flights, hotels, or rental cars for specific destinations and dates." |
-| `activities_agent` | DEFAULT | "Researches and recommends local activities, tours, and dining options at travel destinations. Invoke this agent when the user wants suggestions for things to do, places to eat, or experiences to have at their destination." |
+| Agent | Endpoint |
+|---|---|
+| `booking_agent` | DEFAULT |
+| `activities_agent` | DEFAULT |
+
+Each sub-agent's description (set in Step 1) shows up in a read-only column on the wizard so you can confirm what the orchestrator will read. To change the description, edit the sub-agent and create a new version of it.
 
 #### Orchestrator instructions
 
@@ -165,7 +175,7 @@ To inspect an existing agents-as-tools configuration:
 1. Go to **Agent Factory**
 2. Find the agent in the table — the **Architecture** column shows "AGENTS_AS_TOOLS"
 3. Click on a version to open the **View Version** modal
-4. The modal displays: model configuration, orchestrator instructions, agents-as-tools table (runtime ID, endpoint, role), additional tools (if any), and conversation manager
+4. The modal displays: model configuration, orchestrator instructions, agents-as-tools table (runtime ID, endpoint, and the description sourced from each sub-agent's A2A card), additional tools (if any), and conversation manager
 
 ## Creating a New Version
 
@@ -180,14 +190,17 @@ To update an agents-as-tools configuration:
 ## How It Works Under the Hood
 
 1. The UI sends a `createAgentCoreRuntime` mutation with `architectureType: AGENTS_AS_TOOLS` and the orchestrator config as `configValue`
-2. The Agent Factory Resolver validates the config against `OrchestratorConfiguration` (Pydantic) and verifies all referenced runtime IDs exist
+2. The Agent Factory Resolver validates the config against `OrchestratorConfiguration` (Pydantic), verifies all referenced runtime IDs exist, and rewrites each sub-agent's `runtimeId` from the HTTP runtime id to the **A2A twin ARN** (sub-agents deploy as twin runtimes — HTTP for UI standalone access, A2A for orchestrator calls)
 3. The Step Function invokes the Create Runtime Version Lambda, which selects the agents-as-tools Docker container (`docker-agents-as-tools/`)
 4. At runtime, the container's `data_source.py` loads the orchestrator configuration from DynamoDB
-5. `factory.py` creates a Strands `Agent` with the orchestrator's model and instructions, then wraps each sub-agent as an `InvokeSubAgentTool`:
-   - Each sub-agent becomes a tool named `invoke_<runtimeId>`
-   - The tool description includes the sub-agent's role, telling the orchestrator when to use it
-   - When invoked, the tool calls the AgentCore invoke API to run the sub-agent and returns its response
+5. `factory.py` creates a Strands `Agent` with the orchestrator's model and instructions, then wires each sub-agent in via Strands' `A2AClientToolProvider`:
+   - The orchestrator computes each sub-agent's A2A URL from its runtime ARN at startup
+   - It fetches each sub-agent's A2A agent card and discovers its capabilities from the card's `description` field (i.e. the description set on the sub-agent itself)
+   - Each sub-agent becomes a tool the orchestrator's LLM can pick by name; the tool's surface description comes straight from the agent card
+   - When the orchestrator invokes a sub-agent tool, Strands sends a SigV4-signed JSON-RPC `message/send` over A2A and streams the response back
 6. The orchestrator agent reasons about the user's request, decides which sub-agent tools to call (and with what input), and synthesizes the final response
+
+> **Implication for editing**: there is no orchestrator-side "role" field to tweak per sub-agent. To change how a sub-agent appears to the orchestrator's LLM, edit that sub-agent's `Description` and create a new version of it — the change propagates the next time the orchestrator container restarts and re-fetches the agent card.
 
 ### Key implementation detail: Context passing
 
@@ -199,13 +212,16 @@ This is why clear orchestrator instructions are essential — the orchestrator m
 
 ## Best Practices
 
-### Writing effective role descriptions
+### Writing effective sub-agent descriptions
 
-The role is the primary mechanism the orchestrator uses to decide which sub-agent to invoke. Good roles are:
+Each sub-agent's **Description** (set on the sub-agent itself) is the primary mechanism the orchestrator uses to decide when to invoke it. Good descriptions are:
 
 - **Specific**: "Handles flight and hotel booking research for specific destinations and dates" (not "Helps with travel")
 - **Action-oriented**: Describe what the agent *does*, not what it *is*
 - **Boundary-clear**: Make it obvious when this agent should (and shouldn't) be invoked
+- **Distinct from siblings**: Two sub-agents on the same orchestrator with overlapping descriptions are a delegation hazard — the LLM cannot reliably pick between them
+
+If you find yourself wanting to tweak a description for a specific orchestrator, that's a smell — the description is the sub-agent's own contract and applies to every orchestrator that wires it in. Specialize at the sub-agent level (create a different sub-agent) rather than overriding per-orchestrator.
 
 ### Writing effective orchestrator instructions
 
@@ -227,9 +243,10 @@ The role is the primary mechanism the orchestrator uses to decide which sub-agen
 
 | Issue | Cause | Fix |
 |---|---|---|
-| Orchestrator doesn't invoke sub-agents | Role descriptions are too vague | Make roles more specific and descriptive |
+| Orchestrator doesn't invoke sub-agents | Sub-agent descriptions are vague or empty | Edit the sub-agent and fill in a specific, action-oriented Description, then create a new version of the sub-agent |
 | Sub-agent returns incomplete responses | Orchestrator didn't pass enough context | Update orchestrator instructions to emphasize passing complete context |
-| Wrong sub-agent invoked | Role descriptions overlap | Make roles more distinct with clearer boundaries |
+| Wrong sub-agent invoked | Sub-agent descriptions overlap | Edit the conflicting sub-agents to make their descriptions distinct with clearer boundaries; new versions need to be created |
+| Description change isn't taking effect | Orchestrator container is still running with cached agent cards | Create a new version of the orchestrator (or wait for its container to be recycled) so it re-fetches the updated A2A agent cards |
 | Agent not appearing in dropdown | Agent hasn't finished creating | Wait for the agent to reach "Ready" status |
 | Creation fails with validation error | Empty tools/toolParameters mismatch | Ensure either both tools and toolParameters are provided, or neither |
 | Sub-agent timeout | Complex sub-agent taking too long | The sub-agent has its own timeout settings; increase them if needed |
