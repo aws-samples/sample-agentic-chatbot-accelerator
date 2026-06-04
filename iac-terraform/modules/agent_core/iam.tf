@@ -171,10 +171,16 @@ data "aws_iam_policy_document" "agentcore_execution" {
     actions = [
       "bedrock-agentcore:InvokeAgentRuntime",
       "bedrock-agentcore:ListAgentRuntimes",
-      "bedrock-agentcore:InvokeAgentRuntimeForUser"
+      "bedrock-agentcore:InvokeAgentRuntimeForUser",
+      # GetAgentCard gates GET /.well-known/agent-card.json — required for A2A
+      # discovery from orchestrator -> sub-agent twin runtimes.
+      "bedrock-agentcore:GetAgentCard"
     ]
     resources = [
-      "arn:aws:bedrock-agentcore:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:runtime/*"
+      # InvokeAgentRuntime / GetAgentCard require BOTH runtime and
+      # runtime-endpoint resources to be authorized.
+      "arn:aws:bedrock-agentcore:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:runtime/*",
+      "arn:aws:bedrock-agentcore:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:runtime/*/runtime-endpoint/*"
     ]
   }
 

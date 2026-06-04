@@ -619,9 +619,15 @@ export class AcaAgentCoreContainer extends Construct {
                     "bedrock-agentcore:InvokeAgentRuntime",
                     "bedrock-agentcore:ListAgentRuntimes",
                     "bedrock-agentcore:InvokeAgentRuntimeForUser",
+                    // GetAgentCard gates GET /.well-known/agent-card.json — required
+                    // for A2A discovery from orchestrator -> sub-agent twin runtimes.
+                    "bedrock-agentcore:GetAgentCard",
                 ],
                 resources: [
+                    // InvokeAgentRuntime / GetAgentCard require BOTH runtime and
+                    // runtime-endpoint resources to be authorized.
                     `arn:aws:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:runtime/*`,
+                    `arn:aws:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:runtime/*/runtime-endpoint/*`,
                 ],
             }),
             new iam.PolicyStatement({
