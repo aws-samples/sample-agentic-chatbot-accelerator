@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import os
 import uuid
+from contextvars import ContextVar
+from threading import Lock
 from typing import TYPE_CHECKING, Any, TypedDict
 
 import boto3
@@ -39,7 +41,27 @@ AGENTS_SUMMARY_TABLE_NAME = os.environ.get("agentsSummaryTableName")
 # LangGraph silently drops them.  We store the caller-provided state here
 # so node functions can always forward it to sub-agents as a fallback.
 # Also accumulates structured outputs from each node.
-_invocation_extra_state: dict[str, Any] = {}
+#
+# A ContextVar isolates concurrent invocations sharing one Python process
+# (e.g. FastAPI handling overlapping /invocations calls). Within one graph
+# run, fan-out branches (Send/dynamic_map) inherit the same dict by
+# reference and still accumulate cooperatively. A lock guards mutations
+# from the parallel branches running in worker threads via langgraph's
+# default sync executor.
+_invocation_extra_state_var: ContextVar[dict[str, Any]] = ContextVar(
+    "invocation_extra_state"
+)
+_extra_state_lock = Lock()
+
+
+def _extra_state() -> dict[str, Any]:
+    """Return the dict for the current invocation, creating it if missing."""
+    try:
+        return _invocation_extra_state_var.get()
+    except LookupError:
+        empty: dict[str, Any] = {}
+        _invocation_extra_state_var.set(empty)
+        return empty
 
 
 def set_invocation_extra_state(
@@ -58,12 +80,12 @@ def set_invocation_extra_state(
     ``_session_id`` and ``_user_id`` keys so that deterministic nodes
     that need to invoke sub-agents can retrieve them.
     """
-    global _invocation_extra_state
-    _invocation_extra_state = dict(state) if state else {}
+    new_state: dict[str, Any] = dict(state) if state else {}
     if session_id is not None:
-        _invocation_extra_state["_session_id"] = session_id
+        new_state["_session_id"] = session_id
     if user_id is not None:
-        _invocation_extra_state["_user_id"] = user_id
+        new_state["_user_id"] = user_id
+    _invocation_extra_state_var.set(new_state)
 
 
 def get_invocation_extra_state() -> dict[str, Any]:
@@ -77,7 +99,7 @@ def get_invocation_extra_state() -> dict[str, Any]:
     ``app.py`` uses this to extract structured outputs that couldn't
     flow through the LangGraph TypedDict state.
     """
-    return dict(_invocation_extra_state)
+    return dict(_extra_state())
 
 
 _agent_a2a_arn_cache: dict[str, str] = {}
@@ -325,13 +347,14 @@ def compile_graph(
                 """
 
                 def send_router(state: dict) -> list[Send]:
-                    # Try state first, then _invocation_extra_state
+                    # Try state first, then invocation extra state
                     items = state.get(source_key) or []
+                    extra = _extra_state()
                     if not items:
-                        items = _invocation_extra_state.get(source_key) or []
+                        items = extra.get(source_key) or []
                     # Fallback: look inside *_output dicts from previous nodes
                     if not items:
-                        for key, val in _invocation_extra_state.items():
+                        for key, val in extra.items():
                             if key.endswith("_output") and isinstance(val, dict):
                                 items = val.get(source_key) or []
                                 if items:
@@ -508,12 +531,14 @@ def _make_deterministic_node_function(node_def: GraphNodeDefinition, logger: Log
             result = fn(state)
 
             # Propagate outputs to extra state so app.py can surface them
-            for key, value in result.items():
-                if key not in _STATE_INTERNAL_FIELDS:
-                    _invocation_extra_state[key] = value
-            _invocation_extra_state[f"{node_id}_output"] = {
-                k: v for k, v in result.items() if k not in _STATE_INTERNAL_FIELDS
-            }
+            extra = _extra_state()
+            with _extra_state_lock:
+                for key, value in result.items():
+                    if key not in _STATE_INTERNAL_FIELDS:
+                        extra[key] = value
+                extra[f"{node_id}_output"] = {
+                    k: v for k, v in result.items() if k not in _STATE_INTERNAL_FIELDS
+                }
 
             logger.info(
                 f"Deterministic node '{node_id}' completed",
@@ -581,7 +606,7 @@ def _make_agent_node_function(
         # like {variable} are interpolated from the combined graph state
         # + invocation extra state.
         if prompt_template:
-            fmt_vars = {**_invocation_extra_state, **state}
+            fmt_vars = {**_extra_state(), **state}
             try:
                 prompt = prompt_template.format_map(_SafeFormatDict(fmt_vars))
             except (ValueError, IndexError):
@@ -607,7 +632,7 @@ def _make_agent_node_function(
         agent_state: dict[str, Any] = {}
 
         # 1) Start with invocation-scoped extra state (fallback)
-        for key, value in _invocation_extra_state.items():
+        for key, value in _extra_state().items():
             if key not in _STATE_INTERNAL_FIELDS and value is not None:
                 agent_state[key] = value
 
@@ -651,20 +676,21 @@ def _make_agent_node_function(
                         state_update[so_key] = so_value
                         merged_keys.append(so_key)
 
-                # ── Propagate SO to _invocation_extra_state ─────────
+                # ── Propagate SO to invocation extra state ─────────
                 # When the LangGraph state schema is minimal or the SO
                 # keys don't match state fields, structured output keys
-                # would be lost.  By storing them in
-                # _invocation_extra_state, the next node function's
-                # state-building step will forward them to sub-agents
-                # as fallback state.
-                for so_key, so_value in so.items():
-                    if so_key not in _STATE_INTERNAL_FIELDS:
-                        _invocation_extra_state[so_key] = so_value
-
-                # Also store the complete SO dict under the node_id
-                # so it can be forwarded as a single object.
-                _invocation_extra_state[f"{node_id}_output"] = so
+                # would be lost.  By storing them in the invocation
+                # extra state, the next node function's state-building
+                # step will forward them to sub-agents as fallback
+                # state.
+                extra = _extra_state()
+                with _extra_state_lock:
+                    for so_key, so_value in so.items():
+                        if so_key not in _STATE_INTERNAL_FIELDS:
+                            extra[so_key] = so_value
+                    # Also store the complete SO dict under the node_id
+                    # so it can be forwarded as a single object.
+                    extra[f"{node_id}_output"] = so
 
                 # Write the full SO under the node_id in the state
                 # update as well.  If the stateClass declares a field
@@ -683,9 +709,9 @@ def _make_agent_node_function(
 
                 # Accumulate filled_templates for classify-fill pipelines.
                 if "filled_templates" in state_fields:
-                    tmpl_name = state.get(
-                        "template_name"
-                    ) or _invocation_extra_state.get("template_name", "")
+                    tmpl_name = state.get("template_name") or _extra_state().get(
+                        "template_name", ""
+                    )
                     if tmpl_name:
                         state_update["filled_templates"] = [
                             {"template_name": tmpl_name, **so}
