@@ -618,7 +618,10 @@ async def _handle_voice_mode(
                 "channels": 1,
                 "format": "pcm",
             },
-            "inference": {},
+            "inference": {
+                "max_tokens": configuration.modelInferenceParameters.parameters.maxTokens,
+                "temperature": configuration.modelInferenceParameters.parameters.temperature,
+            },
         },
         client_config={"region": BEDROCK_REGION},
     )
