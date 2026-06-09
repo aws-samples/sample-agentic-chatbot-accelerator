@@ -35,6 +35,9 @@ export interface CodeBuildPipBundleProps {
      */
     readonly pipPackages: string[];
 
+    /** Lambda runtime (e.g. PYTHON_3_14) — wheels are resolved for this version. */
+    readonly runtime: lambda.Runtime;
+
     /** Lambda architecture (X86_64 or ARM64). */
     readonly architecture: lambda.Architecture;
 
@@ -114,7 +117,24 @@ export class CodeBuildPipBundle extends Construct {
         // 3. CodeBuild project
         // -----------------------------------------------------------------
         const isArm = props.architecture === lambda.Architecture.ARM_64;
-        const pipInstallCmd = `pip install ${props.pipPackages.join(" ")} -t /tmp/package --quiet --upgrade`;
+
+        // Lambda runtime name is "python3.14" → "3.14". Wheels for compiled
+        // extensions (e.g. pydantic_core) must match the target ABI exactly,
+        // so pip is forced to resolve wheels for the Lambda runtime + arch
+        // rather than the build host's Python.
+        const pythonVersion = props.runtime.name.replace(/^python/, "");
+        const platformTag = isArm ? "manylinux2014_aarch64" : "manylinux2014_x86_64";
+        const pipInstallCmd = [
+            "pip install",
+            props.pipPackages.join(" "),
+            "-t /tmp/package",
+            `--platform ${platformTag}`,
+            `--python-version ${pythonVersion}`,
+            "--implementation cp",
+            "--only-binary=:all:",
+            "--quiet",
+            "--upgrade",
+        ].join(" ");
 
         const buildSpec = codebuild.BuildSpec.fromObject({
             version: "0.2",
