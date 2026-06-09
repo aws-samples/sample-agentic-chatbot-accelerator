@@ -4,8 +4,9 @@
 # SPDX-License-Identifier: MIT-0
 # ---------------------------------------------------------------------------- #
 """
-Evaluation Executor Lambda
-Processes individual test cases from SQS queue
+Evaluation Executor Lambda.
+
+Processes individual test cases from SQS queue.
 """
 from __future__ import annotations
 

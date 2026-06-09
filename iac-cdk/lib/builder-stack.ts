@@ -116,6 +116,7 @@ export class BuilderStack extends cdk.Stack {
         this.evaluationExecutorBundle = new CodeBuildPipBundle(this, "EvalExecutorBundle", {
             directory: path.join(__dirname, "../../src/api/functions/evaluation-executor"),
             pipPackages: ["strands-agents-evals"],
+            runtime: pythonRuntime,
             architecture: props.lambdaArchitecture,
         });
 
