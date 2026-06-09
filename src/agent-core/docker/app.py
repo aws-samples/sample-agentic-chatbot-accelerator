@@ -64,6 +64,7 @@ async def ping():
 _inv_agent = None
 _inv_mcp_manager: MCPClientManager | None = None
 _inv_structured_output_model = None
+_inv_session_id: str | None = None
 
 
 @app.post("/invocations")
@@ -79,7 +80,7 @@ async def invocations(request: Request):
         - userId (str, optional): Defaults to ``"evaluator"``.
         - sessionId (str, optional): Auto-generated if absent.
     """
-    global _inv_agent, _inv_mcp_manager, _inv_structured_output_model
+    global _inv_agent, _inv_mcp_manager, _inv_structured_output_model, _inv_session_id
 
     body = await request.json()
     prompt = body.get("prompt", "")
@@ -90,6 +91,23 @@ async def invocations(request: Request):
         "Invocation received",
         extra={"prompt": prompt, "userId": user_id, "sessionId": session_id},
     )
+
+    # The microVM-per-session invariant means we should only ever see one
+    # body.sessionId for the lifetime of this container. If a caller sends a
+    # different one, the cached agent's session_manager is bound to the wrong
+    # session — fail loudly rather than route memory writes to the wrong place.
+    if _inv_agent is not None and _inv_session_id != session_id:
+        err_msg = (
+            f"sessionId mismatch on /invocations: container is bound to "
+            f"{_inv_session_id!r} but received {session_id!r}"
+        )
+        logger.error(err_msg)
+        error_event = json.dumps({"error": err_msg})
+
+        async def _mismatch_stream():
+            yield f"data: {error_event}\n\n"
+
+        return StreamingResponse(_mismatch_stream(), media_type="text/event-stream")
 
     if _inv_agent is None:
         try:
@@ -120,16 +138,29 @@ async def invocations(request: Request):
                 _inv_mcp_manager,
                 session_manager,
             )
+            _inv_session_id = session_id
 
-            if configuration.structuredOutput:
-                _inv_structured_output_model = build_structured_output_model(
-                    configuration.structuredOutput
-                )
+            _inv_structured_output_model = (
+                build_structured_output_model(configuration.structuredOutput)
+                if configuration.structuredOutput
+                else None
+            )
 
         except Exception as err:
             logger.error(
                 "Failed to initialize agent for /invocations", extra={"error": str(err)}
             )
+            # Release MCP clients opened before the failure so a retry doesn't
+            # leak the previous attempt's connections.
+            if _inv_mcp_manager is not None:
+                try:
+                    _inv_mcp_manager.cleanup_connections()
+                except Exception as cleanup_err:
+                    logger.warning(
+                        "MCP cleanup failed after init error",
+                        extra={"rawErrorMessage": str(cleanup_err)},
+                    )
+                _inv_mcp_manager = None
             error_event = json.dumps({"error": str(err)})
 
             async def _error_stream():
