@@ -58,45 +58,40 @@ async def ping():
 # INVOCATIONS: HTTP POST endpoint for agent-to-agent calls
 # ============================================================
 
-# Module-level state for /invocations — same pattern as the WebSocket handler:
-# agent starts as None and is (re)created when the session changes.
+# Module-level state for /invocations. AgentCore allocates one microVM per
+# runtimeSessionId, so each container instance serves exactly one session
+# for its lifetime — the agent is built once on first invocation and reused.
 _inv_agent = None
-_inv_callbacks = None
 _inv_mcp_manager: MCPClientManager | None = None
-_inv_current_session_id: str | None = None
 _inv_structured_output_model = None
 
 
 @app.post("/invocations")
 async def invocations(request: Request):
-    """HTTP POST endpoint for agent-to-agent communication.
+    """HTTP POST endpoint for evaluation-driven invocations.
 
-    Called by ``invoke_agent_runtime`` when an orchestrator agent delegates
-    a task to this agent.  Returns an SSE stream compatible with
-    ``parse_agent_runtime_response``.
+    Called by the evaluation executor (``src/api/functions/evaluation-executor``)
+    via ``bedrock-agentcore.invoke_agent_runtime``. Returns an SSE stream;
+    consumers parse ``data: {action: "final_response", data: {...}}`` events.
 
     Request body (JSON):
-        - prompt (str): The user/orchestrator query.
-        - userId (str, optional): Defaults to ``"orchestrator"``.
+        - prompt (str): The user query.
+        - userId (str, optional): Defaults to ``"evaluator"``.
         - sessionId (str, optional): Auto-generated if absent.
     """
-    global _inv_agent, _inv_callbacks, _inv_mcp_manager, _inv_current_session_id, _inv_structured_output_model
+    global _inv_agent, _inv_mcp_manager, _inv_structured_output_model
 
     body = await request.json()
     prompt = body.get("prompt", "")
-    user_id = body.get("userId", "orchestrator")
+    user_id = body.get("userId", "evaluator")
     session_id = body.get("sessionId", str(uuid.uuid4()))
 
     logger.info(
-        "Invocation received (agent-to-agent)",
+        "Invocation received",
         extra={"prompt": prompt, "userId": user_id, "sessionId": session_id},
     )
 
-    # Initialize or reinitialize agent when session changes (same pattern as /ws)
-    if _inv_agent is None or _inv_current_session_id != session_id:
-        if _inv_mcp_manager and _inv_current_session_id != session_id:
-            _inv_mcp_manager.cleanup_connections()
-
+    if _inv_agent is None:
         try:
             configuration = parse_configuration(logger)
 
@@ -117,7 +112,7 @@ async def invocations(request: Request):
                     region_name=AWS_REGION,
                 )
 
-            _inv_agent, _inv_callbacks = create_agent(
+            _inv_agent, _ = create_agent(
                 configuration,
                 logger,
                 session_id,
@@ -125,21 +120,10 @@ async def invocations(request: Request):
                 _inv_mcp_manager,
                 session_manager,
             )
-            _inv_current_session_id = session_id
 
-            # Build structured output model for /invocations (same as WebSocket path)
-            _inv_structured_output_model = None
             if configuration.structuredOutput:
                 _inv_structured_output_model = build_structured_output_model(
                     configuration.structuredOutput
-                )
-                logger.info(
-                    "Structured output model built for /invocations",
-                    extra={
-                        "fields": [
-                            f.model_dump() for f in configuration.structuredOutput
-                        ]
-                    },
                 )
 
         except Exception as err:
@@ -155,7 +139,6 @@ async def invocations(request: Request):
 
     async def _sse_generator():
         try:
-            # Build stream kwargs — include structured_output_model if available
             _stream_kwargs: dict = {
                 "invocation_state": {"userId": user_id, "sessionId": session_id},
             }
@@ -645,9 +628,6 @@ async def _handle_voice_mode(
     # Initialize MCP clients for voice mode (same as text mode)
     mcp_client_manager = None
     if configuration.mcpServers:
-        from shared.mcp_client import MCPClientManager
-        from src.registry import AVAILABLE_MCPS
-
         mcp_client_manager = MCPClientManager(
             mcp_servers=configuration.mcpServers,
             logger=log,
@@ -738,83 +718,6 @@ def _extract_reasoning(raw_result: "AgentResult") -> str:
                 if isinstance(r_text, dict) and "text" in r_text:
                     reasoning += r_text.get("text", "") + "\n"
     return reasoning
-
-
-# ============================================================
-# VOICE MODE: WebSocket endpoint for bidirectional audio
-# ============================================================
-@app.websocket("/ws/voice")
-async def voice_chat(websocket: WebSocket):
-    """
-    WebSocket endpoint for bidirectional voice streaming via Nova Sonic.
-
-    Protocol (Strands BidiAgent native):
-    - Client sends: {"type": "bidi_audio_input", "audio": "<base64>", ...}
-    - Server sends: {"type": "bidi_audio_stream", "audio": "<base64>", ...}
-    - Server sends: {"type": "bidi_transcript_stream", ...}
-    - Server sends: {"type": "bidi_interruption", ...}
-    """
-    from strands.experimental.bidi import BidiAgent
-    from strands.experimental.bidi.models import BidiNovaSonicModel
-    from strands.experimental.bidi.tools import stop_conversation
-
-    MODEL_ID = os.getenv("VOICE_MODEL_ID", "amazon.nova-2-sonic-v1:0")
-    BEDROCK_REGION = os.getenv("BEDROCK_REGION", AWS_REGION or "us-east-1")
-
-    sonic_model = BidiNovaSonicModel(
-        model_id=MODEL_ID,
-        provider_config={
-            "audio": {
-                "voice": "tiffany",
-                "input_rate": 16000,
-                "output_rate": 16000,
-                "channels": 1,
-                "format": "pcm",
-            },
-            "inference": {},
-        },
-        client_config={"region": BEDROCK_REGION},
-    )
-
-    # Load tools from configuration
-    configuration = parse_configuration(logger)
-    tools = _initialize_voice_tools(configuration)
-
-    voice_agent = BidiAgent(
-        model=sonic_model,
-        tools=tools + [stop_conversation],
-        system_prompt=configuration.instructions,
-    )
-
-    try:
-        await websocket.accept()
-        logger.info("Voice WebSocket connection accepted")
-
-        # Use WebSocket adapters that implement the BidiInput/BidiOutput protocols
-        from shared.bidi_ws_adapter import WebSocketBidiInput, WebSocketBidiOutput
-
-        ws_input = WebSocketBidiInput(websocket)
-        ws_output = WebSocketBidiOutput(websocket)
-
-        await voice_agent.run(
-            inputs=[ws_input],  # type: ignore
-            outputs=[ws_output],
-        )
-
-    except WebSocketDisconnect:
-        logger.info("Voice WebSocket client disconnected")
-    except Exception as e:
-        logger.error(f"Voice WebSocket error: {e}")
-        import traceback
-
-        traceback.print_exc()
-    finally:
-        try:
-            await websocket.close()
-            await voice_agent.stop()
-        except Exception as e:
-            logger.error(f"Failed to close the websocket and stop the voice agent: {e}")
-            pass
 
 
 def _initialize_voice_tools(configuration):
