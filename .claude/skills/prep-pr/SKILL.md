@@ -120,7 +120,9 @@ If you fixed or suppressed any PR-touched findings, re-run ASH and confirm the P
 
 ## Phase 3 — Draft the PR message
 
-Output a draft the user can paste into GitHub. Do **not** create the PR yourself — the user wants to review and create it manually.
+Write the draft to `cache/pr-draft/<branch-slug>.md` (create the directory if missing; slugify the current branch name — e.g. `refactor/docker` → `refactor-docker.md`). Use the Write tool, not echo/heredoc. The file is the source of truth — the user opens it, edits, and pastes into GitHub. Do **not** create the PR yourself.
+
+After writing, also print the title + body in the conversation as a fenced block so the user can review without opening the file, and tell them the file path. `cache/` is gitignored, so the draft stays local.
 
 ### Title
 
@@ -180,7 +182,7 @@ Otherwise omit.>
 - **No marketing voice.** Skip "comprehensively", "robust", "seamlessly". Plain, factual.
 - **Test plan is checkboxes the reviewer can verify**, not a brag list. If you can't test it locally, say so explicitly ("Cannot test the AppSync subscription locally — verified by reading the schema diff and the resolver wiring") rather than claiming success.
 
-After drafting, present the title + body in a fenced block and tell the user how to use it: "Copy this into `gh pr create --title '...' --body '...'` or paste into the GitHub UI." Don't auto-push or auto-create.
+After drafting, tell the user: "Draft written to `cache/pr-draft/<branch-slug>.md`. Copy this into `gh pr create --title '...' --body-file cache/pr-draft/<branch-slug>.md` or paste into the GitHub UI." Don't auto-push or auto-create.
 
 ## Notes on running checks
 
