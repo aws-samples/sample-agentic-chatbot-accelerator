@@ -25,6 +25,9 @@ Read the user's phrasing and pick one branch before doing anything else:
 - **Modify** — "remove skills from agent XYZ", "change the model on my orchestrator",
   "add a tool to …" → the **Modify path** below. This is read-modify-write and has one
   rule that dominates everything (see there).
+- **Diagnose** — "the agent keeps doing X wrong, here's the eval / session / logs", "fix
+  this from these traces", "it picks the wrong tool" → the **Diagnose path** below. This
+  is a smarter front-end on the modify path.
 - **IaC redirect** — if the user wants a *build-time / baked-in* agent ("add this agent
   to config.yaml", "deploy a default agent with the stack") → **stop**. That is
   `iac-config-generator`'s job (edit config → redeploy). agent-creator only touches the
@@ -122,6 +125,44 @@ if XYZ was created by a *different stack/environment*, the update is blocked ser
 `submit_runtime.py` detects a terminal failure on an update and explains this — don't
 present it as a raw error.
 
+## Diagnose path (traces → config fix)
+
+The user hands you traces showing the agent misbehaving; you diagnose the **config-level**
+root cause and propose config edits, then re-submit via the modify path. The only new
+work here is *diagnosis* — everything after it is the modify path verbatim. The full
+symptom→fix table, trace-tier matrix, and the config-vs-tool-code-bug boundary are in
+[references/diagnosis.md](references/diagnosis.md); read it before diagnosing.
+
+**Scope honesty, state it to the user up front:** you edit *config*, so you fix issues
+whose root cause is config (prompt, tools, model params, conversation manager,
+architecture). A **bug inside a tool's implementation** is code, not config — flag it as
+out of scope and point at [custom-code.md](references/custom-code.md); don't pretend a
+config edit fixes it.
+
+Steps:
+
+1. **Identify the trace source & tier.** Tiers 0–1 are **profile-free**: tier 0 = a trace
+   the user pastes (no script); tier 1 = `scripts/fetch_traces.py --session <id>` or
+   `--evaluator <id>` (Cognito JWT). Tier 2 (deep) needs an **AWS profile**:
+   `--evaluator <id> --deep` (S3 trajectory) or `--xray --session-id <s>` (span logs). If
+   the user asks for a deep diagnosis and no profile is available, `fetch_traces.py`
+   degrades gracefully with a clear message — relay it and offer the tier-0/1 alternative
+   rather than treating it as a hard failure.
+2. **Fetch** (or read the pasted trace). The script emits normalized
+   `{tier, source, issues_observed, raw}`.
+3. **Diagnose** — map each observed issue to a config root cause using the table in
+   [references/diagnosis.md](references/diagnosis.md). State your confidence per finding,
+   and explicitly flag anything that looks like a tool-code bug (out of scope).
+4. `scripts/fetch_agent_config.py --agent XYZ` → the full current config.
+5. **Propose targeted edits to the FULL config** (never a patch — same rule as the modify
+   path). Show before/after and explain *why* each edit addresses which observed issue.
+6. `scripts/validate_config.py` → on confirmation, `scripts/submit_runtime.py` → poll to
+   Ready.
+7. **Tell the user the fix is live but UNVERIFIED** (static-validation scope, D2). Give a
+   concrete way to confirm it actually helped: re-run the failing eval cases, or do a
+   manual UI run of the scenario from the trace. Closing that loop behaviorally is out of
+   scope for now.
+
 ## Reference files
 
 - [references/architectures.md](references/architectures.md) — the 4 patterns, the
@@ -136,6 +177,8 @@ present it as a raw error.
   schema field-shape traps (source of truth: `src/api/schema/schema.graphql`).
 - [references/custom-code.md](references/custom-code.md) — scaffolding a missing tool /
   state class / deterministic node, with the redeploy warning (task 07).
+- [references/diagnosis.md](references/diagnosis.md) — the diagnose path: symptom→config-fix
+  table, the trace-tier/profile matrix, and the config-vs-tool-code-bug boundary (task 08).
 
 ## Why this design
 
