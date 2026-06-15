@@ -1,0 +1,11 @@
+{
+  "name": "agent-creator-marketplace",
+  "owner": { "name": "Paolo Irrera" },
+  "plugins": [
+    {
+      "name": "agent-creator",
+      "source": "./plugins/agent-creator",
+      "description": "Create and update AgentCore runtime agents in a deployed instance of this accelerator via the Agent Factory API."
+    }
+  ]
+}
