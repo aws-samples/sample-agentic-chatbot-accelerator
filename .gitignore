@@ -17,6 +17,9 @@ cache
 .env
 *.DS_Store*
 
+# agent-creator plugin: cached endpoint discovery (never commit resolved IDs)
+.agent-creator-cache.json
+
 # Include Resolvers JS code
 !src/api/functions/resolvers/*.js
 !src/api/functions/resolvers/favorite-runtime-resolvers/*.js
