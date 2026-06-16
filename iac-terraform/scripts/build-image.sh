@@ -128,7 +128,8 @@ compute_content_tag() {
     # Compute hash of Docker source files (same files as Terraform's docker_source_hash)
     local hash_input=""
     hash_input+=$(shasum -a 256 "${docker_dir}/Dockerfile" 2>/dev/null | cut -d' ' -f1)
-    hash_input+=$(shasum -a 256 "${docker_dir}/requirements.txt" 2>/dev/null | cut -d' ' -f1)
+    hash_input+=$(shasum -a 256 "${docker_dir}/pyproject.toml" 2>/dev/null | cut -d' ' -f1)
+    hash_input+=$(shasum -a 256 "${docker_dir}/uv.lock" 2>/dev/null | cut -d' ' -f1)
     hash_input+=$(shasum -a 256 "${docker_dir}/app.py" 2>/dev/null | cut -d' ' -f1)
     # Hash all src/ files (sorted for consistency, matching Terraform's sort())
     hash_input+=$(find "${docker_dir}/src" -type f | sort | xargs shasum -a 256 2>/dev/null | shasum -a 256 | cut -d' ' -f1)

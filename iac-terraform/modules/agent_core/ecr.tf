@@ -309,7 +309,8 @@ locals {
   # Compute hash of Docker source files + shared to detect changes
   docker_source_hash = sha256(join("", [
     filesha256("${local.docker_dir}/Dockerfile"),
-    filesha256("${local.docker_dir}/requirements.txt"),
+    filesha256("${local.docker_dir}/pyproject.toml"),
+    filesha256("${local.docker_dir}/uv.lock"),
     filesha256("${local.docker_dir}/app.py"),
     sha256(join("", [for f in sort(fileset("${local.docker_dir}/src", "**")) : filesha256("${local.docker_dir}/src/${f}")])),
     local.shared_source_hash,
@@ -324,7 +325,8 @@ locals {
   # --- Swarm container ---
   swarm_docker_source_hash = sha256(join("", [
     filesha256("${local.swarm_docker_dir}/Dockerfile"),
-    filesha256("${local.swarm_docker_dir}/requirements.txt"),
+    filesha256("${local.swarm_docker_dir}/pyproject.toml"),
+    filesha256("${local.swarm_docker_dir}/uv.lock"),
     filesha256("${local.swarm_docker_dir}/app.py"),
     sha256(join("", [for f in sort(fileset("${local.swarm_docker_dir}/src", "**")) : filesha256("${local.swarm_docker_dir}/src/${f}")])),
     local.shared_source_hash,
@@ -337,7 +339,8 @@ locals {
   # --- Graph container ---
   graph_docker_source_hash = sha256(join("", [
     filesha256("${local.graph_docker_dir}/Dockerfile"),
-    filesha256("${local.graph_docker_dir}/requirements.txt"),
+    filesha256("${local.graph_docker_dir}/pyproject.toml"),
+    filesha256("${local.graph_docker_dir}/uv.lock"),
     filesha256("${local.graph_docker_dir}/app.py"),
     sha256(join("", [for f in sort(fileset("${local.graph_docker_dir}/src", "**")) : filesha256("${local.graph_docker_dir}/src/${f}")])),
     local.shared_source_hash,
@@ -350,7 +353,8 @@ locals {
   # --- Agents-as-Tools container ---
   agents_as_tools_docker_source_hash = sha256(join("", [
     filesha256("${local.agents_as_tools_docker_dir}/Dockerfile"),
-    filesha256("${local.agents_as_tools_docker_dir}/requirements.txt"),
+    filesha256("${local.agents_as_tools_docker_dir}/pyproject.toml"),
+    filesha256("${local.agents_as_tools_docker_dir}/uv.lock"),
     filesha256("${local.agents_as_tools_docker_dir}/app.py"),
     sha256(join("", [for f in sort(fileset("${local.agents_as_tools_docker_dir}/src", "**")) : filesha256("${local.agents_as_tools_docker_dir}/src/${f}")])),
     local.shared_source_hash,

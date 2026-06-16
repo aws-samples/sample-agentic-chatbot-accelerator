@@ -1,0 +1,25 @@
+[project]
+name = "aca-agent-single"
+version = "2.0.0"
+description = "AgentCore single-agent container dependencies."
+requires-python = ">=3.13"
+dependencies = [
+    "strands-agents[bidi,a2a]==1.37.0",
+    "strands-agents-evals==0.1.2",
+    "bedrock-agentcore==1.6.4",
+    "mcp-proxy-for-aws==1.2.0",
+    "pydantic==2.12.3",
+    "boto3>=1.42.86",
+    "aws-opentelemetry-distro==0.14.1",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+]
+
+[tool.uv]
+package = false
+prerelease = "allow"
+# Override: install botocore WITHOUT [crt] extra to avoid awscrt version conflict
+# between mcp-proxy-for-aws (needs awscrt==0.31.2 via botocore[crt])
+# and strands-agents[bidi] (needs awscrt~=0.28.2 via aws-sdk-bedrock-runtime).
+# CRT is a performance optimization, not required for correctness.
+override-dependencies = ["botocore>=1.42.86"]

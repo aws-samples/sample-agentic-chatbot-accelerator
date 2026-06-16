@@ -1,0 +1,19 @@
+[project]
+name = "aca-agent-swarm"
+version = "2.0.0"
+description = "AgentCore collaborative swarm container dependencies."
+requires-python = ">=3.13"
+dependencies = [
+    "strands-agents==1.37.0",
+    "strands-agents-evals==0.1.2",
+    "bedrock-agentcore==1.6.4",
+    "mcp-proxy-for-aws==1.2.0",
+    "pydantic==2.12.3",
+    "boto3>=1.42.86",
+    "aws-opentelemetry-distro==0.10.1",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+]
+
+[tool.uv]
+package = false
