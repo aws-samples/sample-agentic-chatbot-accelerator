@@ -258,3 +258,70 @@ mutation TagAgentCoreRuntime(
   )
 }
 ```
+
+---
+
+## Skill registry  (the documents `manage_skill.py` sends — task 09)
+
+Types: `Skill { name description s3Key lastModified }`, `SkillResource { path size
+lastModified }`. Two field-shape notes specific to skills:
+
+6. **`createSkill`/`updateSkill` take `content` = markdown BODY ONLY** — the resolver
+   builds the `---name/description---` frontmatter itself. `manage_skill.py` strips an
+   accidental leading frontmatter block before sending.
+7. **`updateSkill` MERGES** — `description` and `content` are *optional*; an omitted arg
+   is preserved server-side. This is the **opposite** of `createAgentCoreRuntime`'s
+   full-config-replace. `getSkillContent`/`getSkillResource` are scalar `String!` (no
+   selection set) and return `null` when the skill/resource is absent.
+
+```graphql
+query ListSkills {
+  listSkills { name description s3Key lastModified }
+}
+```
+```graphql
+query GetSkillContent($name: String!) {
+  getSkillContent(name: $name)
+}
+```
+```graphql
+query ListSkillResources($name: String!) {
+  listSkillResources(name: $name) { path size lastModified }
+}
+```
+```graphql
+query GetSkillResource($name: String!, $path: String!) {
+  getSkillResource(name: $name, path: $path)
+}
+```
+```graphql
+mutation CreateSkill($name: String!, $description: String!, $content: String!) {
+  createSkill(name: $name, description: $description, content: $content) {
+    name description s3Key lastModified
+  }
+}
+```
+```graphql
+mutation UpdateSkill($name: String!, $description: String, $content: String) {
+  updateSkill(name: $name, description: $description, content: $content) {
+    name description s3Key lastModified
+  }
+}
+```
+```graphql
+mutation DeleteSkill($name: String!) {
+  deleteSkill(name: $name)
+}
+```
+```graphql
+mutation UploadSkillResource($name: String!, $path: String!, $content: String!) {
+  uploadSkillResource(name: $name, path: $path, content: $content) {
+    path size lastModified
+  }
+}
+```
+```graphql
+mutation DeleteSkillResource($name: String!, $path: String!) {
+  deleteSkillResource(name: $name, path: $path)
+}
+```

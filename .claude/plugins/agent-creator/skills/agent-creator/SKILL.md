@@ -28,6 +28,10 @@ Read the user's phrasing and pick one branch before doing anything else:
 - **Diagnose** — "the agent keeps doing X wrong, here's the eval / session / logs", "fix
   this from these traces", "it picks the wrong tool" → the **Diagnose path** below. This
   is a smarter front-end on the modify path.
+- **Author a skill** — "create a skill for X", "add a skill that teaches the agent to …",
+  "update the `pubmed-search-craft` skill", "make a reusable instruction package" → the
+  **Skill-authoring path** below. A skill is loadable *expertise* (prose/procedure), live
+  with no redeploy — distinct from custom code (a tool/state/node needs a redeploy).
 - **IaC redirect** — if the user wants a *build-time / baked-in* agent ("add this agent
   to config.yaml", "deploy a default agent with the stack") → **stop**. That is
   `iac-config-generator`'s job (edit config → redeploy). agent-creator only touches the
@@ -163,6 +167,54 @@ Steps:
    manual UI run of the scenario from the trace. Closing that loop behaviorally is out of
    scope for now.
 
+## Skill-authoring path (live skill registry CRUD)
+
+A **skill** is a markdown instruction package the agent loads at start — reusable
+*expertise* (a procedure, a domain rubric, search heuristics), not code. It lives in the
+skills S3 bucket and any SINGLE agent references it by name in `skills[]`. Authoring or
+editing one is **live, no redeploy** (contrast: a tool/state/node is code baked into the
+container image — see [references/custom-code.md](references/custom-code.md)). All ops go
+through `scripts/manage_skill.py` (list/get/create/update/delete/resources/put-resource),
+which reuses the same Cognito JWT auth as every other script. Full mechanics, the
+decision table, and the merge-vs-replace contrast are in
+[references/skill-authoring.md](references/skill-authoring.md).
+
+1. **Decide skill-vs-prompt-vs-tool.** A skill earns its keep when the guidance is
+   reusable across agents/turns and too long to live inline in one agent's
+   `instructions`. If it's one agent's one-off behavior → just edit that agent's
+   `instructions` (modify path). If it needs to *execute code* → that's a tool
+   ([custom-code.md](references/custom-code.md), redeploy). Only genuine loadable
+   *expertise* → a skill.
+2. **Draft the body.** Imperative voice, explain *why*, progressive disclosure. Keep it
+   self-contained in the single `SKILL.md` body — resources (`scripts/`, `references/`)
+   are supported but **lightly exercised** (see the caveat in skill-authoring.md), so a
+   one-file body is the most reliable artifact.
+3. **Create** — write the body to a file, then `manage_skill.py create --name X
+   --description "…" --body-file body.md`. The script sends **body-only** content (strips
+   an accidental frontmatter block and warns — the registry owns frontmatter), validates
+   the name regex locally, and pre-checks uniqueness (clean "use `update` instead" rather
+   than a raw server error). Confirm, write. For an **update**, `manage_skill.py update`
+   **MERGES** — omit `--description` to keep it, omit `--body-file` to keep the body. This
+   is the **opposite** of the agent full-config-replace rule; don't carry that habit here.
+4. **Verify it registered** — `manage_skill.py list` (or `list_building_blocks.py --filter
+   skills`) shows it immediately; it's now a referenceable name.
+5. **Attach it** — hand off to the **modify path** for the target agent: fetch the FULL
+   config, append the new name to `skills[]`, re-submit the WHOLE config, poll to Ready.
+   The skill is live in S3 the instant it's created, but an *existing* agent only picks it
+   up at its next start — re-submitting the agent config mints a fresh version that loads
+   it.
+6. **Tell the user it's live but behaviorally UNVERIFIED** (static/registration confirmation
+   only). Suggest a UI run to confirm the agent actually loads and uses the skill.
+
+**Worked example (the canonical end-to-end demo):** `pubmed_study_ideator` has MeSH-term
+expansion, RCT/systematic-review field-tag filters, a date-window rule, and a PICO
+study-design rubric crammed into its `instructions`. Author a `pubmed-search-craft` skill
+encoding that guidance (`manage_skill.py create`), verify it lists, then attach it to
+`pubmed_study_ideator` via the modify path (fetch full config → add `"pubmed-search-craft"`
+to `skills[]` → `submit_runtime.py` → poll to Ready), and trim the now-redundant prose from
+`instructions` in the same re-submit. End by telling the user to run the agent in the UI to
+confirm it loads and uses the skill.
+
 ## Reference files
 
 - [references/architectures.md](references/architectures.md) — the 4 patterns, the
@@ -177,6 +229,9 @@ Steps:
   schema field-shape traps (source of truth: `src/api/schema/schema.graphql`).
 - [references/custom-code.md](references/custom-code.md) — scaffolding a missing tool /
   state class / deterministic node, with the redeploy warning (task 07).
+- [references/skill-authoring.md](references/skill-authoring.md) — the skill-authoring
+  path: skill-vs-prompt-vs-tool decision table, body-only/frontmatter-ownership rule,
+  merge-not-replace contrast, the resource caveat, and the skill GraphQL doc set (task 09).
 - [references/diagnosis.md](references/diagnosis.md) — the diagnose path: symptom→config-fix
   table, the trace-tier/profile matrix, and the config-vs-tool-code-bug boundary (task 08).
 

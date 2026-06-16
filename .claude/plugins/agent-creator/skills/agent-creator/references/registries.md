@@ -36,6 +36,10 @@ Model Context Protocol servers. Each: `name`, `mcpUrl`, `description`, `authType
 Uploaded skill folders (prose + scripts) the agent can load. Each: `name`, `description`,
 `s3Key`, `lastModified`.
 - **Referenced by:** `skills: ["name", ...]` (SINGLE).
+- **Read side** (here): `listSkills` via `list_building_blocks.py --filter skills`.
+- **Write side:** `scripts/manage_skill.py` (create/update/delete/get) — author a skill
+  live, no redeploy. See [skill-authoring.md](skill-authoring.md). This is the one missing
+  building-block you can add without a redeploy (unlike a tool/state/node).
 
 ### `agents` — `listRuntimeAgents`
 Existing runtime agents — the parts that orchestrator/swarm/graph agents reference. Each:

@@ -32,9 +32,17 @@ building-block doesn't exist yet.
 | Shared state for a graph workflow | **New state class** | `src/agent-core/docker-graph/src/states/` + `config.yaml` `stateClassRegistry` | **Yes** |
 | A pure-Python graph step (no LLM) | **New deterministic node** | `src/agent-core/docker-graph/src/states/` + `config.yaml` `deterministicNodeRegistry` | **Yes** |
 | External tool surface over MCP | **New MCP server** | `registerMcpServer` mutation (preferred) *or* `config.yaml` `mcpServerRegistry` | **No** via mutation |
-| Prose/script skill the agent loads | **New skill** | `createSkill` mutation | **No** |
+| Reusable *expertise* (procedure / domain knowledge), not code | **New skill** | `manage_skill.py` (`createSkill`) → skills S3 bucket | **No** |
 
-Route to the no-redeploy option whenever it fits the need.
+Route to the no-redeploy option whenever it fits the need. The redeploy warning below
+applies **only** to routes 1–3 (tool / state class / deterministic node — code baked into
+the container image). MCP servers and skills are live API operations with **no redeploy**.
+
+**Skill vs. tool — the line that decides redeploy-or-not:** if the need is reusable
+*procedure / domain knowledge / a rubric* the agent should follow → that's a **skill**
+(loadable text, live, no redeploy — go to [skill-authoring.md](skill-authoring.md) /
+task 09, *not* this file). If the need is to *execute code* (call an API, compute,
+transform) → that's a **tool** (route 1 below, redeploy). This file is for the code cases.
 
 ---
 
@@ -228,21 +236,20 @@ an `mcpUrl` (external) depending on the server. After it succeeds, it shows up i
 `list_building_blocks.py --filter mcpServers` immediately — reference it in
 `mcpServers: ["name"]`.
 
-## 5. New skill (NO redeploy)
+## 5. New skill (NO redeploy) — go to the skill-authoring path
 
-Upload with the **`createSkill`** mutation, then reference by name in `skills[]`.
+A skill is **not** custom code and does **not** belong on this redeploy page. If the need
+is reusable *expertise* (a procedure, a domain rubric, search heuristics) rather than
+executable code, it's a skill — authored live through `scripts/manage_skill.py`, no
+redeploy, no editing of `src/agent-core/`.
 
-```graphql
-mutation CreateSkill($name: String!, $description: String!, $content: String!) {
-  createSkill(name: $name, description: $description, content: $content) {
-    name description s3Key lastModified
-  }
-}
-```
+→ **Use the Skill-authoring path in [SKILL.md](../SKILL.md) and
+[skill-authoring.md](skill-authoring.md) (task 09).** That covers `manage_skill.py`
+create/update/delete, the body-only/frontmatter-ownership rule, the merge-not-replace
+contrast with agent updates, and attaching the skill to an agent via the modify path.
 
-`content` is the markdown body **without** frontmatter — the resolver wraps it with the
-`name`/`description` frontmatter and stores it at `skills/{name}/SKILL.md`. After it
-succeeds it appears in `list_building_blocks.py --filter skills` immediately.
+A new skill appears in `list_building_blocks.py --filter skills` immediately and is
+referenceable in a SINGLE agent's `skills[]`.
 
 ---
 
