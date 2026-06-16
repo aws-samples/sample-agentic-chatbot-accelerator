@@ -5,12 +5,17 @@ WORKDIR /app
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 # uv syncs the locked dependency set into this venv; the runtime stage copies it.
+# UV_COMPILE_BYTECODE precompiles .pyc at build time — see the strip step below.
 ENV UV_PROJECT_ENVIRONMENT=/opt/venv
+ENV UV_COMPILE_BYTECODE=1
 
 # uv.lock pins every transitive dependency; --locked fails the build if the
 # lock is stale (e.g. pyproject.toml changed without re-running `uv lock`).
 COPY docker-graph/pyproject.toml docker-graph/uv.lock ./
 RUN uv sync --locked --no-dev --no-cache
+
+# Strip bundled test suites (never imported at runtime)
+RUN find /opt/venv \( -type d -name tests -o -type d -name test \) -prune -exec rm -rf {} +
 
 # ---- Runtime stage: copy only the venv + app code ----
 FROM public.ecr.aws/docker/library/python:3.13-slim
