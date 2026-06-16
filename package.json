@@ -1,6 +1,11 @@
 {
     "private": true,
     "description": "Root-level dependencies for CDK synth (esbuild required by NodejsFunction bundling)",
+    "packageManager": "npm@11.13.0",
+    "engines": {
+        "node": "24.x",
+        "npm": "11.x"
+    },
     "devDependencies": {
         "esbuild": "^0.28.1"
     }

@@ -44,7 +44,7 @@ export interface CodeBuildNpmBuildProps {
 
     /**
      * Node.js version for the CodeBuild runtime.
-     * @default "22"
+     * @default "24"
      */
     readonly nodeVersion?: string;
 
@@ -77,7 +77,7 @@ export class CodeBuildNpmBuild extends Construct {
         const stackName = cdk.Stack.of(this).stackName.toLowerCase();
         const buildScript = props.buildScript ?? "build";
         const outputDir = props.outputDir ?? "dist";
-        const nodeVersion = props.nodeVersion ?? "22";
+        const nodeVersion = props.nodeVersion ?? "24";
         const excludes = props.excludes ?? [
             "node_modules",
             ".git",

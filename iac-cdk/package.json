@@ -1,6 +1,11 @@
 {
     "name": "aca-stack",
     "version": "1.0.0",
+    "packageManager": "npm@11.13.0",
+    "engines": {
+        "node": "24.x",
+        "npm": "11.x"
+    },
     "bin": {
         "aca": "bin/aca.js"
     },
