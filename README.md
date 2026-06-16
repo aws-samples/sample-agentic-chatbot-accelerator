@@ -55,6 +55,12 @@ The accelerator also supports **Voice-to-Voice** conversations powered by Amazon
 
 For systematic validation, run evaluations powered by the [Strands Agents Evals SDK](https://strandsagents.com/latest/documentation/docs/user-guide/evals-sdk/quickstart/) to assess output quality, tool usage, trajectory efficiency, and multi-agent interactions. See [Agent Evaluation](./docs/src/evaluation.md) for details.
 
+## Create Agents from Your Editor (Claude Code plugin)
+
+Everything the Agent Factory UI does, you can also drive from a conversation in [Claude Code](https://claude.ai/code) via the bundled **agent-creator** plugin (`.claude/plugins/agent-creator/`). Describe the agent you want — "an orchestrator that consults an AWS-docs specialist and a cost specialist, then writes the recommendation" — and it picks the agentic pattern, wires it from the tools, MCP servers, skills, and existing agents already in your **deployed** stack, validates the config with parity to the server, and submits it through the same API the UI uses, polling until the runtime is Ready. It also modifies live agents (model, prompt, tools), diagnoses misbehavior from traces, and authors reusable skills. See the [plugin README](./.claude/plugins/agent-creator/README.md).
+
+> The plugin operates on a **deployed** stack via the Agent Factory API — it does not generate IaC. For build-time `config.yaml`/`tfvars`, see [How to Deploy](./docs/src/how-to-deploy.md).
+
 ## AWS Platform Details
 
 - [Architecture](./docs/src/architecture.md)
