@@ -1,6 +1,15 @@
 {
   "enabledPlugins": {
     "skill-creator@claude-plugins-official": true,
-    "code-review@claude-plugins-official": true
+    "code-review@claude-plugins-official": true,
+    "agent-creator@agent-creator-marketplace": true
+  },
+  "extraKnownMarketplaces": {
+    "agent-creator-marketplace": {
+      "source": {
+        "source": "directory",
+        "path": ".claude"
+      }
+    }
   }
 }

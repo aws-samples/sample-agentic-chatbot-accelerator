@@ -1,0 +1,4 @@
+# agent-creator plugin script dependencies.
+# Raw HTTP + boto3 — no Amplify SDK needed.
+boto3>=1.34
+requests>=2.31
