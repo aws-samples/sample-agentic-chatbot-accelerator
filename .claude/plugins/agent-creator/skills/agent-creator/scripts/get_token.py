@@ -43,7 +43,7 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 _ENV_PATH = _SCRIPT_DIR / ".env"
 
 _ENV_USERNAME = "ACA_COGNITO_USERNAME"
-_ENV_PASSWORD = "ACA_COGNITO_PASSWORD"
+_ENV_PASSWORD = "ACA_COGNITO_PASSWORD"  # pragma: allowlist secret # nosec B105 - env var name, not a credential
 
 
 def _load_env_file() -> dict[str, str]:
