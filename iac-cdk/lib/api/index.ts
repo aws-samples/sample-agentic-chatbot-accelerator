@@ -46,7 +46,6 @@ export interface ChatbotApiProps {
     readonly mcpServerRegistryTable: dynamodb.Table;
     readonly agentCoreSummaryTable: dynamodb.Table;
     readonly agentCoreExecutionRole: iam.Role;
-    readonly agentToolsTopic: sns.Topic;
     // Batch experiments image (from BuilderStack)
     readonly batchImage?: CodeBuildDockerImage;
     // optional props for document processing

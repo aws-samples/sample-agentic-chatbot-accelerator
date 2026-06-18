@@ -13,7 +13,6 @@ import { Authentication } from "./authentication";
 import { BuilderStack } from "./builder-stack";
 import { Cleanup } from "./cleanup";
 import { DataProcessing } from "./data-processing";
-import { GenAIInterface } from "./genai-interface";
 import { VectorKnowledgeBase } from "./knowledge-base";
 import { Observability } from "./observability";
 import { Shared } from "./shared";
@@ -134,7 +133,6 @@ export class AcaStack extends cdk.Stack {
             stateClassRegistryTable: agentCoreInfra.stateClassRegistry,
             deterministicNodeRegistryTable: agentCoreInfra.deterministicNodeRegistry,
             mcpServerRegistryTable: agentCoreInfra.mcpServerRegistry,
-            agentToolsTopic: agentCoreInfra.agentToolsTopic,
             batchImage: props.builder.batchImage,
             skillsBucket: skillsBucket.bucket,
             evaluationExecutorBundle: props.builder.evaluationExecutorBundle,
@@ -150,17 +148,6 @@ export class AcaStack extends cdk.Stack {
                 resources: [api.sessionsTable.tableArn],
             }),
         );
-
-        // GenAIInterface: only the agent-tools-handler Lambda is still needed
-        // (for AI-rephrased tool descriptions via the AppSync side-channel).
-        // The invokeAgentCoreRuntime Lambda was removed — the frontend now
-        // communicates directly with AgentCore via WebSocket.
-        const genaiInterface = new GenAIInterface(this, "GenAIInterface", {
-            shared: shared,
-            config: props.config,
-            messagesTopic: api.messagesTopic,
-            agentToolsTopic: agentCoreInfra.agentToolsTopic,
-        });
 
         new UserInterface(this, "UserInterface", {
             config: props.config,

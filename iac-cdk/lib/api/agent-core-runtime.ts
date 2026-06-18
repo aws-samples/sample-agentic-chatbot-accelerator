@@ -12,7 +12,6 @@ import * as appsync from "aws-cdk-lib/aws-appsync";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
-import * as sns from "aws-cdk-lib/aws-sns";
 
 import { LayerVersion, LoggingFormat, Runtime } from "aws-cdk-lib/aws-lambda";
 import * as logs from "aws-cdk-lib/aws-logs";
@@ -38,7 +37,6 @@ export interface AgentCoreApisProps {
     readonly toolRegistryTable: dynamodb.Table;
     readonly mcpServerRegistryTable: dynamodb.Table;
     readonly agentCoreExecutionRole: iam.Role;
-    readonly agentToolsTopic: sns.Topic;
     /** Optional skills bucket for propagating bucket name to runtime containers */
     readonly skillsBucket?: cdk.aws_s3.Bucket;
 }
@@ -630,7 +628,6 @@ export class AgentCoreApis extends Construct {
                 ACCOUNT_ID: cdk.Aws.ACCOUNT_ID,
                 ENVIRONMENT_TAG: transformedTags.Environment,
                 STACK_TAG: transformedTags.Stack,
-                AGENT_TOOLS_TOPIC_ARN: props.agentToolsTopic.topicArn,
                 SESSIONS_TABLE_NAME: `${prefix}-sessionsTable`,
                 AGENTS_TABLE_NAME: props.agentCoreRuntimeTable.tableName,
                 AGENTS_SUMMARY_TABLE_NAME: props.agentCoreSummaryTable.tableName,
