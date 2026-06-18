@@ -13,8 +13,6 @@ import { PolicyDocument, PolicyStatement, Role, ServicePrincipal } from "aws-cdk
 import * as cr from "aws-cdk-lib/custom-resources";
 import * as path from "path";
 
-import * as sns from "aws-cdk-lib/aws-sns";
-
 import { NagSuppressions } from "cdk-nag";
 import { Construct } from "constructs";
 import * as crypto from "crypto";
@@ -52,7 +50,6 @@ export class AcaAgentCoreContainer extends Construct {
     public readonly structuredOutputRegistry: dynamodb.Table;
     public readonly mcpServerRegistry: dynamodb.Table;
     public readonly agentCoreSummaryTable: dynamodb.Table;
-    public readonly agentToolsTopic: sns.Topic;
 
     constructor(scope: Construct, id: string, props: AcaAgentCoreContainerProps) {
         super(scope, id);
@@ -404,11 +401,6 @@ export class AcaAgentCoreContainer extends Construct {
             },
         });
 
-        const agentToolsTopic = new sns.Topic(this, "MessagesTopic", {
-            topicName: `${prefix}-agentToolsTopic`,
-            enforceSSL: true,
-        });
-
         // MCP Server Registry seeder with full lifecycle support (create/update/delete)
         const mcpSeederLambda = createLambda(this, {
             name: `${prefix}-mcp-seeder`,
@@ -683,12 +675,6 @@ export class AcaAgentCoreContainer extends Construct {
                 actions: ["dynamodb:Scan"],
                 resources: [toolRegistry.tableArn, mcpServerRegistry.tableArn],
             }),
-            new iam.PolicyStatement({
-                sid: "PublishToAgentToolsTopic",
-                effect: iam.Effect.ALLOW,
-                actions: ["sns:Publish"],
-                resources: [agentToolsTopic.topicArn],
-            }),
         ];
 
         const executionRole = new Role(this, "AgentExecutionRole", {
@@ -761,7 +747,6 @@ export class AcaAgentCoreContainer extends Construct {
                     tableName: agentCoreRuntimeTable.tableName,
                     toolRegistry: toolRegistry.tableName,
                     mcpServerRegistry: mcpServerRegistry.tableName,
-                    agentToolsTopicArn: agentToolsTopic.topicArn,
                     // Sessions table name for container-side history persistence
                     // (follows the same {prefix}-sessionsTable naming convention)
                     ...(props.sessionsTableName && {
@@ -880,7 +865,6 @@ export class AcaAgentCoreContainer extends Construct {
         this.graphImageAsset = graphImageAsset;
         this.agentsAsToolsImageAsset = agentsAsToolsImageAsset;
         this.executionRole = executionRole;
-        this.agentToolsTopic = agentToolsTopic;
 
         new CfnOutput(this, "AgentCoreImageUri", {
             value: this.imageAsset.imageUri,
