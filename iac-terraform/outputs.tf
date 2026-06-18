@@ -105,11 +105,6 @@ output "agent_summary_table_name" {
   value       = module.agent_core.agent_summary_table_name
 }
 
-output "agent_tools_topic_arn" {
-  description = "ARN of the SNS topic for agent tools messaging"
-  value       = module.agent_core.agent_tools_topic_arn
-}
-
 output "ecr_repository_url" {
   description = "URL of the ECR repository for agent runtime container images"
   value       = module.agent_core.ecr_repository_url
