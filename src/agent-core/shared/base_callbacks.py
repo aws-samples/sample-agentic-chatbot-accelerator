@@ -7,6 +7,7 @@
 # ---------------------------------------------------------------------------- #
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from typing import TYPE_CHECKING
@@ -207,6 +208,92 @@ class BaseAgentCallbacks:
 
         return parameters
 
+    def _send_ws_event(self, payload: dict) -> None:
+        """Schedule a JSON payload on the browser-facing WebSocket.
+
+        Tool callbacks fire from synchronous Strands hooks, so the coroutine is
+        scheduled on the running event loop rather than awaited. A no-op when no
+        WebSocket is attached (e.g. the ``/invocations`` SSE path, where there is
+        no browser WS). Never raises into the agent run — failures are logged.
+
+        Args:
+            payload (dict): JSON-serializable event to send to the browser.
+        """
+        if self._websocket is None:
+            return
+
+        try:
+            coro = self._websocket.send_json(payload)
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.ensure_future(coro)
+            else:
+                loop.run_until_complete(coro)
+        except Exception as ws_err:
+            self._logger.warning(f"Failed to send WebSocket event: {ws_err}")
+
+    def _send_tool_action(
+        self, tool_name: str, tool_description: str, parameters: list[dict]
+    ) -> None:
+        """Emit a ``tool_action`` event over the browser WebSocket.
+
+        Args:
+            tool_name (str): Name of the tool being invoked.
+            tool_description (str): Static spec description (may be empty).
+            parameters (list[dict]): Parameter dicts; only names are forwarded.
+        """
+        self._send_ws_event(
+            {
+                "type": "tool_action",
+                "toolName": tool_name,
+                "description": tool_description,
+                "parameters": [p["name"] for p in parameters],
+                "invocationNumber": self._nb_tool_invocations,
+            }
+        )
+
+    def _send_tool_complete(
+        self, tool_name: str, invocation_number: int, status: str = "success"
+    ) -> None:
+        """Emit a ``tool_complete`` event over the browser WebSocket.
+
+        The payload is intentionally minimal (no result content) so large or
+        sensitive tool output never reaches the UI — results flow via
+        ``final_response``.
+
+        Args:
+            tool_name (str): Name of the tool that finished.
+            invocation_number (int): Must match the paired ``tool_action`` so the
+                frontend can correlate.
+            status (str): ``"success"`` or ``"error"``.
+        """
+        self._send_ws_event(
+            {
+                "type": "tool_complete",
+                "toolName": tool_name,
+                "invocationNumber": invocation_number,
+                "status": status,
+            }
+        )
+
+    @staticmethod
+    def _tool_status_from_result(result) -> str:
+        """Derive ``tool_complete`` status from a Strands tool result.
+
+        Strands tool results are dicts shaped ``{"status": "success"|"error", ...}``.
+        Defaults to ``"success"`` when the shape is unknown.
+
+        Args:
+            result: The tool result from an ``AfterToolCallEvent``.
+
+        Returns:
+            str: ``"error"`` if the result reports an error, else ``"success"``.
+        """
+        if isinstance(result, dict) and result.get("status") == "error":
+            return "error"
+        return "success"
+
+    # DEPRECATED: removed with SNS side-channel (infra phase, once OQ-1 resolved)
     def _publish_tool_invocation(
         self, tool_name: str, tool_description: str, parameters: list[dict]
     ) -> None:

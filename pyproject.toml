@@ -25,6 +25,8 @@ dev = [
     "strands-agents-evals>=0.1.8",
     "langgraph>=1.0.10",
     "fastapi>=0.136.1",
+    "pytest>=9.1.0",
+    "pytest-asyncio>=1.4.0",
 ]
 
 [tool.uv]
@@ -32,6 +34,12 @@ override-dependencies = [
     "urllib3>=2.6.3",
     "asteval>=1.0.6",
 ]
+
+[tool.pytest.ini_options]
+# Agent-core containers import `shared.*` from the agent-core root, so put it on
+# sys.path for unit tests (containers copy `shared/` to the image root).
+pythonpath = ["src/agent-core"]
+asyncio_mode = "auto"
 
 [tool.isort]
 profile = "black"

@@ -167,6 +167,9 @@ async def swarm_text_chat(websocket: WebSocket):
                 # Clean up metadata from previous message in the same session
                 if CALLBACKS:
                     CALLBACKS.reset_metadata()
+                    # Attach the browser WS so tool steps emit directly (mirrors
+                    # docker/app.py); only the entry-point holds this WS.
+                    CALLBACKS._websocket = websocket
 
                 logger.info(
                     "Calling swarm with user message and context",
@@ -239,9 +242,9 @@ async def swarm_text_chat(websocket: WebSocket):
                                 "Trajectory and interactions captured for evaluation",
                                 extra={
                                     "trajectory": trajectory,
-                                    "interactionCount": len(interaction_info)
-                                    if interaction_info
-                                    else 0,
+                                    "interactionCount": (
+                                        len(interaction_info) if interaction_info else 0
+                                    ),
                                 },
                             )
                         except Exception as traj_err:
