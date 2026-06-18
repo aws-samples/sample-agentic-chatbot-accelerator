@@ -31,7 +31,7 @@ import {
     LLMToken,
     ToolActionItem,
 } from "./types";
-import { updateMessageHistoryRef } from "./utils";
+import { appendToolAction, markToolComplete, updateMessageHistoryRef } from "./utils";
 
 export interface ChatInputPanelProps {
     running: boolean;
@@ -230,20 +230,28 @@ const ChatInputPanel = forwardRef<ChatInputPanelHandle, ChatInputPanelProps>(fun
                             );
                     }
 
-                    // Save tool actions with a delay — they arrive via the AppSync
-                    // side-channel and the DynamoDB session record needs time to be
-                    // written by the container before we can update it.
+                    // Save tool actions with a delay — the DynamoDB session record
+                    // needs time to be written by the container before we can update
+                    // it. Steps now arrive in real time over the WebSocket, but the
+                    // AppSync side-channel can still backfill, so retry while empty.
                     const saveToolActionsWithRetry = (attempt: number) => {
                         const currentMsg =
                             messageHistoryRef.current[messageHistoryRef.current.length - 1];
                         if (currentMsg?.toolActions && currentMsg.toolActions.length > 0) {
+                            // Persist terminal state only: the turn is complete, so any
+                            // step still "running" missed its tool_complete — coerce it
+                            // to "success" rather than persisting an in-flight status.
+                            const terminalActions = currentMsg.toolActions.map((ta) => ({
+                                ...ta,
+                                status: ta.status && ta.status !== "running" ? ta.status : "success",
+                            }));
                             client
                                 .graphql({
                                     query: saveToolActions,
                                     variables: {
                                         sessionId: props.session.id,
                                         messageId: currentMsg.messageId,
-                                        toolActions: JSON.stringify(currentMsg.toolActions),
+                                        toolActions: JSON.stringify(terminalActions),
                                     },
                                 })
                                 .catch((err) => {
@@ -263,13 +271,26 @@ const ChatInputPanel = forwardRef<ChatInputPanelHandle, ChatInputPanelProps>(fun
                 props.setRunning(false);
             },
 
-            // Raw tool descriptions from WebSocket are suppressed — we only show
-            // the AI-rephrased descriptions that arrive via the AppSync side-channel.
-            // The raw description is logged for debugging but not displayed.
-            onToolAction: (toolName: string, _description: string, invocationNumber: number) => {
-                console.debug(
-                    `Raw tool action #${invocationNumber} (${toolName}) — waiting for AI-rephrased version`,
-                );
+            // Tool steps now come directly from the AgentCore WebSocket — no LLM
+            // rephrasing. Route the raw tool action into the message's toolActions
+            // so it renders immediately (the description is often empty for
+            // MCP/custom tools; appendToolAction falls back to `Using {toolName}`).
+            // The AppSync side-channel is still active this phase; dedup by
+            // invocationNumber handles double-delivery from both paths.
+            onToolAction: (toolName: string, description: string, invocationNumber: number) => {
+                if (aborted) return;
+                if (appendToolAction(messageHistoryRef.current, toolName, description, invocationNumber)) {
+                    props.setMessageHistory([...messageHistoryRef.current]);
+                }
+            },
+
+            // Mark the matching step terminal when the tool finishes.
+            onToolComplete: (_toolName: string, invocationNumber: number, status: string) => {
+                if (aborted) return;
+                const terminal = status === "error" ? "error" : "success";
+                if (markToolComplete(messageHistoryRef.current, invocationNumber, terminal)) {
+                    props.setMessageHistory([...messageHistoryRef.current]);
+                }
             },
 
             onError: (errorMessage: string) => {

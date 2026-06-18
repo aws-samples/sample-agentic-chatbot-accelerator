@@ -46,6 +46,7 @@ export interface ConnectOptions {
     onTextToken?: (data: string, sequenceNumber: number, runId?: string) => void;
     onFinalResponse?: (response: FinalResponsePayload) => void;
     onToolAction?: (toolName: string, description: string, invocationNumber: number) => void;
+    onToolComplete?: (toolName: string, invocationNumber: number, status: string) => void;
 
     // --- Voice mode callbacks ---
     onAudioChunk?: (audio: string, format: string, sampleRate: number) => void;
@@ -202,6 +203,13 @@ export async function connectToAgent(options: ConnectOptions): Promise<WebSocket
                             data.toolName,
                             data.description,
                             data.invocationNumber,
+                        );
+                        break;
+                    case "tool_complete":
+                        options.onToolComplete?.(
+                            data.toolName,
+                            data.invocationNumber,
+                            data.status || "success",
                         );
                         break;
 

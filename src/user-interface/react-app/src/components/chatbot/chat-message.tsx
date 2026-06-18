@@ -10,7 +10,7 @@ import { ChatBotHistoryItem, ChatBotMessageType, Reference } from "./types";
 
 import Avatar from "@cloudscape-design/chat-components/avatar";
 import ChatBubble from "@cloudscape-design/chat-components/chat-bubble";
-import { Box, Button, ExpandableSection, Modal, SpaceBetween } from "@cloudscape-design/components";
+import { Box, Button, ExpandableSection, Modal, SpaceBetween, Spinner } from "@cloudscape-design/components";
 import { useTranslation } from "react-i18next";
 import { StorageHelper } from "../../common/helpers/storage-helper";
 import { getPresignedUrl as getPresignedUrlQuery } from "../../graphql/queries";
@@ -223,21 +223,35 @@ export default function ChatMessage(props: ChatMessageProps) {
                     marginBottom: "8px",
                 }}
             >
-                {sortedActions.map((action) => (
-                    <div
-                        key={action.invocationNumber}
-                        style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "8px",
-                            fontSize: "12px",
-                            color: "#545b64",
-                        }}
-                    >
-                        <span style={{ fontSize: "14px" }}>🔧</span>
-                        <span>{action.toolAction}</span>
-                    </div>
-                ))}
+                {sortedActions.map((action) => {
+                    // Steps default to "running" on arrival; tool_complete flips them
+                    // to a terminal state. Records that predate the status field have
+                    // no status — treat those as done (success).
+                    const running = action.status === "running";
+                    return (
+                        <div
+                            key={action.invocationNumber}
+                            style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "8px",
+                                fontSize: "12px",
+                                color: "#545b64",
+                            }}
+                        >
+                            <span style={{ fontSize: "14px", display: "flex" }}>
+                                {running ? (
+                                    <Spinner size="normal" />
+                                ) : action.status === "error" ? (
+                                    "⚠️"
+                                ) : (
+                                    "✓"
+                                )}
+                            </span>
+                            <span>{action.toolAction}</span>
+                        </div>
+                    );
+                })}
             </div>
         );
     };
