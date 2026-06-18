@@ -78,6 +78,9 @@ class AgentCallbacks(BaseAgentCallbacks):
             self._tool_executions[tool_call_id] = {
                 "name": tool_name,
                 "arguments": tool_input,
+                # Stored so log_tool_results can emit a correlated tool_complete
+                # (after_tool does not increment _nb_tool_invocations).
+                "invocationNumber": self._nb_tool_invocations,
             }
             self._logger.debug(
                 f"Stored tool input for trajectory enrichment: {tool_call_id}",
@@ -91,6 +94,10 @@ class AgentCallbacks(BaseAgentCallbacks):
         tool_name = event.tool_use.get("name", "unknown")
         tool_description = specs.get("description", "") if specs else ""
         self._publish_tool_invocation(tool_name, tool_description, parameters)
+
+        # Send tool action directly via WebSocket for instant UI feedback.
+        # Surfaces the orchestrator's sub-agent invocations ("Invoking XYZ experts…").
+        self._send_tool_action(tool_name, tool_description, parameters)
 
     def log_tool_results(self, event: AfterToolCallEvent) -> None:
         """Logs tool results and stores them for trajectory enrichment.
@@ -139,4 +146,18 @@ class AgentCallbacks(BaseAgentCallbacks):
                 self._logger.debug(
                     f"Stored tool result for trajectory enrichment: {tool_call_id}",
                     extra={"toolName": tool_name, "resultLength": len(result_content)},
+                )
+
+            # Notify the UI the tool finished, correlated to the paired tool_action
+            # via the invocationNumber captured in log_tool_entries.
+            invocation_number = (
+                self._tool_executions.get(tool_call_id, {}).get("invocationNumber")
+                if tool_call_id
+                else None
+            )
+            if invocation_number is not None:
+                self._send_tool_complete(
+                    tool_name,
+                    invocation_number,
+                    self._tool_status_from_result(event.result),
                 )
