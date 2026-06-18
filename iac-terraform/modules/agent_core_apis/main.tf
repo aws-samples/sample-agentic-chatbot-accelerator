@@ -65,9 +65,6 @@ module "lambdas" {
   # IAM
   agent_core_execution_role_arn = var.agent_core_execution_role_arn
 
-  # SNS
-  agent_tools_topic_arn = var.agent_tools_topic_arn
-
   # AppSync
   graphql_url    = var.graphql_url
   appsync_api_id = var.appsync_api_id

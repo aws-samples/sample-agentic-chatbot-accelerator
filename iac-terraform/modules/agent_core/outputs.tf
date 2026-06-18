@@ -78,20 +78,6 @@ output "agent_summary_table_arn" {
 }
 
 # -----------------------------------------------------------------------------
-# SNS Topic Outputs
-# -----------------------------------------------------------------------------
-
-output "agent_tools_topic_arn" {
-  description = "ARN of the SNS topic for agent tools messaging"
-  value       = aws_sns_topic.agent_tools.arn
-}
-
-output "agent_tools_topic_name" {
-  description = "Name of the SNS topic for agent tools messaging"
-  value       = aws_sns_topic.agent_tools.name
-}
-
-# -----------------------------------------------------------------------------
 # ECR Repository Outputs
 # -----------------------------------------------------------------------------
 

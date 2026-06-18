@@ -52,14 +52,13 @@ resource "aws_bedrockagentcore_agent_runtime" "default" {
 
   environment_variables = merge(
     {
-      accountId          = data.aws_caller_identity.current.account_id
-      agentName          = local.agent_name
-      createdAt          = local.created_at
-      tableName          = aws_dynamodb_table.agent_runtime_config.name
-      toolRegistry       = aws_dynamodb_table.tool_registry.name
-      mcpServerRegistry  = aws_dynamodb_table.mcp_server_registry.name
-      agentToolsTopicArn = aws_sns_topic.agent_tools.arn
-      memoryId           = var.agent_runtime_config.memory_config != null ? aws_bedrockagentcore_memory.default[0].id : ""
+      accountId         = data.aws_caller_identity.current.account_id
+      agentName         = local.agent_name
+      createdAt         = local.created_at
+      tableName         = aws_dynamodb_table.agent_runtime_config.name
+      toolRegistry      = aws_dynamodb_table.tool_registry.name
+      mcpServerRegistry = aws_dynamodb_table.mcp_server_registry.name
+      memoryId          = var.agent_runtime_config.memory_config != null ? aws_bedrockagentcore_memory.default[0].id : ""
       # Sessions table name for container-side history persistence
       # (follows the same {prefix}-sessionsTable naming convention)
       sessionsTableName = "${local.name_prefix}-sessionsTable"

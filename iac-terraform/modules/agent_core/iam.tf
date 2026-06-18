@@ -237,13 +237,6 @@ data "aws_iam_policy_document" "agentcore_execution" {
     ]
   }
 
-  # SNS Publish - Agent Tools Topic
-  statement {
-    sid       = "PublishToAgentToolsTopic"
-    actions   = ["sns:Publish"]
-    resources = [aws_sns_topic.agent_tools.arn]
-  }
-
   # DynamoDB Write - Sessions Table (for container-side history persistence)
   dynamic "statement" {
     for_each = var.sessions_table_arn != null ? [1] : []

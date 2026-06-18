@@ -328,9 +328,6 @@ module "agent_core_apis" {
   # IAM
   agent_core_execution_role_arn = module.agent_core.execution_role_arn
 
-  # SNS (from agent_core for agent tools notifications)
-  agent_tools_topic_arn = module.agent_core.agent_tools_topic_arn
-
   # AppSync
   appsync_api_id = module.appsync.api_id
   graphql_url    = module.appsync.graphql_url
@@ -351,35 +348,6 @@ module "agent_core_apis" {
   bedrock_access_role_arn = var.bedrock_access_role_arn
 
   depends_on = [module.appsync, module.agent_core, module.websocket_backend]
-}
-
-# -----------------------------------------------------------------------------
-# GenAI Interface Module
-# Creates agent-tools-handler Lambda for AI-rephrased tool descriptions.
-# After the Direct WebSocket migration, the invokeAgentCoreRuntime Lambda
-# was removed — the browser now communicates directly with AgentCore via WebSocket.
-# Equivalent to: new GenAIInterface(this, "GenAI", {...}) in iac-cdk/lib/aca-stack.ts
-# -----------------------------------------------------------------------------
-module "genai_interface" {
-  source = "./modules/genai_interface"
-
-  prefix = local.prefix
-
-  # Lambda configuration
-  powertools_layer_arn = module.shared.powertools_layer_arn
-  boto3_layer_arn      = module.shared.boto3_layer_arn
-  genai_core_layer_arn = module.shared.genai_core_layer_arn
-  python_runtime       = module.shared.python_runtime
-  lambda_architecture  = module.shared.lambda_architecture
-
-  # SNS Topics
-  messages_topic_arn    = module.websocket_backend.messages_topic_arn
-  agent_tools_topic_arn = module.agent_core.agent_tools_topic_arn
-
-  # Encryption
-  kms_key_arn = aws_kms_key.main.arn
-
-  depends_on = [module.websocket_backend, module.agent_core]
 }
 
 # -----------------------------------------------------------------------------
