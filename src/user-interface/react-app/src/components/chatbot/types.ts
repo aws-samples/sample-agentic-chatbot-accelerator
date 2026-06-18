@@ -52,6 +52,11 @@ export interface ToolActionItem {
     toolAction: string;
     toolName: string;
     invocationNumber: number;
+    // Lifecycle of the tool invocation. Set to "running" when the tool_action
+    // event arrives; flipped to "success"/"error" by the paired tool_complete
+    // event. Optional for backward compatibility with persisted records that
+    // predate this field — treat a missing status as "success".
+    status?: "running" | "success" | "error";
 }
 
 export interface ChatBotHistoryItem {
