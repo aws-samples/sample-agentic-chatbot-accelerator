@@ -25,6 +25,8 @@ export interface MessageToolboxProps {
     onRegenerate?: () => void;
     /** Whether the regenerate control should be enabled (false while a turn is in flight). */
     canRegenerate?: boolean;
+    /** Open the structured output in the annex canvas. Omitted when none was returned. */
+    onViewStructuredOutput?: () => void;
 }
 
 export default function MessageToolbox(props: MessageToolboxProps) {
@@ -112,6 +114,9 @@ export default function MessageToolbox(props: MessageToolboxProps) {
                         if (detail.id === "regenerate" && props.canRegenerate) {
                             props.onRegenerate?.();
                         }
+                        if (detail.id === "structured-output") {
+                            props.onViewStructuredOutput?.();
+                        }
                     }}
                     ariaLabel="Chat actions"
                     items={[
@@ -172,6 +177,22 @@ export default function MessageToolbox(props: MessageToolboxProps) {
                                               iconName: "refresh" as const,
                                               text: t("CHATBOT.PLAYGROUND.REGENERATE"),
                                               disabled: !props.canRegenerate,
+                                          },
+                                      ],
+                                  },
+                              ]
+                            : []),
+                        ...(props.onViewStructuredOutput
+                            ? [
+                                  {
+                                      type: "group" as const,
+                                      text: t("CHATBOT.PLAYGROUND.STRUCTURED_OUTPUT_LABEL"),
+                                      items: [
+                                          {
+                                              type: "icon-button" as const,
+                                              id: "structured-output",
+                                              iconName: "script" as const,
+                                              text: t("CHATBOT.PLAYGROUND.STRUCTURED_OUTPUT_LABEL"),
                                           },
                                       ],
                                   },
