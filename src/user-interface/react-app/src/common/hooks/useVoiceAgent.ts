@@ -14,6 +14,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchUserAttributes } from "aws-amplify/auth";
 import { connectToAgent, ConnectOptions, WebSocketAgentConnection } from "../../websocket-presigned";
 
+/** A single argument the agent passed to a tool, ready for display. */
+export interface VoiceToolParameter {
+    name: string;
+    value: string;
+}
+
 /** A single turn in a voice conversation (user speech, assistant speech, or tool use). */
 export interface VoiceConversationTurn {
     role: "user" | "assistant" | "tool";
@@ -21,6 +27,38 @@ export interface VoiceConversationTurn {
     timestamp: number;
     isFinal: boolean;
     toolName?: string;
+    /** Tool arguments (tool turns only) — mirrors the text path's parameter display. */
+    parameters?: VoiceToolParameter[];
+}
+
+/** Longest argument value we display before truncating with an ellipsis. */
+const TOOL_PARAM_VALUE_MAX = 200;
+
+/**
+ * Parse a tool's JSON-encoded input into display-ready name/value pairs.
+ *
+ * The container sends the raw `current_tool_use.input` as a JSON string on the
+ * `tool_use_stream` WS event. Non-string values are re-stringified and long
+ * values truncated, mirroring how the text path preps parameters server-side.
+ * Returns undefined when there's nothing parseable to show.
+ */
+function parseToolParameters(content?: string): VoiceToolParameter[] | undefined {
+    if (!content) return undefined;
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(content);
+    } catch {
+        return undefined;
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
+
+    const params = Object.entries(parsed as Record<string, unknown>).map(([name, raw]) => {
+        const str = typeof raw === "string" ? raw : JSON.stringify(raw);
+        const value =
+            str.length > TOOL_PARAM_VALUE_MAX ? `${str.slice(0, TOOL_PARAM_VALUE_MAX)}…` : str;
+        return { name, value };
+    });
+    return params.length > 0 ? params : undefined;
 }
 
 export interface UseVoiceAgentOptions {
@@ -295,16 +333,20 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
                         // Only tool_use_stream creates a new turn. Other events
                         // (tool_result, tool_result_message, tool_stream) are
                         // follow-ups for the same invocation and are ignored.
+                        // The 3rd arg carries the tool's JSON-encoded input, which
+                        // we surface as expandable parameters (mirrors the text path).
                         const cleanName = toolName
                             .replace(/^[a-z-]+_aws___/, "") // strip MCP prefixes
                             .replace(/_/g, " ");
                         const toolText = `Using ${cleanName}...`;
+                        const parameters = parseToolParameters(description);
                         setConversationTurns((prev) => [
                             ...prev,
                             {
                                 role: "tool" as const,
                                 text: toolText,
                                 toolName,
+                                parameters,
                                 isFinal: true,
                                 timestamp: Date.now(),
                             },

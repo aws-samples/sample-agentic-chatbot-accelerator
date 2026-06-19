@@ -261,7 +261,7 @@ export async function connectToAgent(options: ConnectOptions): Promise<WebSocket
                         );
                         break;
 
-                    // --- Voice: AI-rephrased tool description (from Mistral via container) ---
+                    // --- Voice: raw tool description (no LLM rephrasing) from container ---
                     case "tool_description":
                         console.debug("Voice tool description received");
                         options.onToolEvent?.(

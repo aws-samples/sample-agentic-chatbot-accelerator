@@ -490,11 +490,23 @@ export default function Chat(props: { sessionId?: string }) {
                             const role: "user" | "assistant" | "tool" =
                                 item.type === "user" ? "user" :
                                 item.type === "tool" ? "tool" : "assistant";
+                            // Tool turns persist their arguments in the toolActions JSON
+                            // field — parse them back so the expandable params re-appear.
+                            let parameters: VoiceConversationTurn["parameters"];
+                            if (role === "tool" && item.toolActions) {
+                                try {
+                                    const parsed = JSON.parse(item.toolActions);
+                                    parameters = parsed?.[0]?.parameters;
+                                } catch {
+                                    // ignore malformed toolActions — render the bare pill
+                                }
+                            }
                             voiceTurns.push({
                                 role,
                                 text: item.content,
                                 timestamp: Date.now(),
                                 isFinal: true,
+                                parameters,
                             });
                         }
 
@@ -670,12 +682,21 @@ export default function Chat(props: { sessionId?: string }) {
                         data: { content: turn.text },
                     });
                 } else if (turn.role === "tool") {
-                    // Tool turns are saved as their own items — rendered as centered pills
+                    // Tool turns are saved as their own items — rendered as centered pills.
+                    // Persist the agent's arguments via the existing toolActions channel
+                    // (a JSON-string field round-tripped by getSession) so reopening the
+                    // session can re-show the expandable parameters.
+                    const toolData: Record<string, any> = { content: turn.text };
+                    if (turn.parameters && turn.parameters.length > 0) {
+                        toolData.toolActions = [
+                            { toolName: turn.toolName ?? "", parameters: turn.parameters },
+                        ];
+                    }
                     dynamoHistory.push({
                         type: "tool",
                         messageId: msgId,
                         render: true,
-                        data: { content: turn.text },
+                        data: toolData,
                     });
                 }
             }

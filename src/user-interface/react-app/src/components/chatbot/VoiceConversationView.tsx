@@ -16,9 +16,9 @@ import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { AppContext } from "../../common/app-context";
 import { useVoiceAgent, VoiceConversationTurn } from "../../common/hooks/useVoiceAgent";
 import { getDefaultRuntimeConfiguration as getDefaultRuntimeConfigurationQuery } from "../../graphql/queries";
-import { receiveMessages } from "../../graphql/subscriptions";
 import { ConnectOptions } from "../../websocket-presigned";
-import { AgentOption, ChatBotAction, ChatBotMessageResponse, EndpointOption } from "./types";
+import { AgentOption, EndpointOption } from "./types";
+import { maskSensitiveInfo } from "./utils";
 import MarkdownContent from "./side-view/markdown-content";
 
 export interface VoiceConversationViewProps {
@@ -80,39 +80,7 @@ export default function VoiceConversationView({
     const { isRecording, isConnected, conversationTurns, activeSpeaker, startVoice, stopVoice, disconnectVoice: _disconnectVoice, error } =
         useVoiceAgent(voiceOptions);
 
-    // AI-rephrased tool descriptions from the AppSync side-channel (ordered array)
-    const [toolDescriptions, setToolDescriptions] = useState<string[]>([]);
     const client = useMemo(() => generateClient(), []);
-
-    // Subscribe to AppSync side-channel for AI-rephrased tool action descriptions
-    useEffect(() => {
-        if (isReadOnly) return;
-
-        const sub = client
-            .graphql({
-                query: receiveMessages,
-                variables: { sessionId },
-                authMode: "userPool",
-            })
-            .subscribe({
-                next: (message: any) => {
-                    const data = message.data?.receiveMessages?.data;
-                    if (!data) return;
-                    try {
-                        const response: ChatBotMessageResponse = JSON.parse(data);
-                        if (response.action === ChatBotAction.ToolAction && response.data.toolAction) {
-                            console.log("Voice: AI-rephrased tool description received:", response.data.toolAction);
-                            setToolDescriptions((prev) => [...prev, response.data.toolAction!]);
-                        }
-                    } catch {
-                        // ignore parse errors
-                    }
-                },
-                error: (err: any) => console.warn("Voice AppSync side-channel error:", err),
-            });
-
-        return () => sub.unsubscribe();
-    }, [sessionId, isReadOnly, client]);
 
     // Helper: filter out context-replay artifacts from new turns after a resume.
     // When the agent reconnects on resume, it may replay tool events from its context
@@ -133,33 +101,18 @@ export default function VoiceConversationView({
     // - Read-only: show restored turns only
     // - Resumed (was read-only, now live): show restored turns + new live turns (filtered)
     // - Fresh session: show live conversation turns only
-    // Then apply AI-rephrased tool descriptions on top.
+    // Tool descriptions are applied to tool turns by useVoiceAgent (raw WS path),
+    // so no further overlay is needed here.
     const displayTurns = useMemo(() => {
-        let baseTurns: VoiceConversationTurn[];
         if (isReadOnly) {
-            baseTurns = restoredTurns || [];
-        } else if (restoredTurns && restoredTurns.length > 0) {
-            // Resumed session: combine old + new (filtered to remove replay artifacts)
-            baseTurns = [...restoredTurns, ...filterReplayArtifacts(conversationTurns)];
-        } else {
-            baseTurns = conversationTurns;
+            return restoredTurns || [];
         }
-
-        if (baseTurns.length === 0) return baseTurns;
-        if (toolDescriptions.length === 0) return baseTurns;
-
-        let toolIdx = 0;
-        return baseTurns.map((turn) => {
-            if (turn.role === "tool") {
-                const aiDescription = toolDescriptions[toolIdx];
-                toolIdx++;
-                if (aiDescription) {
-                    return { ...turn, text: aiDescription };
-                }
-            }
-            return turn;
-        });
-    }, [isReadOnly, restoredTurns, conversationTurns, toolDescriptions]);
+        if (restoredTurns && restoredTurns.length > 0) {
+            // Resumed session: combine old + new (filtered to remove replay artifacts)
+            return [...restoredTurns, ...filterReplayArtifacts(conversationTurns)];
+        }
+        return conversationTurns;
+    }, [isReadOnly, restoredTurns, conversationTurns]);
 
     // Show waveform when someone is actively speaking (activeSpeaker is set)
     // and the session is live (not read-only)
@@ -482,24 +435,9 @@ function CompletedTurnCard({
     userName: string;
     agentName: string;
 }) {
-    // Tool turns: compact centered pill
+    // Tool turns: compact centered pill, expandable to reveal the agent's arguments
     if (turn.role === "tool") {
-        return (
-            <div style={{ display: "flex", justifyContent: "center", padding: "4px 0" }}>
-                <span
-                    style={{
-                        fontSize: "12px",
-                        color: "var(--color-text-body-secondary)",
-                        backgroundColor: "var(--color-background-layout-main)",
-                        padding: "4px 14px",
-                        borderRadius: "12px",
-                        border: "1px solid var(--color-border-divider-default)",
-                    }}
-                >
-                    🔧 {turn.text}
-                </span>
-            </div>
-        );
+        return <ToolTurnPill turn={turn} />;
     }
 
     const isUser = turn.role === "user";
@@ -541,6 +479,64 @@ function CompletedTurnCard({
                     <MarkdownContent content={turn.text} />
                 </div>
             </div>
+        </div>
+    );
+}
+
+/** A tool-use turn rendered as a centered pill. Click to expand the agent's
+ *  arguments (name/value pairs), mirroring the text chat's tool-step display. */
+function ToolTurnPill({ turn }: { turn: VoiceConversationTurn }) {
+    const [expanded, setExpanded] = useState(false);
+    const hasParams = !!turn.parameters && turn.parameters.length > 0;
+
+    return (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "4px 0", gap: "4px" }}>
+            <span
+                role={hasParams ? "button" : undefined}
+                tabIndex={hasParams ? 0 : undefined}
+                onClick={hasParams ? () => setExpanded((e) => !e) : undefined}
+                onKeyDown={
+                    hasParams
+                        ? (e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  setExpanded((prev) => !prev);
+                              }
+                          }
+                        : undefined
+                }
+                style={{
+                    fontSize: "12px",
+                    color: "var(--color-text-body-secondary)",
+                    backgroundColor: "var(--color-background-layout-main)",
+                    padding: "4px 14px",
+                    borderRadius: "12px",
+                    border: "1px solid var(--color-border-divider-default)",
+                    cursor: hasParams ? "pointer" : "default",
+                    userSelect: "none",
+                }}
+            >
+                🔧 {turn.text}
+                {hasParams && <span style={{ marginLeft: "6px" }}>{expanded ? "▼" : "▶"}</span>}
+            </span>
+            {hasParams && expanded && (
+                <ul
+                    style={{
+                        margin: 0,
+                        padding: "4px 12px",
+                        listStyleType: "circle",
+                        fontSize: "11px",
+                        color: "var(--color-text-body-secondary)",
+                        maxWidth: "85%",
+                    }}
+                >
+                    {turn.parameters!.map((p) => (
+                        <li key={p.name} style={{ wordBreak: "break-word" }}>
+                            <span style={{ fontWeight: 600 }}>{p.name}:</span> {maskSensitiveInfo(p.value)}
+                        </li>
+                    ))}
+                </ul>
+            )}
         </div>
     );
 }
