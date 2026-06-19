@@ -88,6 +88,18 @@ i18n.use(initReactI18next).init({
                 "CHATBOT.PLAYGROUND.ARTIFACT_COPIED": "Copied",
                 "CHATBOT.PLAYGROUND.ARTIFACT_EXPAND": "Expand",
                 "CHATBOT.PLAYGROUND.OPEN_SOURCE": "Open source",
+                // T6 — Conversational history (in-chat)
+                "CHATBOT.PLAYGROUND.HISTORY_TITLE": "Conversations",
+                "CHATBOT.PLAYGROUND.HISTORY_DRAWER_ARIA": "Conversation history",
+                "CHATBOT.PLAYGROUND.HISTORY_EMPTY": "No conversations yet",
+                "CHATBOT.PLAYGROUND.HISTORY_TODAY": "Today",
+                "CHATBOT.PLAYGROUND.HISTORY_YESTERDAY": "Yesterday",
+                "CHATBOT.PLAYGROUND.HISTORY_PAST_WEEK": "Past 7 days",
+                "CHATBOT.PLAYGROUND.HISTORY_OLDER": "Older",
+                "CHATBOT.PLAYGROUND.HISTORY_BADGE_VOICE": "Voice",
+                "CHATBOT.PLAYGROUND.HISTORY_BADGE_TEXT": "Text",
+                "CHATBOT.PLAYGROUND.HISTORY_RENAME": "Rename",
+                "CHATBOT.PLAYGROUND.HISTORY_DELETE": "Delete",
                 // T7 — Loading states
                 "CHATBOT.PLAYGROUND.GENERATING_RESPONSE": "Generating a response",
                 "CHATBOT.PLAYGROUND.STILL_GENERATING": "Still generating — scroll down to see more",
