@@ -54,12 +54,6 @@ class GraphCallbacks(BaseAgentCallbacks):
             extra={"toolSpecifications": specs, "toolParameters": event.tool_use},
         )
 
-        parameters = self._extract_tool_parameters(event, specs)
-
-        tool_name = event.tool_use.get("name", "unknown")
-        tool_description = specs.get("description", "") if specs else ""
-        self._publish_tool_invocation(tool_name, tool_description, parameters)
-
     def log_tool_results(self, event: AfterToolCallEvent) -> None:
         """Log tool results after execution.
 
