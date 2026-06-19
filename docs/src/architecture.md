@@ -22,42 +22,37 @@
 
 | Resource | Role |
 |----------|------|
-| AWS AppSync (GraphQL API) | Primary API for CRUD operations (sessions, agent config, evaluations) and tool-action subscription side-channel |
+| AWS AppSync (GraphQL API) | Primary API for CRUD operations (sessions, agent config, evaluations) and runtime/evaluation status notifications |
 | λ HTTP API Resolver | Handles REST-like queries (session history, feedback, runtime management) |
-| λ Outgoing Message Handler | Delivers AI-rephrased tool descriptions to browser via AppSync subscriptions |
 | Step Function — Create Runtime | Orchestrates agent runtime creation (validate config → create AgentCore runtime → tag endpoint) |
 | Step Function — Delete Runtime | Orchestrates agent runtime deletion (delete endpoint → delete runtime → cleanup) |
 | DynamoDB — Chatbot Sessions | Conversation history storage |
 | DynamoDB — Evaluators | Evaluation configurations and results |
 | DynamoDB — Template Schemas | Agent configuration schemas |
 
-## Messaging Bus (Tool Action Side-Channel)
-
-| Resource | Role |
-|----------|------|
-| SNS Topic — chatMessages | Publishes tool action descriptions from AgentCore container to Outgoing Message Handler |
-| SNS Topic — agentTools | Distributes tool invocation notifications to the Agent Tools Handler for AI-rephrasing |
-
-> **Note:** The main chat/voice data path does **not** flow through SNS. It goes directly from the browser to the AgentCore container via presigned WebSocket. The SNS topics are only used for the tool-action description side-channel.
-
 ## GenAI Interface
 
 | Resource | Role |
 |----------|------|
-| λ Agent Tools Handler | Receives tool invocations from SNS, calls a fast model (Mistral) to generate user-friendly descriptions, publishes to chatMessages topic |
 | λ Notify Runtime Update | Notifies the frontend via AppSync when runtime status changes (creation complete, deletion complete) |
+
+> **Note:** Tool steps ("Using X…", arguments, success/error status) are no longer
+> rephrased by an LLM and routed through SNS. The AgentCore container now emits them
+> **directly over the browser WebSocket** alongside the chat stream (see [Real-Time
+> Communication](#real-time-communication-direct-websocket)). The former side-channel
+> — the `agentTools` SNS topic and the Agent Tools Handler Lambda — has been removed.
 
 ## Agent Core Infrastructure
 
 | Resource | Role |
 |----------|------|
 | Amazon Bedrock AgentCore Runtime | Managed runtime hosting Docker containers as agent endpoints |
-| FastAPI Application (in container) | WebSocket server exposing `/ws` (text + voice) and `/ws/voice` endpoints, plus `/invocations` for agent-to-agent calls |
+| FastAPI Application (in container) | WebSocket server exposing `/ws` (text + voice via `voice_init`), plus `/invocations` for agent-to-agent calls |
 | ECR — Single Agent | Container image for single-agent pattern (Strands Agents) |
 | ECR — Agents-as-Tools | Container image for orchestrator + sub-agents pattern |
 | ECR — Swarm Agent | Container image for swarm multi-agent pattern |
 | ECR — Graph Agent | Container image for directed-graph agent pattern |
-| IAM Execution Role | Runtime permissions for Bedrock, DynamoDB, SNS, SSM |
+| IAM Execution Role | Runtime permissions for Bedrock, DynamoDB, SSM |
 | DynamoDB — Runtime Config | Agent configuration (model, instructions, tools, parameters) |
 | DynamoDB — Tool Registry | Custom tool definitions |
 | DynamoDB — MCP Server Registry | Registered MCP servers (endpoints, auth) |
@@ -79,6 +74,7 @@ Browser → SigV4 presigned URL → wss://bedrock-agentcore.<region>.amazonaws.c
 |------|----------|-------------|
 | **Text** | WebSocket `/ws` | Client sends `text_input`, receives `text_token` + `final_response` |
 | **Voice** | WebSocket `/ws` with `voice_init` | Client sends `voice_init` to switch to BidiAgent mode; bidirectional audio streaming via Nova Sonic |
+| **Tool steps** | WebSocket `/ws` | Container emits `tool_action` / `tool_complete` events as tools run, so the UI shows each step (label, arguments, success/error) in real time |
 | **Agent-to-Agent** | HTTP POST `/invocations` | SSE stream for orchestrator → sub-agent delegation |
 
 ## Amazon Bedrock — Foundation Models
@@ -90,7 +86,6 @@ Browser → SigV4 presigned URL → wss://bedrock-agentcore.<region>.amazonaws.c
 | Claude Haiku 4.5 | Fast responses, cost-efficient |
 | Amazon Nova 2 Lite | Fast text inference |
 | Amazon Nova Sonic | Voice-to-voice bidirectional streaming (BidiAgent) |
-| Mistral Ministral 3 | Tool-action description generation (cheap, fast) |
 
 ## Data Processing *(optional)*
 
