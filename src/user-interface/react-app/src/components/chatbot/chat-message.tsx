@@ -5,12 +5,25 @@
 // ----------------------------------------------------------------------
 import { generateClient } from "aws-amplify/api";
 
-import React, { Dispatch, SetStateAction, useRef, useState } from "react";
-import { ChatBotHistoryItem, ChatBotMessageType, Reference } from "./types";
+import React, { Dispatch, SetStateAction, useRef } from "react";
+import { ChatBotHistoryItem, ChatBotMessageType, Reference, ToolActionItem } from "./types";
 
 import Avatar from "@cloudscape-design/chat-components/avatar";
 import ChatBubble from "@cloudscape-design/chat-components/chat-bubble";
-import { Box, Button, ExpandableSection, Modal, SpaceBetween, Spinner } from "@cloudscape-design/components";
+import {
+    Box,
+    Button,
+    ButtonGroup,
+    Container,
+    ExpandableSection,
+    Header,
+    Icon,
+    Link,
+    SpaceBetween,
+    Steps,
+    StatusIndicator,
+    StatusIndicatorProps,
+} from "@cloudscape-design/components";
 import { useTranslation } from "react-i18next";
 import { StorageHelper } from "../../common/helpers/storage-helper";
 import { getPresignedUrl as getPresignedUrlQuery } from "../../graphql/queries";
@@ -19,114 +32,29 @@ import MessageToolbox from "./chat-message-toolbox";
 import { humanizeToolName, maskSensitiveInfo } from "./utils";
 import MarkdownContent from "./side-view/markdown-content";
 import ViewReference from "./side-view/reference";
+import StructuredOutputView, { StructuredOutputContent } from "./side-view/structured-output-view";
 
 export interface ChatMessageProps {
     message: ChatBotHistoryItem;
     sessionId: string;
     setAnnex: Dispatch<SetStateAction<React.ReactElement | null>>;
+    /** Replay the originating prompt for this response (only set on the last AI message). */
+    onRegenerate?: () => void;
+    /** Whether regeneration is currently allowed (disabled mid-generation). */
+    canRegenerate?: boolean;
 }
 
 export default function ChatMessage(props: ChatMessageProps) {
     const messageRef = useRef<HTMLDivElement>(null);
-    let content = "";
-    const [selectedContent, setSelectedContent] = useState<{
-        visible: boolean;
-        content: string;
-        title: string;
-    }>({
-        visible: false,
-        content: "",
-        title: "",
-    });
-
-    const [reasoningModalVisible, setReasoningModalVisible] = useState(false);
-    const [structuredOutputModalVisible, setStructuredOutputModalVisible] = useState(false);
-
-    /** Render a structured output value with auto-linked URLs */
-    const renderValue = (value: unknown): React.ReactNode => {
-        if (typeof value === "string") {
-            // Auto-detect URLs and make them clickable
-            const urlRegex = /(https?:\/\/[^\s"<>]+)/g;
-            const parts = value.split(urlRegex);
-            if (parts.length > 1) {
-                return parts.map((part, i) =>
-                    urlRegex.test(part) ? (
-                        <a
-                            key={i}
-                            href={part}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            style={{ color: "#0972d3", wordBreak: "break-all" }}
-                        >
-                            {part}
-                        </a>
-                    ) : (
-                        <span key={i}>{part}</span>
-                    ),
-                );
-            }
-            return value;
-        }
-        if (Array.isArray(value)) {
-            return (
-                <ul style={{ margin: "4px 0", paddingLeft: "20px" }}>
-                    {value.map((item, i) => (
-                        <li key={i} style={{ marginBottom: "2px" }}>
-                            {renderValue(item)}
-                        </li>
-                    ))}
-                </ul>
-            );
-        }
-        if (typeof value === "object" && value !== null) {
-            return renderStructuredObject(value as Record<string, unknown>);
-        }
-        return String(value);
-    };
-
-    /** Render a JSON object as a labeled key-value table */
-    const renderStructuredObject = (obj: Record<string, unknown>): React.ReactNode => {
-        return (
-            <div
-                style={{
-                    display: "grid",
-                    gridTemplateColumns: "auto 1fr",
-                    gap: "6px 16px",
-                    alignItems: "start",
-                }}
-            >
-                {Object.entries(obj).map(([key, val]) => (
-                    <React.Fragment key={key}>
-                        <span
-                            style={{
-                                fontWeight: 600,
-                                fontSize: "13px",
-                                color: "#16191f",
-                                paddingTop: "2px",
-                            }}
-                        >
-                            {key}
-                        </span>
-                        <span style={{ fontSize: "13px", color: "#414d5c" }}>
-                            {renderValue(val)}
-                        </span>
-                    </React.Fragment>
-                ))}
-            </div>
-        );
-    };
-
-    const formatExecutionTime = (ms: number): string => {
-        return `${(ms / 1000).toFixed(1)}s`;
-    };
-
     const { t } = useTranslation("ACA");
     const client = generateClient();
 
+    let content = "";
+
+    const formatExecutionTime = (ms: number): string => `${(ms / 1000).toFixed(1)}s`;
+
     if (props.message.content && props.message.content.length > 0) {
         content = props.message.content;
-        // console.log("References:");
-        // console.log(props.message.references);
     } else if (props.message.tokens && props.message.tokens.length > 0) {
         let currentSequence: number | undefined = undefined;
         for (const token of props.message.tokens) {
@@ -140,237 +68,257 @@ export default function ChatMessage(props: ChatMessageProps) {
     const isGenerating = props.message?.type === ChatBotMessageType.AI && !props.message.complete;
     const hasNoContent = !content || content.length === 0;
 
-    const [stepsExpanded, setStepsExpanded] = useState(false);
-    // Per-tool arg expansion, keyed by invocationNumber. Tools start collapsed.
-    const [expandedTools, setExpandedTools] = useState<Set<number>>(new Set());
-    const toggleTool = (invocationNumber: number) => {
-        setExpandedTools((prev) => {
-            const next = new Set(prev);
-            if (next.has(invocationNumber)) {
-                next.delete(invocationNumber);
-            } else {
-                next.add(invocationNumber);
-            }
-            return next;
-        });
-    };
+    /**
+     * Header label prefixed with an icon, so the "process" sections (Thinking / Steps)
+     * read as distinct from the final answer that follows the divider below them.
+     */
+    const iconHeader = (iconName: "suggestions-gen-ai" | "settings", label: string) => (
+        <Box fontSize="body-s" color="text-status-inactive">
+            <SpaceBetween direction="horizontal" size="xxs" alignItems="center">
+                <Icon name={iconName} variant="subtle" size="small" />
+                <span>{label}</span>
+            </SpaceBetween>
+        </Box>
+    );
 
-    const renderToolStepsRow = () => {
-        if (
-            !props.message.complete ||
-            !props.message.toolActions ||
-            props.message.toolActions.length === 0
-        ) {
-            return null;
-        }
+    // ================================================================
+    // T1 — Progressive steps for tool actions
+    // ================================================================
 
-        const sortedActions = [...props.message.toolActions].sort(
-            (a, b) => a.invocationNumber - b.invocationNumber,
-        );
-        const stepCount = sortedActions.length;
-
+    /** Compact, dimmed name/value rendering for a step's arguments (masked for display). */
+    const renderStepDetails = (action: ToolActionItem): React.ReactNode | undefined => {
+        if (!action.parameters || action.parameters.length === 0) return undefined;
         return (
-            <div style={{ marginBottom: "8px" }}>
-                <Button
-                    variant="inline-link"
-                    onClick={() => setStepsExpanded(!stepsExpanded)}
-                    ariaLabel={`${stepCount} agent steps`}
-                >
-                    <span style={{ fontSize: "11px", color: "#687078" }}>
-                        🔧 Agent performed {stepCount} step{stepCount !== 1 ? "s" : ""}{" "}
-                        {stepsExpanded ? "▼" : "▶"}
-                    </span>
-                </Button>
-                {stepsExpanded && (
-                    <div
-                        style={{
-                            marginTop: "8px",
-                            padding: "8px 16px",
-                            backgroundColor: "#f7f8f8",
-                            borderRadius: "6px",
-                            borderLeft: "3px solid #687078",
-                        }}
-                    >
-                        <ul style={{ margin: 0, paddingLeft: "16px" }}>
-                            {sortedActions.map((action) => {
-                                const hasParams =
-                                    !!action.parameters && action.parameters.length > 0;
-                                const toolExpanded = expandedTools.has(action.invocationNumber);
-                                return (
-                                    <li
-                                        key={action.invocationNumber}
-                                        style={{
-                                            fontSize: "11px",
-                                            color: "#687078",
-                                            marginBottom: "4px",
-                                        }}
-                                    >
-                                        {hasParams ? (
-                                            <span
-                                                role="button"
-                                                tabIndex={0}
-                                                onClick={() => toggleTool(action.invocationNumber)}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === "Enter" || e.key === " ") {
-                                                        e.preventDefault();
-                                                        toggleTool(action.invocationNumber);
-                                                    }
-                                                }}
-                                                style={{ cursor: "pointer", userSelect: "none" }}
-                                            >
-                                                {humanizeToolName(action.toolName)}{" "}
-                                                {toolExpanded ? "▼" : "▶"}
-                                            </span>
-                                        ) : (
-                                            humanizeToolName(action.toolName)
-                                        )}
-                                        {hasParams && toolExpanded && (
-                                            <ul
-                                                style={{
-                                                    margin: "2px 0 0",
-                                                    paddingLeft: "16px",
-                                                    listStyleType: "circle",
-                                                }}
-                                            >
-                                                {action.parameters!.map((p) => (
-                                                    <li
-                                                        key={p.name}
-                                                        style={{
-                                                            color: "#959aa1",
-                                                            wordBreak: "break-word",
-                                                        }}
-                                                    >
-                                                        <span style={{ fontWeight: 600 }}>
-                                                            {p.name}:
-                                                        </span>{" "}
-                                                        {maskSensitiveInfo(p.value)}
-                                                    </li>
-                                                ))}
-                                            </ul>
-                                        )}
-                                    </li>
-                                );
-                            })}
-                        </ul>
+            <Box fontSize="body-s" color="text-status-inactive">
+                {action.parameters.map((p) => (
+                    <div key={p.name} style={{ wordBreak: "break-word" }}>
+                        <b>{p.name}:</b> {maskSensitiveInfo(p.value)}
                     </div>
-                )}
-            </div>
+                ))}
+            </Box>
         );
     };
 
-    const renderToolActionsInside = () => {
-        // Only render inside the bubble during generation (not complete)
-        if (
-            props.message.complete ||
-            !props.message.toolActions ||
-            props.message.toolActions.length === 0
-        ) {
+    const buildSteps = (actions: ToolActionItem[]) =>
+        actions.map((action) => {
+            // Records that predate the status field have no status — treat as success.
+            const status: StatusIndicatorProps.Type =
+                action.status === "running"
+                    ? "loading"
+                    : action.status === "error"
+                      ? "error"
+                      : "success";
+            return {
+                status,
+                header: humanizeToolName(action.toolName),
+                details: renderStepDetails(action),
+            };
+        });
+
+    const sortedToolActions = props.message.toolActions
+        ? [...props.message.toolActions].sort((a, b) => a.invocationNumber - b.invocationNumber)
+        : [];
+    const hasToolActions = sortedToolActions.length > 0;
+
+    const renderSteps = () => {
+        if (!hasToolActions) return null;
+        const steps = buildSteps(sortedToolActions);
+
+        // During generation: show the live Steps inline under an icon-prefixed label.
+        // On completion: collapse the sequence into a default-collapsed
+        // ExpandableSection (per the docs), with the same icon header.
+        if (isGenerating) {
+            return (
+                <SpaceBetween direction="vertical" size="xs">
+                    {iconHeader("settings", t("CHATBOT.PLAYGROUND.STEPS_HEADER"))}
+                    <div className={styles.stepsContent}>
+                        <Steps steps={steps} ariaLabel={t("CHATBOT.PLAYGROUND.STEPS_HEADER")} />
+                    </div>
+                </SpaceBetween>
+            );
+        }
+        return (
+            <ExpandableSection
+                variant="footer"
+                headerText={iconHeader(
+                    "settings",
+                    t("CHATBOT.PLAYGROUND.STEPS_PERFORMED", {
+                        count: sortedToolActions.length,
+                    }),
+                )}
+            >
+                <div className={styles.stepsContent}>
+                    <Steps steps={steps} ariaLabel={t("CHATBOT.PLAYGROUND.STEPS_HEADER")} />
+                </div>
+            </ExpandableSection>
+        );
+    };
+
+    // ================================================================
+    // T5 — Artifact previews (structured output + sources)
+    // ================================================================
+
+    const openStructuredOutputCanvas = () => {
+        if (!props.setAnnex || !props.message.structuredOutput) return;
+        props.setAnnex(
+            <StructuredOutputView
+                raw={props.message.structuredOutput}
+                title={t("CHATBOT.PLAYGROUND.STRUCTURED_OUTPUT_LABEL")}
+                onClose={() => props.setAnnex(null)}
+            />,
+        );
+    };
+
+    const renderStructuredOutput = () => {
+        if (!props.message.structuredOutput) return null;
+        return (
+            <Container
+                header={
+                    <Header
+                        variant="h3"
+                        description={t("CHATBOT.PLAYGROUND.STRUCTURED_OUTPUT_DESC")}
+                        actions={
+                            <ButtonGroup
+                                variant="icon"
+                                ariaLabel={t("CHATBOT.PLAYGROUND.STRUCTURED_OUTPUT_LABEL")}
+                                onItemClick={({ detail }) => {
+                                    if (detail.id === "copy") {
+                                        navigator.clipboard
+                                            .writeText(props.message.structuredOutput!)
+                                            .catch((err) =>
+                                                console.error("Failed to copy: ", err),
+                                            );
+                                    }
+                                    if (detail.id === "expand") {
+                                        openStructuredOutputCanvas();
+                                    }
+                                }}
+                                items={[
+                                    {
+                                        type: "icon-button",
+                                        id: "copy",
+                                        iconName: "copy",
+                                        text: t("CHATBOT.PLAYGROUND.ARTIFACT_COPY"),
+                                        popoverFeedback: (
+                                            <StatusIndicator type="success">
+                                                {t("CHATBOT.PLAYGROUND.ARTIFACT_COPIED")}
+                                            </StatusIndicator>
+                                        ),
+                                    },
+                                    {
+                                        type: "icon-button",
+                                        id: "expand",
+                                        iconName: "expand",
+                                        text: t("CHATBOT.PLAYGROUND.ARTIFACT_EXPAND"),
+                                    },
+                                ]}
+                            />
+                        }
+                    >
+                        {t("CHATBOT.PLAYGROUND.STRUCTURED_OUTPUT_LABEL")}
+                    </Header>
+                }
+            >
+                <StructuredOutputContent raw={props.message.structuredOutput} />
+            </Container>
+        );
+    };
+
+    const openReferenceCanvas = (reference: Reference) => {
+        if (!props.setAnnex) return;
+        props.setAnnex(
+            <ViewReference
+                content={reference.content}
+                title={reference.documentTitle}
+                onClose={() => props.setAnnex(null)}
+            />,
+        );
+    };
+
+    const openPresignedSource = async (reference: Reference) => {
+        try {
+            if (reference.pageNumber && isNaN(Number(reference.pageNumber))) {
+                reference.pageNumber = undefined;
+            }
+            const response = await client.graphql({
+                query: getPresignedUrlQuery,
+                variables: { s3Uri: reference.uri, pageNumber: reference.pageNumber },
+            });
+            window.open(response.data.getPresignedUrl!, "_blank");
+        } catch (error) {
+            console.error("Error generating presigned URL:", error);
+        }
+    };
+
+    const renderSources = () => {
+        if (!props.message.references) return null;
+        let parsed: Reference[];
+        try {
+            parsed = JSON.parse(props.message.references);
+        } catch {
             return null;
         }
-
-        const sortedActions = [...props.message.toolActions].sort(
-            (a, b) => a.invocationNumber - b.invocationNumber,
+        const sources = parsed.filter(
+            (ref) =>
+                ref.documentTitle &&
+                ref.documentTitle.trim() !== "" &&
+                ref.content &&
+                ref.content.trim() !== "",
         );
+        if (sources.length === 0) return null;
 
         return (
-            <div
-                style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "4px",
-                    padding: "8px 12px",
-                    backgroundColor: "#f2f3f3",
-                    borderRadius: "8px",
-                    marginBottom: "8px",
-                }}
+            <ExpandableSection
+                variant="footer"
+                headerText={t("CHATBOT.PLAYGROUND.SOURCES_LABEL")}
             >
-                {sortedActions.map((action) => {
-                    // Steps default to "running" on arrival; tool_complete flips them
-                    // to a terminal state. Records that predate the status field have
-                    // no status — treat those as done (success).
-                    const running = action.status === "running";
-                    const hasParams =
-                        !!action.parameters && action.parameters.length > 0;
-                    const toolExpanded = expandedTools.has(action.invocationNumber);
-                    return (
-                        <div
-                            key={action.invocationNumber}
-                            style={{
-                                display: "flex",
-                                alignItems: "flex-start",
-                                gap: "8px",
-                                fontSize: "12px",
-                                color: "#545b64",
-                            }}
-                        >
-                            <span style={{ fontSize: "14px", display: "flex" }}>
-                                {running ? (
-                                    <Spinner size="normal" />
-                                ) : action.status === "error" ? (
-                                    "⚠️"
-                                ) : (
-                                    "✓"
-                                )}
-                            </span>
-                            <span style={{ display: "flex", flexDirection: "column" }}>
-                                {hasParams ? (
-                                    <span
-                                        role="button"
-                                        tabIndex={0}
-                                        onClick={() => toggleTool(action.invocationNumber)}
-                                        onKeyDown={(e) => {
-                                            if (e.key === "Enter" || e.key === " ") {
-                                                e.preventDefault();
-                                                toggleTool(action.invocationNumber);
-                                            }
-                                        }}
-                                        style={{ cursor: "pointer", userSelect: "none" }}
-                                    >
-                                        {humanizeToolName(action.toolName)}{" "}
-                                        {toolExpanded ? "▼" : "▶"}
-                                    </span>
-                                ) : (
-                                    <span>{humanizeToolName(action.toolName)}</span>
-                                )}
-                                {hasParams && toolExpanded && (
-                                    <ul
-                                        style={{
-                                            margin: "2px 0 0",
-                                            paddingLeft: "16px",
-                                            listStyleType: "circle",
+                <SpaceBetween direction="vertical" size="xs">
+                    {sources.map((reference) => {
+                        const hasPage =
+                            reference.pageNumber &&
+                            (reference.pageNumber as unknown as string) !== "None";
+                        const label = `[${reference.referenceId}] ${reference.documentTitle}${
+                            hasPage ? ` - page ${reference.pageNumber}` : ""
+                        }`;
+                        return (
+                            <SpaceBetween
+                                key={reference.referenceId}
+                                direction="horizontal"
+                                size="xs"
+                            >
+                                {reference.uri?.startsWith("s3://") ? (
+                                    <Link
+                                        onFollow={(e) => {
+                                            e.preventDefault();
+                                            void openPresignedSource(reference);
                                         }}
                                     >
-                                        {action.parameters!.map((p) => (
-                                            <li
-                                                key={p.name}
-                                                style={{
-                                                    fontSize: "11px",
-                                                    color: "#959aa1",
-                                                    wordBreak: "break-word",
-                                                }}
-                                            >
-                                                <span style={{ fontWeight: 600 }}>
-                                                    {p.name}:
-                                                </span>{" "}
-                                                {maskSensitiveInfo(p.value)}
-                                            </li>
-                                        ))}
-                                    </ul>
+                                        {label}
+                                    </Link>
+                                ) : (
+                                    <Link href={reference.uri} external>
+                                        {label}
+                                    </Link>
                                 )}
-                            </span>
-                        </div>
-                    );
-                })}
-            </div>
+                                <Button
+                                    variant="inline-link"
+                                    iconName="external"
+                                    onClick={() => openReferenceCanvas(reference)}
+                                >
+                                    {t("CHATBOT.PLAYGROUND.VIEW_CHUNK_MSG")}
+                                </Button>
+                            </SpaceBetween>
+                        );
+                    })}
+                </SpaceBetween>
+            </ExpandableSection>
         );
     };
 
     const scrollToUserQuestion = () => {
-        // Navigate to the user's question that triggered this AI response
-        // SpaceBetween wraps each child in a container div, so we need to:
-        // 1. Go up to the SpaceBetween wrapper (parent)
-        // 2. Get the previous sibling (previous SpaceBetween wrapper)
-        // 3. Get its first child (the actual message element)
+        // Navigate to the user's question that triggered this AI response.
+        // SpaceBetween wraps each child in a container div, so step up to the wrapper,
+        // take the previous sibling, then its first child (the actual message element).
         const spaceBetweenWrapper = messageRef.current?.parentElement;
         const previousWrapper = spaceBetweenWrapper?.previousElementSibling;
         const userQuestion = previousWrapper?.firstElementChild;
@@ -378,7 +326,6 @@ export default function ChatMessage(props: ChatMessageProps) {
         if (userQuestion) {
             userQuestion.scrollIntoView({ behavior: "smooth", block: "start" });
         } else {
-            // Fallback to current message if no previous sibling
             messageRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
         }
     };
@@ -386,273 +333,92 @@ export default function ChatMessage(props: ChatMessageProps) {
     return (
         <div className={styles.fullWidthBubble} ref={messageRef}>
             {props.message?.type === ChatBotMessageType.AI && (
-                <ChatBubble
-                    ariaLabel="Avatar of generative AI assistant"
-                    type="incoming"
-                    showLoadingBar={isGenerating}
-                    avatar={
-                        <Avatar
-                            ariaLabel="Avatar of generative AI assistant"
-                            color="gen-ai"
-                            iconName="gen-ai"
-                            loading={isGenerating && hasNoContent}
-                        />
-                    }
-                >
-                    {renderToolStepsRow()}
-                    {renderToolActionsInside()}
-                    {content && content.length > 0 ? (
-                        <MarkdownContent content={content} setAnnex={props.setAnnex} />
-                    ) : (
-                        "Generating an answer..."
-                    )}{" "}
-                    {props.message.complete && (
-                        <div
-                            style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: "8px",
-                                marginTop: "8px",
-                            }}
-                        >
-                            <MessageToolbox message={props.message} sessionId={props.sessionId} />
-                            <Button
-                                variant="icon"
-                                iconName="angle-up"
-                                onClick={scrollToUserQuestion}
-                                ariaLabel="Scroll to question"
+                <SpaceBetween direction="vertical" size="s">
+                    <ChatBubble
+                        ariaLabel="Avatar of generative AI assistant"
+                        type="incoming"
+                        showLoadingBar={isGenerating}
+                        avatar={
+                            <Avatar
+                                ariaLabel="Avatar of generative AI assistant"
+                                color="gen-ai"
+                                iconName="gen-ai"
+                                loading={isGenerating && hasNoContent}
                             />
-                            {props.message.reasoningContent && (
-                                <Button
-                                    variant="icon"
-                                    iconName="suggestions-gen-ai"
-                                    onClick={() => setReasoningModalVisible(true)}
-                                    ariaLabel="View model reasoning"
-                                >
-                                    <span
-                                        style={{
-                                            fontSize: "16px",
-                                            cursor: "pointer",
-                                        }}
-                                        title="View model reasoning"
-                                    >
-                                        💡
-                                    </span>
-                                </Button>
-                            )}
-                            {props.message.structuredOutput && (
-                                <Button
-                                    variant="icon"
-                                    iconName="script"
-                                    onClick={() => setStructuredOutputModalVisible(true)}
-                                    ariaLabel="View structured output"
-                                >
-                                    <span
-                                        style={{
-                                            fontSize: "16px",
-                                            cursor: "pointer",
-                                        }}
-                                        title="View structured output"
-                                    >
-                                        📋
-                                    </span>
-                                </Button>
-                            )}
-                            {(props.message.reasoningContent || props.message.structuredOutput) &&
-                                props.message.executionTimeMs && (
-                                    <span style={{ color: "#5f6b7a", fontSize: "12px" }}>|</span>
+                        }
+                    >
+                        {/* T2 — Thinking: collapsed reasoning inline, above the answer */}
+                        {props.message.reasoningContent && (
+                            <ExpandableSection
+                                variant="footer"
+                                headerText={iconHeader(
+                                    "suggestions-gen-ai",
+                                    isGenerating
+                                        ? t("CHATBOT.PLAYGROUND.THINKING_ACTIVE")
+                                        : t("CHATBOT.PLAYGROUND.THINKING_LABEL"),
                                 )}
-                            {props.message.executionTimeMs && (
-                                <span
-                                    style={{
-                                        fontSize: "12px",
-                                        color: "#5f6b7a",
-                                        fontWeight: 400,
-                                    }}
-                                >
-                                    {formatExecutionTime(props.message.executionTimeMs)}
-                                </span>
-                            )}
-                        </div>
-                    )}
-                    {props.message.reasoningContent && (
-                        <Modal
-                            visible={reasoningModalVisible}
-                            onDismiss={() => setReasoningModalVisible(false)}
-                            header="Model Reasoning"
-                            size="large"
-                        >
-                            <MarkdownContent
-                                content={props.message.reasoningContent}
-                                setAnnex={props.setAnnex}
-                            />
-                        </Modal>
-                    )}
-                    {props.message.structuredOutput && (
-                        <Modal
-                            visible={structuredOutputModalVisible}
-                            onDismiss={() => setStructuredOutputModalVisible(false)}
-                            header="Structured Output"
-                            size="large"
-                        >
-                            <div style={{ padding: "8px 0" }}>
-                                {(() => {
-                                    try {
-                                        const parsed = JSON.parse(
-                                            props.message.structuredOutput!,
-                                        );
-                                        if (
-                                            typeof parsed === "object" &&
-                                            parsed !== null &&
-                                            !Array.isArray(parsed)
-                                        ) {
-                                            return renderStructuredObject(parsed);
-                                        }
-                                        return renderValue(parsed);
-                                    } catch {
-                                        // Fallback to raw text if not valid JSON
-                                        return (
-                                            <Box variant="code">
-                                                <pre
-                                                    style={{
-                                                        whiteSpace: "pre-wrap",
-                                                        wordBreak: "break-word",
-                                                        margin: 0,
-                                                        fontSize: "13px",
-                                                    }}
-                                                >
-                                                    {props.message.structuredOutput}
-                                                </pre>
-                                            </Box>
-                                        );
-                                    }
-                                })()}
-                            </div>
-                        </Modal>
-                    )}
-                    {props.message.references &&
-                        JSON.parse(props.message.references).filter(
-                            (ref: Reference) =>
-                                ref.documentTitle &&
-                                ref.documentTitle.trim() !== "" &&
-                                ref.content &&
-                                ref.content.trim() !== "",
-                        ).length > 0 && (
-                            <ExpandableSection headerText="Sources">
-                                <ul>
-                                    {JSON.parse(props.message.references).map(
-                                        (reference: Reference) => (
-                                            <li key={reference.referenceId}>
-                                                <SpaceBetween direction="horizontal" size="xs">
-                                                    {reference.uri?.startsWith("s3://") ? (
-                                                        <Button
-                                                            variant="link"
-                                                            loading={false}
-                                                            iconAlign="left"
-                                                            onClick={async (event) => {
-                                                                event.preventDefault();
-                                                                try {
-                                                                    if (
-                                                                        reference.pageNumber &&
-                                                                        isNaN(
-                                                                            Number(
-                                                                                reference.pageNumber,
-                                                                            ),
-                                                                        )
-                                                                    ) {
-                                                                        reference.pageNumber =
-                                                                            undefined;
-                                                                    }
-                                                                    const response =
-                                                                        await client.graphql({
-                                                                            query: getPresignedUrlQuery,
-                                                                            variables: {
-                                                                                s3Uri: reference.uri,
-                                                                                pageNumber:
-                                                                                    reference.pageNumber,
-                                                                            },
-                                                                        });
-                                                                    window.open(
-                                                                        response.data
-                                                                            .getPresignedUrl!,
-                                                                        "_blank",
-                                                                    );
-                                                                } catch (error) {
-                                                                    console.error(
-                                                                        "Error generating presigned URL:",
-                                                                        error,
-                                                                    );
-                                                                }
-                                                            }}
-                                                        >
-                                                            [{reference.referenceId}]{" "}
-                                                            {reference.documentTitle}
-                                                            {reference.pageNumber &&
-                                                                (reference.pageNumber as unknown as string) !==
-                                                                    "None" &&
-                                                                ` - page ${reference.pageNumber}`}{" "}
-                                                        </Button>
-                                                    ) : (
-                                                        <Button
-                                                            href={reference.uri}
-                                                            external
-                                                            iconAlign="left"
-                                                            variant="link"
-                                                        >
-                                                            [{reference.referenceId}]{" "}
-                                                            {reference.documentTitle}
-                                                        </Button>
-                                                    )}
-                                                    <Button
-                                                        variant="link"
-                                                        onClick={() =>
-                                                            setSelectedContent({
-                                                                visible: true,
-                                                                content: reference.content,
-                                                                title: reference.documentTitle,
-                                                            })
-                                                        }
-                                                    ></Button>
-                                                    <Button
-                                                        onClick={() => {
-                                                            if (!props.setAnnex) return;
-                                                            props.setAnnex(
-                                                                <ViewReference
-                                                                    content={reference.content}
-                                                                    title={reference.documentTitle}
-                                                                    onClose={() => {
-                                                                        if (!props.setAnnex) return;
-                                                                        props.setAnnex(null);
-                                                                        console.log("clear annex");
-                                                                    }}
-                                                                />,
-                                                            );
-                                                        }}
-                                                        variant="link"
-                                                    >
-                                                        {t("CHATBOT.PLAYGROUND.VIEW_CHUNK_MSG")}
-                                                    </Button>
-                                                </SpaceBetween>
-                                            </li>
-                                        ),
-                                    )}
-                                </ul>
+                            >
+                                <div className={styles.reasoningContent}>
+                                    <MarkdownContent
+                                        content={props.message.reasoningContent}
+                                        setAnnex={props.setAnnex}
+                                    />
+                                </div>
                             </ExpandableSection>
                         )}
-                    <Modal
-                        visible={selectedContent.visible}
-                        onDismiss={() =>
-                            setSelectedContent({
-                                visible: false,
-                                content: "",
-                                title: "",
-                            })
-                        }
-                        header={selectedContent.title}
-                    >
-                        {selectedContent.content}
-                    </Modal>
-                </ChatBubble>
+
+                        {/* T1 — Progressive steps */}
+                        {renderSteps()}
+
+                        {/* T7 — answer body / processing label */}
+                        {content && content.length > 0 ? (
+                            <MarkdownContent content={content} setAnnex={props.setAnnex} />
+                        ) : (
+                            <Box color="text-status-inactive">
+                                {t("CHATBOT.PLAYGROUND.GENERATING_RESPONSE")}
+                            </Box>
+                        )}
+
+                        {props.message.complete && (
+                            <div
+                                style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "8px",
+                                    marginTop: "8px",
+                                }}
+                            >
+                                <MessageToolbox
+                                    message={props.message}
+                                    sessionId={props.sessionId}
+                                    onRegenerate={props.onRegenerate}
+                                    canRegenerate={props.canRegenerate}
+                                />
+                                <Button
+                                    variant="icon"
+                                    iconName="angle-up"
+                                    onClick={scrollToUserQuestion}
+                                    ariaLabel="Scroll to question"
+                                />
+                                {props.message.executionTimeMs && (
+                                    <span
+                                        style={{
+                                            fontSize: "12px",
+                                            color: "#5f6b7a",
+                                            fontWeight: 400,
+                                        }}
+                                    >
+                                        {formatExecutionTime(props.message.executionTimeMs)}
+                                    </span>
+                                )}
+                            </div>
+                        )}
+                    </ChatBubble>
+
+                    {/* T5 — artifacts stacked below the bubble (not nested inside it) */}
+                    {renderStructuredOutput()}
+                    {renderSources()}
+                </SpaceBetween>
             )}
 
             {props.message?.type === ChatBotMessageType.Human && (

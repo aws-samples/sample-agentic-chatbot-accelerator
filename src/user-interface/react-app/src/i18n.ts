@@ -45,9 +45,9 @@ i18n.use(initReactI18next).init({
                 "CHATBOT.PLAYGROUND.HELP_FEATURES_2":
                     "Feedback: Use thumbs up/down to rate responses",
                 "CHATBOT.PLAYGROUND.HELP_FEATURES_3":
-                    "Tool Steps: View agent actions during and after response generation (click to expand)",
+                    "Tool steps: View agent actions during generation, then expand 'Performed N steps' to review them",
                 "CHATBOT.PLAYGROUND.HELP_FEATURES_4":
-                    "Model Reasoning: Click the 💡 icon to view the model's thinking process (available with reasoning models)",
+                    "Model reasoning: Expand the 'Thinking' section to view the model's reasoning (available with reasoning models)",
                 "CHATBOT.PLAYGROUND.HELP_FEATURES_5":
                     "Scroll Navigation: Use the ↑ icon to quickly scroll back to your question",
                 "CHATBOT.PLAYGROUND.HELP_TIPS_TITLE": "Tips",
@@ -62,6 +62,29 @@ i18n.use(initReactI18next).init({
                 "CHATBOT.PLAYGROUND.VIEW_CHUNK_MSG": "View",
                 "CHATBOT.PLAYGROUND.LOADING_MSG": "Loading session",
                 "CHATBOT.PLAYGROUND.NEW_THREAD_MSG": "New Thread",
+                // --- Gen-AI patterns (Cloudscape) ---
+                // T1 — Progressive steps for tool actions
+                "CHATBOT.PLAYGROUND.STEPS_HEADER": "Steps",
+                "CHATBOT.PLAYGROUND.STEPS_PERFORMED_one": "Performed {{count}} step",
+                "CHATBOT.PLAYGROUND.STEPS_PERFORMED_other": "Performed {{count}} steps",
+                // T2 — Thinking pattern for reasoning
+                "CHATBOT.PLAYGROUND.THINKING_ACTIVE": "Thinking",
+                "CHATBOT.PLAYGROUND.THINKING_DONE_one": "Thought for {{count}} second",
+                "CHATBOT.PLAYGROUND.THINKING_DONE_other": "Thought for {{count}} seconds",
+                "CHATBOT.PLAYGROUND.THINKING_LABEL": "Reasoning",
+                // T4 — Response regeneration
+                "CHATBOT.PLAYGROUND.REGENERATE": "Regenerate response",
+                // T5 — Artifact previews (structured output + sources)
+                "CHATBOT.PLAYGROUND.STRUCTURED_OUTPUT_LABEL": "Structured output",
+                "CHATBOT.PLAYGROUND.STRUCTURED_OUTPUT_DESC": "Structured data returned by the agent",
+                "CHATBOT.PLAYGROUND.SOURCES_LABEL": "Sources",
+                "CHATBOT.PLAYGROUND.ARTIFACT_COPY": "Copy",
+                "CHATBOT.PLAYGROUND.ARTIFACT_COPIED": "Copied",
+                "CHATBOT.PLAYGROUND.ARTIFACT_EXPAND": "Expand",
+                "CHATBOT.PLAYGROUND.OPEN_SOURCE": "Open source",
+                // T7 — Loading states
+                "CHATBOT.PLAYGROUND.GENERATING_RESPONSE": "Generating a response",
+                "CHATBOT.PLAYGROUND.STILL_GENERATING": "Still generating — scroll down to see more",
                 //
                 "ADMIN.AGENTCORE.USER_GUIDE_MSG": "AgentCore Manager Guide",
                 "ADMIN.AGENTCORE.HELP_OVERVIEW_TITLE": "Overview",
