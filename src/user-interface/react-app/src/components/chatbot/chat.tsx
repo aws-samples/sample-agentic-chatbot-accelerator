@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: MIT-0
 // ----------------------------------------------------------------------
 import { Alert, Button, SpaceBetween, StatusIndicator } from "@cloudscape-design/components";
+import SupportPromptGroup from "@cloudscape-design/chat-components/support-prompt-group";
 import type { IconProps } from "@cloudscape-design/components/icon";
 import { generateClient } from "aws-amplify/api";
 import { fetchUserAttributes } from "aws-amplify/auth";
@@ -28,6 +29,18 @@ import ChatInputPanel, { ChatInputPanelHandle, ChatScrollState } from "./chat-in
 import ChatMessage from "./chat-message";
 import VoiceConversationView from "./VoiceConversationView";
 import { AgentOption, ChatBotHistoryItem, ChatBotMessageType, EndpointOption, Feedback, ToolActionItem } from "./types";
+
+/**
+ * Empty-state starter prompts (T3). Labels resolve from i18next at render time and
+ * stay under the 72-char support-prompt limit. Editable: selecting one fills the
+ * input without sending.
+ */
+const STARTER_PROMPTS: { id: string; key: string }[] = [
+    { id: "summarize", key: "CHATBOT.PLAYGROUND.STARTER_SUMMARIZE" },
+    { id: "explain", key: "CHATBOT.PLAYGROUND.STARTER_EXPLAIN" },
+    { id: "draft", key: "CHATBOT.PLAYGROUND.STARTER_DRAFT" },
+    { id: "brainstorm", key: "CHATBOT.PLAYGROUND.STARTER_BRAINSTORM" },
+];
 
 /**
  * Chat Component
@@ -874,7 +887,31 @@ export default function Chat(props: { sessionId?: string }) {
                     </div>
                     <div className={styles.welcome_text}>
                         {messageHistory.length == 0 && !session?.loading && (
-                            <center>{CHATBOT_NAME}</center>
+                            <SpaceBetween direction="vertical" size="l" alignItems="center">
+                                <center>{CHATBOT_NAME}</center>
+                                {/* T3 — editable starter prompts; populate input, don't send */}
+                                {agentsAvailable && (
+                                    <SupportPromptGroup
+                                        ariaLabel={t("CHATBOT.PLAYGROUND.STARTERS_ARIA")}
+                                        alignment="horizontal"
+                                        onItemClick={({ detail }) => {
+                                            const starter = STARTER_PROMPTS.find(
+                                                (s) => s.id === detail.id,
+                                            );
+                                            if (starter) {
+                                                chatInputPanelRef.current?.setInputValue(
+                                                    t(starter.key),
+                                                );
+                                            }
+                                        }}
+                                        items={STARTER_PROMPTS.map((s) => ({
+                                            id: s.id,
+                                            text: t(s.key),
+                                            iconName: "edit",
+                                        }))}
+                                    />
+                                )}
+                            </SpaceBetween>
                         )}
                         {session?.loading && (
                             <StatusIndicator type="loading">
