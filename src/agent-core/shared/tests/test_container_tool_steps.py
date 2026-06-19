@@ -7,7 +7,9 @@
 
 Covers the three entry-point containers that hold a browser WebSocket:
 docker (single agent), docker-swarm, docker-agents-as-tools. docker-graph is
-out of scope (its GraphCallbacks is never wired).
+out of scope here: its nodes invoke sub-agents rather than local tools, so it
+emits steps by streaming node lifecycle in app.py (see docker-graph's own
+test_node_steps.py), not via tool callbacks.
 
 Run with:
     pytest shared/tests/test_container_tool_steps.py -v
