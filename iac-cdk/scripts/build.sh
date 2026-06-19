@@ -10,7 +10,8 @@
 # The script:
 #  1. Lists all CodeBuild projects matching the builder stack prefix
 #  2. For each project, compares the current source config vs last successful build
-#  3. Skips builds where nothing changed (same source S3 path)
+#  3. Skips builds where nothing changed (same source S3 path) AND the expected
+#     image tag is still present in ECR (image projects only)
 #  4. Starts changed builds in parallel, polls until complete
 #  5. Exits 0 on success, 1 on any failure
 #
@@ -93,6 +94,70 @@ info "Found ${PROJECT_COUNT} build project(s)"
 #   2. Get the LAST build's source S3 location
 #   3. If they match and last build succeeded → skip (nothing changed)
 #   4. If they differ, no previous build, or last build failed → rebuild
+#   5. For image-building projects, also require the expected IMAGE_TAG to still
+#      exist in ECR before skipping — a "SUCCEEDED + unchanged source" build can
+#      still be stale if the image was evicted (ECR maxImageCount lifecycle) or
+#      the repo was emptied. AcaStack bakes <repo>:<tag> into the runtime Lambda
+#      env at synth, so a missing tag surfaces later as an UpdateAgentRuntime
+#      "image identifier does not exist" error at agent-creation time.
+
+# Returns 0 (image present, safe to skip) or 1 (image missing / not an image
+# project / lookup failed → must rebuild). Reads IMAGE_TAG + ECR_REPO_URL that
+# CDK stamps onto image-building CodeBuild projects; non-image projects (React,
+# layers, boto3) have no IMAGE_TAG and are treated as "not applicable".
+ecr_image_present() {
+    local project="$1"
+
+    # Pull the expected IMAGE_TAG (stamped as a CodeBuild env var). Capture the
+    # exit status on its own line so a transient API failure forces a rebuild
+    # rather than being mistaken for a "non-image" project (empty tag), which
+    # would silently re-open the stale-skip hole.
+    local image_tag rc
+    image_tag=$(aws codebuild batch-get-projects \
+        --names "$project" \
+        $AWS_PROFILE_FLAG $REGION_FLAG \
+        --query "projects[0].environment.environmentVariables[?name=='IMAGE_TAG'].value | [0]" \
+        --output text 2>/dev/null)
+    rc=$?
+    if [[ $rc -ne 0 ]]; then
+        return 1  # Lookup failed — be safe and rebuild.
+    fi
+
+    # No IMAGE_TAG stamped → non-image project (React, layers, boto3). The ECR
+    # presence check does not apply, so do not block its skip.
+    if [[ -z "$image_tag" || "$image_tag" == "None" ]]; then
+        return 0
+    fi
+
+    # ECR_REPO_URL lives in the buildspec env; query the buildspec as raw text
+    # (not embedded JSON) so its literal newlines don't break client-side jq.
+    # The repository name is the path after the registry host
+    # (e.g. ".../v2v-aca-builder/graphagentcoreimage").
+    local repo_url
+    repo_url=$(aws codebuild batch-get-projects \
+        --names "$project" \
+        $AWS_PROFILE_FLAG $REGION_FLAG \
+        --query 'projects[0].source.buildspec' \
+        --output text 2>/dev/null | jq -r '.env.variables.ECR_REPO_URL // empty' 2>/dev/null)
+
+    if [[ -z "$repo_url" ]]; then
+        return 1  # Has a tag but no resolvable repo — be safe and rebuild.
+    fi
+
+    local repo_name="${repo_url#*.amazonaws.com/}"
+
+    # describe-images on a specific tag returns non-zero (ImageNotFoundException)
+    # when the tag is absent — exactly the eviction/empty-repo case we guard.
+    if aws ecr describe-images \
+        --repository-name "$repo_name" \
+        --image-ids "imageTag=${image_tag}" \
+        $AWS_PROFILE_FLAG $REGION_FLAG \
+        >/dev/null 2>&1; then
+        return 0  # Image present in ECR.
+    fi
+
+    return 1  # Tag missing — force a rebuild.
+}
 
 needs_rebuild() {
     local project="$1"
@@ -135,9 +200,14 @@ needs_rebuild() {
     local last_source
     last_source=$(echo "$last_build_info" | jq -r '.[1]' 2>/dev/null || echo "")
 
-    # Skip only if last build succeeded AND source hasn't changed
+    # Skip only if last build succeeded AND source hasn't changed AND (for image
+    # projects) the expected tag is still in ECR. The ECR check catches stale
+    # skips where the source never changed but the image was evicted/pruned.
     if [[ "$last_status" == "SUCCEEDED" && "$current_source" == "$last_source" ]]; then
-        return 1  # No rebuild needed
+        if ecr_image_present "$project"; then
+            return 1  # No rebuild needed
+        fi
+        warn "Source unchanged but expected image tag missing from ECR — rebuilding: ${project}"
     fi
 
     return 0  # Needs rebuild
