@@ -72,6 +72,12 @@ i18n.use(initReactI18next).init({
                 "CHATBOT.PLAYGROUND.THINKING_DONE_one": "Thought for {{count}} second",
                 "CHATBOT.PLAYGROUND.THINKING_DONE_other": "Thought for {{count}} seconds",
                 "CHATBOT.PLAYGROUND.THINKING_LABEL": "Reasoning",
+                // T3 — Support prompts (empty-state starters)
+                "CHATBOT.PLAYGROUND.STARTERS_ARIA": "Suggested prompts",
+                "CHATBOT.PLAYGROUND.STARTER_SUMMARIZE": "Summarize a document",
+                "CHATBOT.PLAYGROUND.STARTER_EXPLAIN": "Explain a concept simply",
+                "CHATBOT.PLAYGROUND.STARTER_DRAFT": "Draft an email",
+                "CHATBOT.PLAYGROUND.STARTER_BRAINSTORM": "Brainstorm ideas for a project",
                 // T4 — Response regeneration
                 "CHATBOT.PLAYGROUND.REGENERATE": "Regenerate response",
                 // T5 — Artifact previews (structured output + sources)

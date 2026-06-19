@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: MIT-0
 // ----------------------------------------------------------------------
 import { Button, FormField, Select, SpaceBetween, StatusIndicator } from "@cloudscape-design/components";
-import PromptInput from "@cloudscape-design/components/prompt-input";
+import PromptInput, { PromptInputProps } from "@cloudscape-design/components/prompt-input";
 import { generateClient } from "aws-amplify/api";
 import { Dispatch, SetStateAction, forwardRef, useContext, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
 import { ReadyState } from "react-use-websocket";
@@ -77,6 +77,8 @@ export interface ChatInputPanelHandle {
      * response in place. No-op while a generation is in flight.
      */
     regenerateLast: () => void;
+    /** Populate the prompt input without sending (T3 editable support prompts). */
+    setInputValue: (value: string) => void;
 }
 
 const ChatInputPanel = forwardRef<ChatInputPanelHandle, ChatInputPanelProps>(function ChatInputPanel(props, ref) {
@@ -102,6 +104,7 @@ const ChatInputPanel = forwardRef<ChatInputPanelHandle, ChatInputPanelProps>(fun
 
     const messageHistoryRef = useRef<ChatBotHistoryItem[]>([]);
     const wsConnectionRef = useRef<WebSocketAgentConnection | null>(null);
+    const promptInputRef = useRef<PromptInputProps.Ref>(null);
     const client = generateClient();
 
     // Expose imperative handle so chat.tsx can close the text WS before voice mode
@@ -137,6 +140,10 @@ const ChatInputPanel = forwardRef<ChatInputPanelHandle, ChatInputPanelProps>(fun
             ChatScrollState.userHasScrolled = false;
             ChatScrollState.scrollToUserMessage = true;
             void dispatchToAgent(userMsg.content, userMsg.messageId);
+        },
+        setInputValue: (value: string) => {
+            setState((prev) => ({ ...prev, value }));
+            promptInputRef.current?.focus();
         },
     }));
 
@@ -547,6 +554,7 @@ const ChatInputPanel = forwardRef<ChatInputPanelHandle, ChatInputPanelProps>(fun
     return (
         <SpaceBetween direction="vertical" size="l">
             <PromptInput
+                ref={promptInputRef}
                 autoFocus
                 onChange={({ detail }) => {
                     setState((state) => ({
