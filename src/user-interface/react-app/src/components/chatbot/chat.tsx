@@ -839,6 +839,13 @@ export default function Chat(props: { sessionId?: string }) {
                                         .some(
                                             (m) => m.type === ChatBotMessageType.Human,
                                         );
+                                // Regeneration is offered only on the final AI response
+                                // (T4) — replaying mid-history would diverge from the
+                                // persisted turn order.
+                                const isLastAiMessage =
+                                    message.type === ChatBotMessageType.AI &&
+                                    idx === messageHistory.length - 1 &&
+                                    !!message.complete;
                                 return (
                                     <div
                                         key={idx}
@@ -852,6 +859,13 @@ export default function Chat(props: { sessionId?: string }) {
                                             message={message}
                                             sessionId={session.id}
                                             setAnnex={setAnnex}
+                                            onRegenerate={
+                                                isLastAiMessage
+                                                    ? () =>
+                                                          chatInputPanelRef.current?.regenerateLast()
+                                                    : undefined
+                                            }
+                                            canRegenerate={!running}
                                         />
                                     </div>
                                 );
@@ -873,7 +887,7 @@ export default function Chat(props: { sessionId?: string }) {
                         {running && scrollPaused && (
                             <div style={{ textAlign: "center", paddingBottom: "8px" }}>
                                 <StatusIndicator type="loading">
-                                    Still generating response — scroll down to see more
+                                    {t("CHATBOT.PLAYGROUND.STILL_GENERATING")}
                                 </StatusIndicator>
                             </div>
                         )}

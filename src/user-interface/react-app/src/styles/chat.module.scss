@@ -62,6 +62,43 @@
     opacity: 0.4;
 }
 
+// Reasoning ("Thinking") body — render the agent's internal voice as quieter,
+// smaller text on a subtle gen-AI-tinted gradient so it reads distinctly from
+// the final answer below the divider.
+.reasoningContent {
+    font-size: awsui.$font-size-body-s;
+    color: awsui.$color-text-status-inactive;
+    background: linear-gradient(
+        135deg,
+        awsui.$color-background-layout-main 0%,
+        awsui.$color-background-container-content 100%
+    );
+    border-inline-start: 2px solid awsui.$color-text-status-info;
+    border-radius: awsui.$border-radius-item;
+    padding: awsui.$space-scaled-xs awsui.$space-scaled-s;
+
+    // Pull the markdown body in line with the reduced reasoning scale.
+    p,
+    li {
+        font-size: awsui.$font-size-body-s;
+    }
+}
+
+// Progressive steps body — same quieter, tinted treatment as the reasoning block
+// so the agent's execution trace reads as process (not answer). A distinct accent
+// color keeps it visually separable from reasoning.
+.stepsContent {
+    font-size: awsui.$font-size-body-s;
+    background: linear-gradient(
+        135deg,
+        awsui.$color-background-layout-main 0%,
+        awsui.$color-background-container-content 100%
+    );
+    border-inline-start: 2px solid awsui.$color-text-status-success;
+    border-radius: awsui.$border-radius-item;
+    padding: awsui.$space-scaled-xs awsui.$space-scaled-s;
+}
+
 .input_container {
     position: sticky;
     bottom: 0;

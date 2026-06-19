@@ -72,6 +72,11 @@ export abstract class ChatScrollState {
 export interface ChatInputPanelHandle {
     /** Close the text WebSocket connection. Returns a promise that resolves once fully closed. */
     closeWebSocket: () => Promise<void>;
+    /**
+     * Re-invoke the agent with the most recent user prompt, replacing the last AI
+     * response in place. No-op while a generation is in flight.
+     */
+    regenerateLast: () => void;
 }
 
 const ChatInputPanel = forwardRef<ChatInputPanelHandle, ChatInputPanelProps>(function ChatInputPanel(props, ref) {
@@ -100,6 +105,7 @@ const ChatInputPanel = forwardRef<ChatInputPanelHandle, ChatInputPanelProps>(fun
     const client = generateClient();
 
     // Expose imperative handle so chat.tsx can close the text WS before voice mode
+    // and trigger response regeneration (T4).
     useImperativeHandle(ref, () => ({
         closeWebSocket: () => {
             return new Promise<void>((resolve) => {
@@ -111,6 +117,26 @@ const ChatInputPanel = forwardRef<ChatInputPanelHandle, ChatInputPanelProps>(fun
                 }
                 setTimeout(resolve, 200);
             });
+        },
+        regenerateLast: () => {
+            if (props.running) return;
+            if (readyState !== ReadyState.OPEN) return;
+            if (!agentRuntimeId || !wsConnectionRef.current) return;
+
+            const history = messageHistoryRef.current;
+            const lastAiIdx = history.length - 1;
+            if (lastAiIdx < 1 || history[lastAiIdx].type !== ChatBotMessageType.AI) return;
+
+            // The user prompt that produced this response is the Human message just before it.
+            const userMsg = history[lastAiIdx - 1];
+            if (!userMsg || userMsg.type !== ChatBotMessageType.Human) return;
+
+            // Drop the stale AI response and replay the prompt over the same path,
+            // reusing the originating user prompt's messageId.
+            messageHistoryRef.current = history.slice(0, lastAiIdx);
+            ChatScrollState.userHasScrolled = false;
+            ChatScrollState.scrollToUserMessage = true;
+            void dispatchToAgent(userMsg.content, userMsg.messageId);
         },
     }));
 
@@ -414,31 +440,20 @@ const ChatInputPanel = forwardRef<ChatInputPanelHandle, ChatInputPanelProps>(fun
     // ================================================================
     // Send message via direct WebSocket (replaces AppSync sendQuery)
     // ================================================================
-    const handleSendMessage = async (value: string): Promise<void> => {
-        if (props.running) return;
-        if (readyState !== ReadyState.OPEN) return;
-        if (!agentRuntimeId) return;
+
+    /**
+     * Append a fresh AI placeholder to the (already-updated) history and invoke the
+     * agent with `value`. Shared by first-time sends and regeneration (T4) — the
+     * caller is responsible for the preceding Human message and any history slicing.
+     */
+    const dispatchToAgent = async (value: string, messageId: string): Promise<void> => {
         if (!wsConnectionRef.current) return;
 
-        ChatScrollState.userHasScrolled = false;
-        ChatScrollState.scrollToUserMessage = true;
-
-        const message_id = generateMessageId(messageHistoryRef.current.length);
-
-        setState((state) => ({
-            ...state,
-            value: "",
-        }));
-
+        const message_id = messageId;
         props.setRunning(true);
         const startTime = Date.now();
         messageHistoryRef.current = [
             ...messageHistoryRef.current,
-            {
-                type: ChatBotMessageType.Human,
-                messageId: message_id,
-                content: value,
-            },
             {
                 type: ChatBotMessageType.AI,
                 messageId: message_id,
@@ -474,6 +489,33 @@ const ChatInputPanel = forwardRef<ChatInputPanelHandle, ChatInputPanelProps>(fun
                 "**Error**, Unable to process the request: " + Utils.getErrorMessage(err);
             props.setMessageHistory(messageHistoryRef.current);
         }
+    };
+
+    const handleSendMessage = async (value: string): Promise<void> => {
+        if (props.running) return;
+        if (readyState !== ReadyState.OPEN) return;
+        if (!agentRuntimeId) return;
+        if (!wsConnectionRef.current) return;
+
+        ChatScrollState.userHasScrolled = false;
+        ChatScrollState.scrollToUserMessage = true;
+
+        const message_id = generateMessageId(messageHistoryRef.current.length);
+
+        setState((state) => ({
+            ...state,
+            value: "",
+        }));
+
+        messageHistoryRef.current = [
+            ...messageHistoryRef.current,
+            {
+                type: ChatBotMessageType.Human,
+                messageId: message_id,
+                content: value,
+            },
+        ];
+        await dispatchToAgent(value, message_id);
     };
 
     const isSelectedAgentReady = () => {

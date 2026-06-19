@@ -14,12 +14,17 @@ import {
 } from "@cloudscape-design/components";
 import { generateClient } from "aws-amplify/api";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { publishFeedback as publishFeedbackMut } from "../../graphql/mutations";
 import { ChatBotHistoryItem } from "./types";
 
 export interface MessageToolboxProps {
     message: ChatBotHistoryItem;
     sessionId: string;
+    /** Replay the originating user prompt for this response. Omitted when not eligible. */
+    onRegenerate?: () => void;
+    /** Whether the regenerate control should be enabled (false while a turn is in flight). */
+    canRegenerate?: boolean;
 }
 
 export default function MessageToolbox(props: MessageToolboxProps) {
@@ -27,6 +32,7 @@ export default function MessageToolbox(props: MessageToolboxProps) {
     //                        Feedback
     // ===============================================================
     const client = generateClient();
+    const { t } = useTranslation("ACA");
 
     const [sentiment, setSentiment] = useState(props.message?.feedback?.sentiment || "");
     const [notes, setNotes] = useState(props.message?.feedback?.notes || "");
@@ -103,6 +109,9 @@ export default function MessageToolbox(props: MessageToolboxProps) {
                                 console.error("Failed to copy text: ", err);
                             });
                         }
+                        if (detail.id === "regenerate" && props.canRegenerate) {
+                            props.onRegenerate?.();
+                        }
                     }}
                     ariaLabel="Chat actions"
                     items={[
@@ -151,11 +160,23 @@ export default function MessageToolbox(props: MessageToolboxProps) {
                                 },
                             ],
                         },
-                        {
-                            type: "group",
-                            text: "empty",
-                            items: [],
-                        },
+                        ...(props.onRegenerate
+                            ? [
+                                  {
+                                      type: "group" as const,
+                                      text: t("CHATBOT.PLAYGROUND.REGENERATE"),
+                                      items: [
+                                          {
+                                              type: "icon-button" as const,
+                                              id: "regenerate",
+                                              iconName: "refresh" as const,
+                                              text: t("CHATBOT.PLAYGROUND.REGENERATE"),
+                                              disabled: !props.canRegenerate,
+                                          },
+                                      ],
+                                  },
+                              ]
+                            : []),
                     ]}
                     variant="icon"
                 />
