@@ -16,6 +16,7 @@ import { StorageHelper } from "../../common/helpers/storage-helper";
 import { getPresignedUrl as getPresignedUrlQuery } from "../../graphql/queries";
 import styles from "../../styles/chat.module.scss";
 import MessageToolbox from "./chat-message-toolbox";
+import { humanizeToolName, maskSensitiveInfo } from "./utils";
 import MarkdownContent from "./side-view/markdown-content";
 import ViewReference from "./side-view/reference";
 
@@ -140,6 +141,19 @@ export default function ChatMessage(props: ChatMessageProps) {
     const hasNoContent = !content || content.length === 0;
 
     const [stepsExpanded, setStepsExpanded] = useState(false);
+    // Per-tool arg expansion, keyed by invocationNumber. Tools start collapsed.
+    const [expandedTools, setExpandedTools] = useState<Set<number>>(new Set());
+    const toggleTool = (invocationNumber: number) => {
+        setExpandedTools((prev) => {
+            const next = new Set(prev);
+            if (next.has(invocationNumber)) {
+                next.delete(invocationNumber);
+            } else {
+                next.add(invocationNumber);
+            }
+            return next;
+        });
+    };
 
     const renderToolStepsRow = () => {
         if (
@@ -178,18 +192,65 @@ export default function ChatMessage(props: ChatMessageProps) {
                         }}
                     >
                         <ul style={{ margin: 0, paddingLeft: "16px" }}>
-                            {sortedActions.map((action) => (
-                                <li
-                                    key={action.invocationNumber}
-                                    style={{
-                                        fontSize: "11px",
-                                        color: "#687078",
-                                        marginBottom: "4px",
-                                    }}
-                                >
-                                    {action.toolAction}
-                                </li>
-                            ))}
+                            {sortedActions.map((action) => {
+                                const hasParams =
+                                    !!action.parameters && action.parameters.length > 0;
+                                const toolExpanded = expandedTools.has(action.invocationNumber);
+                                return (
+                                    <li
+                                        key={action.invocationNumber}
+                                        style={{
+                                            fontSize: "11px",
+                                            color: "#687078",
+                                            marginBottom: "4px",
+                                        }}
+                                    >
+                                        {hasParams ? (
+                                            <span
+                                                role="button"
+                                                tabIndex={0}
+                                                onClick={() => toggleTool(action.invocationNumber)}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === "Enter" || e.key === " ") {
+                                                        e.preventDefault();
+                                                        toggleTool(action.invocationNumber);
+                                                    }
+                                                }}
+                                                style={{ cursor: "pointer", userSelect: "none" }}
+                                            >
+                                                {humanizeToolName(action.toolName)}{" "}
+                                                {toolExpanded ? "▼" : "▶"}
+                                            </span>
+                                        ) : (
+                                            humanizeToolName(action.toolName)
+                                        )}
+                                        {hasParams && toolExpanded && (
+                                            <ul
+                                                style={{
+                                                    margin: "2px 0 0",
+                                                    paddingLeft: "16px",
+                                                    listStyleType: "circle",
+                                                }}
+                                            >
+                                                {action.parameters!.map((p) => (
+                                                    <li
+                                                        key={p.name}
+                                                        style={{
+                                                            color: "#959aa1",
+                                                            wordBreak: "break-word",
+                                                        }}
+                                                    >
+                                                        <span style={{ fontWeight: 600 }}>
+                                                            {p.name}:
+                                                        </span>{" "}
+                                                        {maskSensitiveInfo(p.value)}
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        )}
+                                    </li>
+                                );
+                            })}
                         </ul>
                     </div>
                 )}
@@ -228,12 +289,15 @@ export default function ChatMessage(props: ChatMessageProps) {
                     // to a terminal state. Records that predate the status field have
                     // no status — treat those as done (success).
                     const running = action.status === "running";
+                    const hasParams =
+                        !!action.parameters && action.parameters.length > 0;
+                    const toolExpanded = expandedTools.has(action.invocationNumber);
                     return (
                         <div
                             key={action.invocationNumber}
                             style={{
                                 display: "flex",
-                                alignItems: "center",
+                                alignItems: "flex-start",
                                 gap: "8px",
                                 fontSize: "12px",
                                 color: "#545b64",
@@ -248,7 +312,52 @@ export default function ChatMessage(props: ChatMessageProps) {
                                     "✓"
                                 )}
                             </span>
-                            <span>{action.toolAction}</span>
+                            <span style={{ display: "flex", flexDirection: "column" }}>
+                                {hasParams ? (
+                                    <span
+                                        role="button"
+                                        tabIndex={0}
+                                        onClick={() => toggleTool(action.invocationNumber)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter" || e.key === " ") {
+                                                e.preventDefault();
+                                                toggleTool(action.invocationNumber);
+                                            }
+                                        }}
+                                        style={{ cursor: "pointer", userSelect: "none" }}
+                                    >
+                                        {humanizeToolName(action.toolName)}{" "}
+                                        {toolExpanded ? "▼" : "▶"}
+                                    </span>
+                                ) : (
+                                    <span>{humanizeToolName(action.toolName)}</span>
+                                )}
+                                {hasParams && toolExpanded && (
+                                    <ul
+                                        style={{
+                                            margin: "2px 0 0",
+                                            paddingLeft: "16px",
+                                            listStyleType: "circle",
+                                        }}
+                                    >
+                                        {action.parameters!.map((p) => (
+                                            <li
+                                                key={p.name}
+                                                style={{
+                                                    fontSize: "11px",
+                                                    color: "#959aa1",
+                                                    wordBreak: "break-word",
+                                                }}
+                                            >
+                                                <span style={{ fontWeight: 600 }}>
+                                                    {p.name}:
+                                                </span>{" "}
+                                                {maskSensitiveInfo(p.value)}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </span>
                         </div>
                     );
                 })}

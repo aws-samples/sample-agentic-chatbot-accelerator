@@ -182,7 +182,7 @@ async def text_chat(websocket: WebSocket):
                     memory_exporter.clear()
                 if callbacks:
                     callbacks.reset_metadata()
-                    callbacks._websocket = websocket
+                    callbacks.attach_websocket(websocket)
 
                 logger.info(
                     "Calling agent with user message and context",

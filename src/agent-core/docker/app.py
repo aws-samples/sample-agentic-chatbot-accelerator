@@ -402,7 +402,7 @@ async def text_chat(websocket: WebSocket):
                 # Reset metadata for new turn and pass WebSocket reference
                 if callbacks:
                     callbacks.reset_metadata()
-                    callbacks._websocket = websocket  # type: ignore
+                    callbacks.attach_websocket(websocket)
 
                 # Hydrate agent state from message on every non-heartbeat message
                 state_json = message.get("state")

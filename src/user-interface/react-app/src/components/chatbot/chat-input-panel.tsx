@@ -273,13 +273,25 @@ const ChatInputPanel = forwardRef<ChatInputPanelHandle, ChatInputPanelProps>(fun
 
             // Tool steps now come directly from the AgentCore WebSocket — no LLM
             // rephrasing. Route the raw tool action into the message's toolActions
-            // so it renders immediately (the description is often empty for
-            // MCP/custom tools; appendToolAction falls back to `Using {toolName}`).
+            // so it renders immediately. The label is the humanized tool name; the
+            // WS `description` is ignored (MCP tools pack a huge prompt blob into it).
             // The AppSync side-channel is still active this phase; dedup by
             // invocationNumber handles double-delivery from both paths.
-            onToolAction: (toolName: string, description: string, invocationNumber: number) => {
+            onToolAction: (
+                toolName: string,
+                _description: string,
+                invocationNumber: number,
+                parameters?: { name: string; value: string }[],
+            ) => {
                 if (aborted) return;
-                if (appendToolAction(messageHistoryRef.current, toolName, description, invocationNumber)) {
+                if (
+                    appendToolAction(
+                        messageHistoryRef.current,
+                        toolName,
+                        invocationNumber,
+                        parameters,
+                    )
+                ) {
                     props.setMessageHistory([...messageHistoryRef.current]);
                 }
             },

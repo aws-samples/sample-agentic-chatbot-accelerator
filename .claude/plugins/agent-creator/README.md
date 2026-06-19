@@ -96,9 +96,26 @@ The four prompts below each steer it toward a different pattern; use them as sta
 
 **Swarm — peers that hand off collaboratively, no fixed order:**
 
-> "Let a docs/architecture specialist and a cost specialist collaborate on AWS workload
-> reviews with no fixed script — hand the problem back and forth, the cost one pushing back
-> on anything too expensive, until they converge on a recommendation together."
+> "Create a swarm debate agent to help decide when serverless or managed is better suited to
+> a given architecture."
+
+This is the prompt behind the worked example below. The plugin builds three SINGLE persona
+agents bottom-up — a `serverless_advocate` and a `managed_advocate` (each grounded in the
+`aws-knowledge` MCP server, arguing in good faith and conceding honest weaknesses) and a
+neutral `debate_moderator` — then assembles a `serverless_vs_managed_debate` SWARM with the
+moderator as the entry agent. The moderator frames the workload (asking for any missing
+decision-critical facts), the advocates hand the problem back and forth until each has
+rebutted the other's strongest point, and the moderator writes the final verdict — including
+the losing side's best argument and the conditions under which the recommendation would flip.
+
+A workload prompt to run the finished swarm against in the UI:
+
+> "We're building the backend for a B2B SaaS document-processing API — customers upload PDFs,
+> we extract and transform text, store structured JSON. Traffic is spiky and low-volume today
+> (~5,000 docs/day in business hours, near-zero overnight) but could grow 10–20x. Each doc is
+> CPU-bound and takes 8–40s; results are persisted and queried; p95 under ~2 min is fine. We're
+> a 3-person team with limited ops experience, tight budget now but predictability matters at
+> scale. Serverless or provisioned/managed? Debate it and give me a verdict."
 
 Modify, diagnose, and skill-authoring requests are just as conversational — e.g. "remove the
 skills from `pubmed_study_ideator`", "it keeps picking the wrong tool, here are the traces:

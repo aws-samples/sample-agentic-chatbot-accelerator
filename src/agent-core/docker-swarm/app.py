@@ -168,8 +168,10 @@ async def swarm_text_chat(websocket: WebSocket):
                 if CALLBACKS:
                     CALLBACKS.reset_metadata()
                     # Attach the browser WS so tool steps emit directly (mirrors
-                    # docker/app.py); only the entry-point holds this WS.
-                    CALLBACKS._websocket = websocket
+                    # docker/app.py); only the entry-point holds this WS. Captures
+                    # this loop so swarm tool callbacks (which fire off worker
+                    # threads) dispatch sends back here and flush immediately.
+                    CALLBACKS.attach_websocket(websocket)
 
                 logger.info(
                     "Calling swarm with user message and context",
@@ -183,7 +185,14 @@ async def swarm_text_chat(websocket: WebSocket):
                 )
 
                 try:
-                    result = SWARM(user_message)
+                    # Await the async entrypoint rather than the blocking
+                    # SWARM(...) call. The sync __call__ runs the swarm via
+                    # run_async on a separate event loop/thread, so tool
+                    # callbacks fire off the WebSocket's loop and their
+                    # tool_action/tool_complete sends silently fail. invoke_async
+                    # runs on this loop, so steps reach the browser live (mirrors
+                    # stream_async in docker/ and docker-agents-as-tools/).
+                    result = await SWARM.invoke_async(user_message)
 
                     logger.info(
                         "Swarm completed",

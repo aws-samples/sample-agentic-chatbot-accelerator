@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import TYPE_CHECKING
 
 from .base_constants import RETRIEVE_FROM_KB_PREFIX
@@ -15,6 +16,11 @@ from .kb_types import Citation, RetrievedReference
 
 if TYPE_CHECKING:
     from logging import Logger
+
+# Max characters of a single tool-argument value forwarded to the browser. Tool
+# inputs can be large (pasted documents, encoded blobs); the UI only needs a
+# preview, and oversized payloads bloat the WS frame and the persisted record.
+_MAX_TOOL_ARG_VALUE_CHARS = 200
 
 
 class FormatCitations:
@@ -146,6 +152,29 @@ class BaseAgentCallbacks:
         self._session_id = session_id
         self._user_id = user_id
         self._websocket = None  # Optional WebSocket for direct tool action delivery
+        # Event loop that owns the WebSocket, captured at attach time. Tool
+        # callbacks can fire on worker threads (Strands runs tools off the loop),
+        # so sends are dispatched back to this loop via run_coroutine_threadsafe.
+        self._ws_loop: asyncio.AbstractEventLoop | None = None
+
+    def attach_websocket(self, websocket) -> None:
+        """Attach the browser WebSocket and capture its running event loop.
+
+        Must be called from a coroutine running on the WebSocket's event loop
+        (i.e. inside the ``/ws`` handler) so the correct loop is captured.
+        Subsequent tool-step sends are scheduled onto this loop even when the
+        callback fires from a worker thread.
+
+        Args:
+            websocket: The FastAPI/Starlette WebSocket for the current session.
+        """
+        self._websocket = websocket
+        try:
+            self._ws_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # No running loop (shouldn't happen from the WS handler) — fall back
+            # to best-effort scheduling in _send_ws_event.
+            self._ws_loop = None
 
     @property
     def metadata(self) -> dict:
@@ -201,10 +230,13 @@ class BaseAgentCallbacks:
     def _send_ws_event(self, payload: dict) -> None:
         """Schedule a JSON payload on the browser-facing WebSocket.
 
-        Tool callbacks fire from synchronous Strands hooks, so the coroutine is
-        scheduled on the running event loop rather than awaited. A no-op when no
-        WebSocket is attached (e.g. the ``/invocations`` SSE path, where there is
-        no browser WS). Never raises into the agent run — failures are logged.
+        Tool callbacks fire from synchronous Strands hooks that may run on a
+        worker thread (e.g. swarm node execution), not the WebSocket's event
+        loop. Dispatching via ``run_coroutine_threadsafe`` onto the loop captured
+        in ``attach_websocket`` schedules the send AND wakes the loop, so frames
+        flush immediately instead of waiting for the loop to next cycle. A no-op
+        when no WebSocket is attached (e.g. the ``/invocations`` SSE path). Never
+        raises into the agent run — failures are logged.
 
         Args:
             payload (dict): JSON-serializable event to send to the browser.
@@ -214,13 +246,44 @@ class BaseAgentCallbacks:
 
         try:
             coro = self._websocket.send_json(payload)
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                asyncio.ensure_future(coro)
+            if self._ws_loop is not None:
+                # Schedule onto the WS loop from any thread and wake it now.
+                asyncio.run_coroutine_threadsafe(coro, self._ws_loop)
             else:
-                loop.run_until_complete(coro)
+                # Fallback: no captured loop (attach_websocket not used).
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.ensure_future(coro)
+                else:
+                    loop.run_until_complete(coro)
         except Exception as ws_err:
             self._logger.warning(f"Failed to send WebSocket event: {ws_err}")
+
+    @staticmethod
+    def _format_arg_value(value) -> str:
+        """Render a tool-argument value as a compact, length-capped string.
+
+        Non-string values are JSON-encoded so structured args (lists, dicts)
+        stay readable in the UI. Anything longer than
+        ``_MAX_TOOL_ARG_VALUE_CHARS`` is truncated with an ellipsis — the UI
+        shows a preview, not the full payload.
+
+        Args:
+            value: The raw argument value from the tool input.
+
+        Returns:
+            str: A display-ready, truncated representation.
+        """
+        if isinstance(value, str):
+            text = value
+        else:
+            try:
+                text = json.dumps(value, ensure_ascii=False, default=str)
+            except (TypeError, ValueError):
+                text = str(value)
+        if len(text) > _MAX_TOOL_ARG_VALUE_CHARS:
+            text = text[:_MAX_TOOL_ARG_VALUE_CHARS] + "…"
+        return text
 
     def _send_tool_action(
         self, tool_name: str, tool_description: str, parameters: list[dict]
@@ -230,14 +293,19 @@ class BaseAgentCallbacks:
         Args:
             tool_name (str): Name of the tool being invoked.
             tool_description (str): Static spec description (may be empty).
-            parameters (list[dict]): Parameter dicts; only names are forwarded.
+            parameters (list[dict]): Parameter dicts with ``name`` and ``value``;
+                both are forwarded (values length-capped) so the UI can show what
+                the agent passed.
         """
         self._send_ws_event(
             {
                 "type": "tool_action",
                 "toolName": tool_name,
                 "description": tool_description,
-                "parameters": [p["name"] for p in parameters],
+                "parameters": [
+                    {"name": p["name"], "value": self._format_arg_value(p["value"])}
+                    for p in parameters
+                ],
                 "invocationNumber": self._nb_tool_invocations,
             }
         )

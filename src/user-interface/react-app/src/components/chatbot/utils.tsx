@@ -10,7 +10,69 @@ import {
     ChatBotMessageType,
     LLMToken,
     ToolActionItem,
+    ToolParameter,
 } from "./types";
+
+// Tokens that should stay fully upper-cased when humanizing a tool name.
+// Extend as new acronyms show up in tool names.
+const TOOL_NAME_ACRONYMS = new Set(["aws", "s3", "api", "a2a"]);
+
+/**
+ * Turn a raw tool name into a human-friendly label.
+ *
+ * Tool names arrive as identifiers (e.g. `search_documentation`) and MCP tools
+ * are namespaced by their server with a `prefix___tool` separator (Strands).
+ * We drop the server prefix, then convert separators to spaces and Title Case
+ * each word so the step reads as a short action ("Search Documentation").
+ * Known acronyms (see TOOL_NAME_ACRONYMS) render fully upper-cased.
+ *
+ * The raw spec description is intentionally NOT used as the label: MCP tools
+ * pack their entire prompt-engineering blob into the description, which floods
+ * the UI. The tool name is bounded and reliable. See cache/specs/tool-steps.
+ */
+export function humanizeToolName(toolName: string): string {
+    if (!toolName) return "tool";
+    // Drop the MCP server prefix ("server___tool" → "tool"); keep the last segment.
+    const bare = toolName.split("___").pop() ?? toolName;
+    const words = bare
+        .replace(/[_-]+/g, " ")
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean);
+    if (words.length === 0) return toolName;
+    return words
+        .map((w) =>
+            TOOL_NAME_ACRONYMS.has(w.toLowerCase())
+                ? w.toUpperCase()
+                : w.charAt(0).toUpperCase() + w.slice(1),
+        )
+        .join(" ");
+}
+
+// Replacement token shown to the user in place of account-identifying info.
+const MASK = "MASKED";
+
+/**
+ * Redact AWS account IDs and region codes from a string for display.
+ *
+ * This is a UI-only transform — it never mutates the underlying value, which is
+ * still carried on the WebSocket payload and persisted verbatim. It only changes
+ * what the user sees in tool-step argument values.
+ *
+ * Handles values where the identifiers are embedded in (possibly URL-encoded)
+ * ARNs/URLs, e.g. ".../bedrock-agentcore%3Aus-east-1%3A303326394913%3Aruntime...",
+ * so it cannot rely on word boundaries (a preceding "%3A" ends in a letter).
+ *
+ * - Account IDs: standalone 12-digit numbers (not part of a longer digit run).
+ * - Regions: codes like us-east-1, ap-southeast-2, us-gov-west-1 — a 2-letter
+ *   code followed by one or more dash-separated lowercase segments and a digit.
+ */
+export function maskSensitiveInfo(value: string): string {
+    if (!value) return value;
+    return value
+        .replace(/(?<!\d)\d{12}(?!\d)/g, MASK)
+        .replace(/(?<![a-z])[a-z]{2}-(?:[a-z]+-)+\d(?!\d)/g, MASK);
+}
 
 /**
  * Attach a tool action to the most recent AI message, deduped by
@@ -19,16 +81,17 @@ import {
  * array so it can be driven from the direct WebSocket (no index-keyed
  * accumulator needed). New steps start in the "running" state.
  *
- * Falls back to `Using {toolName}` when the description is empty — common for
- * MCP/custom tools whose static spec description is blank.
+ * The step label is derived by humanizing `toolName` (see humanizeToolName);
+ * the WS payload's `description` is intentionally not used (MCP tools pack a
+ * huge prompt blob into it). Argument name/value pairs are stored for display.
  *
  * Returns true if the history was mutated (caller should re-render).
  */
 export function appendToolAction(
     messageHistory: ChatBotHistoryItem[],
     toolName: string,
-    description: string,
     invocationNumber: number,
+    parameters?: ToolParameter[],
 ): boolean {
     if (
         messageHistory.length === 0 ||
@@ -47,9 +110,10 @@ export function appendToolAction(
     }
 
     actions.push({
-        toolAction: description?.trim() || `Using ${toolName}`,
+        toolAction: humanizeToolName(toolName),
         toolName,
         invocationNumber,
+        parameters,
         status: "running",
     });
     actions.sort((a, b) => a.invocationNumber - b.invocationNumber);
