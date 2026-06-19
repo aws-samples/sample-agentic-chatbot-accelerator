@@ -90,10 +90,8 @@ class AgentCallbacks(BaseAgentCallbacks):
         # Extract parameters using base class helper
         parameters = self._extract_tool_parameters(event, specs)
 
-        # Publish tool invocation using base class helper (SNS)
         tool_name = event.tool_use.get("name", "unknown")
         tool_description = specs.get("description", "") if specs else ""
-        self._publish_tool_invocation(tool_name, tool_description, parameters)
 
         # Send tool action directly via WebSocket for instant UI feedback
         self._send_tool_action(tool_name, tool_description, parameters)

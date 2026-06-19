@@ -8,23 +8,13 @@
 from __future__ import annotations
 
 import asyncio
-import json
-import os
 from typing import TYPE_CHECKING
-
-import boto3
-from botocore.exceptions import ClientError
 
 from .base_constants import RETRIEVE_FROM_KB_PREFIX
 from .kb_types import Citation, RetrievedReference
 
 if TYPE_CHECKING:
     from logging import Logger
-
-# --------------------------- AWS CLIENTS ---------------------------- #
-SNS_CLIENT = boto3.client("sns", region_name=os.environ.get("AWS_REGION"))
-AGENT_TOOLS_TOPIC_ARN = os.environ.get("agentToolsTopicArn", "")
-# -------------------------------------------------------------------- #
 
 
 class FormatCitations:
@@ -292,50 +282,6 @@ class BaseAgentCallbacks:
         if isinstance(result, dict) and result.get("status") == "error":
             return "error"
         return "success"
-
-    # DEPRECATED: removed with SNS side-channel (infra phase, once OQ-1 resolved)
-    def _publish_tool_invocation(
-        self, tool_name: str, tool_description: str, parameters: list[dict]
-    ) -> None:
-        """Publish tool invocation message to SNS topic.
-
-        Args:
-            tool_name (str): Name of the tool being invoked
-            tool_description (str): Description of the tool
-            parameters (list[dict]): List of tool parameters
-        """
-        message = {
-            "context": {
-                "userId": self._user_id,
-                "sessionId": self._session_id,
-                "invocationNumber": self._nb_tool_invocations,
-            },
-            "data": {
-                "toolName": tool_name,
-                "toolDescription": tool_description,
-                "parameters": parameters,
-            },
-        }
-
-        if AGENT_TOOLS_TOPIC_ARN:
-            try:
-                SNS_CLIENT.publish(
-                    TopicArn=AGENT_TOOLS_TOPIC_ARN,
-                    Message=json.dumps(message),
-                    Subject="AgentToolInvocation",
-                )
-                self._logger.info(
-                    "Published tool invocation to SNS",
-                    extra={
-                        "topicArn": AGENT_TOOLS_TOPIC_ARN,
-                        "toolName": tool_name,
-                    },
-                )
-            except (ClientError, ValueError) as err:
-                self._logger.warning(
-                    "Failed to publish tool invocation to SNS",
-                    extra={"error": str(err)},
-                )
 
     def retrieve_from_kb_callback(self, event) -> None:
         """Callback handler for knowledge base retrieval operations.
