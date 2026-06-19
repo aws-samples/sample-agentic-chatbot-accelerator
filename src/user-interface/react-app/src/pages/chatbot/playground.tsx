@@ -9,6 +9,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { v4 as uuidv4 } from "uuid";
 import BaseAppLayout from "../../components/base-app-layout";
 import Chat from "../../components/chatbot/chat";
+import ConversationHistory from "../../components/chatbot/conversation-history";
 
 export default function Playground() {
     const { sessionId } = useParams();
@@ -58,6 +59,20 @@ export default function Playground() {
                     </SpaceBetween>
                 </HelpPanel>
             }
+            customDrawers={[
+                {
+                    id: "conversation-history",
+                    ariaLabels: {
+                        drawerName: t("CHATBOT.PLAYGROUND.HISTORY_DRAWER_ARIA"),
+                        triggerButton: t("CHATBOT.PLAYGROUND.HISTORY_TITLE"),
+                        closeButton: t("CHATBOT.SESSIONS.CANCEL_BUTTON"),
+                    },
+                    trigger: { iconName: "history" },
+                    content: <ConversationHistory />,
+                    resizable: true,
+                    defaultSize: 360,
+                },
+            ]}
             toolsWidth={300}
             maxContentWidth={10000}
             content={<Chat sessionId={sessionId} />}
