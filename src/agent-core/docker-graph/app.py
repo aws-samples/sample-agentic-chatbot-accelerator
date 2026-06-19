@@ -35,6 +35,113 @@ AWS_REGION = os.environ.get("AWS_REGION")
 
 
 # ============================================================
+# Node-step streaming
+# ============================================================
+async def stream_graph_with_steps(
+    compiled_graph,
+    input_state: dict,
+    invoke_config: dict,
+    node_ids: set[str],
+    websocket,
+) -> dict:
+    """Run the graph via ``astream_events`` and emit per-node tool steps.
+
+    Graph nodes invoke sub-agent runtimes rather than local tools, so the
+    Strands tool callbacks never fire for a graph run. Instead we stream the
+    graph's own node lifecycle and surface each node execution as a step,
+    reusing the spec-02 ``tool_action`` / ``tool_complete`` WS contract
+    verbatim — the graph just becomes another producer of those events, so no
+    frontend change is needed.
+
+    ``astream_events`` (v2) emits ``on_chain_start`` / ``on_chain_end`` per
+    node for free. Conditional routers are edge functions (not ``add_node``),
+    so their chain events are naturally excluded by the ``name in node_ids``
+    test, keeping the step list to meaningful nodes only.
+
+    A distinct ``run_id`` per node execution means ``Send()`` fan-out branches
+    and revision-loop re-entries each become their own step. Repeated
+    executions of the same node id are disambiguated with a ``#k`` label
+    suffix so the UI keys stay unique.
+
+    Args:
+        compiled_graph: The compiled LangGraph to execute.
+        input_state: Initial graph state.
+        invoke_config: LangGraph invoke config (recursion_limit, etc.).
+        node_ids: Registered node ids — only these surface as steps.
+        websocket: Browser-facing WebSocket for step events.
+
+    Returns:
+        The graph's final merged state — identical to what ``ainvoke`` would
+        return — so the caller's final_content / structured-output extraction
+        is unchanged.
+    """
+    result: dict = {}
+    # Per-execution metadata keyed by LangGraph run_id.
+    run_meta: dict[str, dict] = {}
+    node_starts: dict[str, int] = {}  # node_id -> number of times started
+    seq = 0  # monotonic invocationNumber across all nodes
+    root_run_id: str | None = None
+
+    async for event in compiled_graph.astream_events(
+        input_state, config=invoke_config, version="v2"
+    ):
+        kind = event.get("event")
+        name = event.get("name")
+        run_id = event.get("run_id")
+
+        # The first chain to start is the graph root; its matching
+        # on_chain_end carries the final merged state.
+        if kind == "on_chain_start" and root_run_id is None:
+            root_run_id = run_id
+
+        if kind == "on_chain_start" and name in node_ids:
+            seq += 1
+            occ = node_starts.get(name, 0) + 1
+            node_starts[name] = occ
+            label = name if occ == 1 else f"{name} #{occ}"
+            run_meta[run_id] = {"seq": seq, "label": label}
+            await websocket.send_json(
+                {
+                    "type": "tool_action",
+                    "toolName": label,
+                    "description": "",
+                    "parameters": [],
+                    "invocationNumber": seq,
+                }
+            )
+
+        elif kind == "on_chain_end":
+            if run_id == root_run_id:
+                output = event.get("data", {}).get("output")
+                if isinstance(output, dict):
+                    result = output
+            meta = run_meta.pop(run_id, None)
+            if meta is not None:
+                await websocket.send_json(
+                    {
+                        "type": "tool_complete",
+                        "toolName": meta["label"],
+                        "invocationNumber": meta["seq"],
+                        "status": "success",
+                    }
+                )
+
+        elif kind == "on_chain_error":
+            meta = run_meta.pop(run_id, None)
+            if meta is not None:
+                await websocket.send_json(
+                    {
+                        "type": "tool_complete",
+                        "toolName": meta["label"],
+                        "invocationNumber": meta["seq"],
+                        "status": "error",
+                    }
+                )
+
+    return result
+
+
+# ============================================================
 # Health Check (required by AgentCore)
 # ============================================================
 @app.get("/ping")
@@ -170,17 +277,29 @@ async def graph_text_chat(websocket: WebSocket):
 
                     timeout_seconds = CONFIGURATION.orchestrator.executionTimeoutSeconds
 
+                    # Stream the graph and surface each node as a tool step.
+                    # Returns the final merged state (same as ainvoke), so the
+                    # final_content / structured-output extraction is unchanged.
+                    node_ids = {n.id for n in CONFIGURATION.nodes}
                     result = await asyncio.wait_for(
-                        COMPILED_GRAPH.ainvoke(input_state, config=invoke_config),
+                        stream_graph_with_steps(
+                            compiled_graph=COMPILED_GRAPH,
+                            input_state=input_state,
+                            invoke_config=invoke_config,
+                            node_ids=node_ids,
+                            websocket=websocket,
+                        ),
                         timeout=timeout_seconds,
                     )
 
                     logger.info(
                         "Graph completed",
                         extra={
-                            "resultKeys": list(result.keys())
-                            if isinstance(result, dict)
-                            else None,
+                            "resultKeys": (
+                                list(result.keys())
+                                if isinstance(result, dict)
+                                else None
+                            ),
                         },
                     )
 
