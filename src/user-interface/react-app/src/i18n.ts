@@ -86,6 +86,7 @@ i18n.use(initReactI18next).init({
                 "CHATBOT.PLAYGROUND.SOURCES_LABEL": "Sources",
                 "CHATBOT.PLAYGROUND.ARTIFACT_COPY": "Copy",
                 "CHATBOT.PLAYGROUND.ARTIFACT_COPIED": "Copied",
+                "CHATBOT.PLAYGROUND.ARTIFACT_COPY_ERROR": "Failed to copy",
                 "CHATBOT.PLAYGROUND.ARTIFACT_EXPAND": "Expand",
                 "CHATBOT.PLAYGROUND.OPEN_SOURCE": "Open source",
                 // T6 — Conversational history (in-chat)

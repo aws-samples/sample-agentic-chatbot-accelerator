@@ -3,58 +3,54 @@
 //
 // SPDX-License-Identifier: MIT-0
 // ----------------------------------------------------------------------
-import { Box, Button, Container, Header } from "@cloudscape-design/components";
-import { Mode } from "@cloudscape-design/global-styles";
-import { useEffect, useState } from "react";
-import { JsonView, allExpanded, collapseAllNested, darkStyles, defaultStyles } from "react-json-view-lite";
-import "react-json-view-lite/dist/index.css";
-import { StorageHelper } from "../../../common/helpers/storage-helper";
+import { Button, Container, CopyToClipboard, Header } from "@cloudscape-design/components";
+import CodeView from "@cloudscape-design/code-view/code-view";
+import jsonHighlight from "@cloudscape-design/code-view/highlight/json";
+import { useTranslation } from "react-i18next";
 
 export interface StructuredOutputContentProps {
     /** Raw structured-output payload (expected to be JSON, but may be plain text). */
     raw: string;
-    /** Expand all nodes by default. The inline preview collapses; the canvas expands. */
-    expandAll?: boolean;
+    /** Show line numbers — useful in the larger canvas view, noise in the inline card. */
+    lineNumbers?: boolean;
+    /** Render a copy-to-clipboard control in the CodeView actions slot. */
+    copyable?: boolean;
+}
+
+/** Pretty-print JSON; leave non-JSON payloads untouched so they still render. */
+function prettyPrint(raw: string): string {
+    try {
+        return JSON.stringify(JSON.parse(raw), null, 2);
+    } catch {
+        return raw;
+    }
 }
 
 /**
- * Renders an agent's structured output as an interactive JSON tree, falling back
- * to monospaced text when the payload isn't valid JSON. Theme-aware so it matches
- * the rest of the Cloudscape surface in light and dark mode.
+ * Renders an agent's structured output as syntax-highlighted, pretty-printed JSON
+ * via Cloudscape's CodeView, matching the look of other code artifacts. Non-JSON
+ * payloads fall back to the raw text (still inside CodeView, sans highlighting).
  */
 export function StructuredOutputContent(props: StructuredOutputContentProps) {
-    const [theme, setTheme] = useState(StorageHelper.getTheme());
-
-    useEffect(() => {
-        const handleThemeChange = (e: CustomEvent<Mode>) => setTheme(e.detail);
-        window.addEventListener("themeChange", handleThemeChange as EventListener);
-        return () =>
-            window.removeEventListener("themeChange", handleThemeChange as EventListener);
-    }, []);
-
-    let parsed: unknown;
-    try {
-        parsed = JSON.parse(props.raw);
-    } catch {
-        // Not JSON — show the raw payload verbatim.
-        return (
-            <Box variant="code">
-                <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0 }}>
-                    {props.raw}
-                </pre>
-            </Box>
-        );
-    }
-
-    if (typeof parsed !== "object" || parsed === null) {
-        return <Box variant="code">{String(parsed)}</Box>;
-    }
-
+    const { t } = useTranslation("ACA");
+    const content = prettyPrint(props.raw);
     return (
-        <JsonView
-            data={parsed as object}
-            shouldExpandNode={props.expandAll ? allExpanded : collapseAllNested}
-            style={theme === Mode.Dark ? darkStyles : defaultStyles}
+        <CodeView
+            content={content}
+            highlight={jsonHighlight}
+            lineNumbers={props.lineNumbers}
+            wrapLines
+            actions={
+                props.copyable ? (
+                    <CopyToClipboard
+                        variant="icon"
+                        textToCopy={content}
+                        copyButtonText={t("CHATBOT.PLAYGROUND.ARTIFACT_COPY")}
+                        copySuccessText={t("CHATBOT.PLAYGROUND.ARTIFACT_COPIED")}
+                        copyErrorText={t("CHATBOT.PLAYGROUND.ARTIFACT_COPY_ERROR")}
+                    />
+                ) : undefined
+            }
         />
     );
 }
@@ -81,7 +77,7 @@ export default function StructuredOutputView(props: StructuredOutputViewProps) {
                     </Header>
                 }
             >
-                <StructuredOutputContent raw={props.raw} expandAll />
+                <StructuredOutputContent raw={props.raw} lineNumbers copyable />
             </Container>
         </div>
     );

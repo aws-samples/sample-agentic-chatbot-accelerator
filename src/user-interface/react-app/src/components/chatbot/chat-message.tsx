@@ -13,15 +13,11 @@ import ChatBubble from "@cloudscape-design/chat-components/chat-bubble";
 import {
     Box,
     Button,
-    ButtonGroup,
-    Container,
     ExpandableSection,
-    Header,
     Icon,
     Link,
     SpaceBetween,
     Steps,
-    StatusIndicator,
     StatusIndicatorProps,
 } from "@cloudscape-design/components";
 import { useTranslation } from "react-i18next";
@@ -32,7 +28,7 @@ import MessageToolbox from "./chat-message-toolbox";
 import { humanizeToolName, maskSensitiveInfo } from "./utils";
 import MarkdownContent from "./side-view/markdown-content";
 import ViewReference from "./side-view/reference";
-import StructuredOutputView, { StructuredOutputContent } from "./side-view/structured-output-view";
+import StructuredOutputView from "./side-view/structured-output-view";
 
 export interface ChatMessageProps {
     message: ChatBotHistoryItem;
@@ -166,61 +162,6 @@ export default function ChatMessage(props: ChatMessageProps) {
                 title={t("CHATBOT.PLAYGROUND.STRUCTURED_OUTPUT_LABEL")}
                 onClose={() => props.setAnnex(null)}
             />,
-        );
-    };
-
-    const renderStructuredOutput = () => {
-        if (!props.message.structuredOutput) return null;
-        return (
-            <Container
-                header={
-                    <Header
-                        variant="h3"
-                        description={t("CHATBOT.PLAYGROUND.STRUCTURED_OUTPUT_DESC")}
-                        actions={
-                            <ButtonGroup
-                                variant="icon"
-                                ariaLabel={t("CHATBOT.PLAYGROUND.STRUCTURED_OUTPUT_LABEL")}
-                                onItemClick={({ detail }) => {
-                                    if (detail.id === "copy") {
-                                        navigator.clipboard
-                                            .writeText(props.message.structuredOutput!)
-                                            .catch((err) =>
-                                                console.error("Failed to copy: ", err),
-                                            );
-                                    }
-                                    if (detail.id === "expand") {
-                                        openStructuredOutputCanvas();
-                                    }
-                                }}
-                                items={[
-                                    {
-                                        type: "icon-button",
-                                        id: "copy",
-                                        iconName: "copy",
-                                        text: t("CHATBOT.PLAYGROUND.ARTIFACT_COPY"),
-                                        popoverFeedback: (
-                                            <StatusIndicator type="success">
-                                                {t("CHATBOT.PLAYGROUND.ARTIFACT_COPIED")}
-                                            </StatusIndicator>
-                                        ),
-                                    },
-                                    {
-                                        type: "icon-button",
-                                        id: "expand",
-                                        iconName: "expand",
-                                        text: t("CHATBOT.PLAYGROUND.ARTIFACT_EXPAND"),
-                                    },
-                                ]}
-                            />
-                        }
-                    >
-                        {t("CHATBOT.PLAYGROUND.STRUCTURED_OUTPUT_LABEL")}
-                    </Header>
-                }
-            >
-                <StructuredOutputContent raw={props.message.structuredOutput} />
-            </Container>
         );
     };
 
@@ -393,6 +334,11 @@ export default function ChatMessage(props: ChatMessageProps) {
                                     sessionId={props.sessionId}
                                     onRegenerate={props.onRegenerate}
                                     canRegenerate={props.canRegenerate}
+                                    onViewStructuredOutput={
+                                        props.message.structuredOutput
+                                            ? openStructuredOutputCanvas
+                                            : undefined
+                                    }
                                 />
                                 <Button
                                     variant="icon"
@@ -415,8 +361,8 @@ export default function ChatMessage(props: ChatMessageProps) {
                         )}
                     </ChatBubble>
 
-                    {/* T5 — artifacts stacked below the bubble (not nested inside it) */}
-                    {renderStructuredOutput()}
+                    {/* T5 — sources stacked below the bubble (structured output opens
+                        in the annex canvas from the message toolbox). */}
                     {renderSources()}
                 </SpaceBetween>
             )}
