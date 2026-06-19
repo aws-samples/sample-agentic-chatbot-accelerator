@@ -163,7 +163,8 @@ class WebSocketBidiOutput:
     """Adapter that receives BidiOutputEvents and sends them over a FastAPI WebSocket.
 
     Implements the BidiOutput protocol for Strands BidiAgent.
-    Also publishes tool invocations to SNS for AI-rephrased descriptions.
+    On each tool use it sends a raw `tool_description` event over the WebSocket
+    (no LLM rephrasing) — the UI renders a `Using {toolName}` fallback.
     """
 
     def __init__(self, websocket: WebSocket, session_id: str = "") -> None:
@@ -234,14 +235,20 @@ class WebSocketBidiOutput:
                     if "toolUseId" in tool_use:
                         event_data["tool_use_id"] = tool_use["toolUseId"]
 
-                    # Generate AI-rephrased description via Mistral (non-blocking)
-                    # and send directly over WebSocket as tool_description event
+                    # Send the raw tool info over the WebSocket as a tool_description
+                    # event. No LLM rephrasing (consistent with the text path) — the
+                    # UI applies a `Using {toolName}` fallback when description is empty.
+                    # Sending inline is safe: no blocking Bedrock call remains, so it
+                    # won't stall the audio event loop.
                     if tool_name and self._session_id:
                         self._tool_invocation_count += 1
-                        import asyncio
-
-                        asyncio.create_task(
-                            self._send_tool_description(tool_name, tool_input)
+                        await self._ws.send_json(
+                            {
+                                "type": "tool_description",
+                                "tool_name": tool_name,
+                                "description": "",
+                                "invocation_number": self._tool_invocation_count,
+                            }
                         )
 
             # Skip noisy lifecycle/usage events that the frontend doesn't need
@@ -260,90 +267,3 @@ class WebSocketBidiOutput:
             await self._ws.send_json(event_data)
         except Exception as e:
             logger.warning(f"Failed to send bidi output event: {e}")
-
-    async def _send_tool_description(self, tool_name: str, tool_input: Any) -> None:
-        """Call Mistral to generate AI-rephrased tool description, then send over WebSocket.
-
-        Runs as a background asyncio task. The blocking boto3 converse() call is
-        offloaded to a thread pool via asyncio.to_thread() to avoid blocking the
-        event loop (which handles audio streaming).
-        """
-        import asyncio
-
-        try:
-            # Offload the blocking Bedrock call to a thread pool
-            description = await asyncio.to_thread(
-                self._call_mistral_sync, tool_name, tool_input
-            )
-
-            if description:
-                logger.info(f"Voice tool description generated: {description}")
-                # Send directly over WebSocket as a tool_description event
-                await self._ws.send_json(
-                    {
-                        "type": "tool_description",
-                        "tool_name": tool_name,
-                        "description": description,
-                        "invocation_number": self._tool_invocation_count,
-                    }
-                )
-        except Exception as err:
-            logger.warning(f"Failed to generate tool description: {err}")
-
-    def _call_mistral_sync(self, tool_name: str, tool_input: Any) -> str | None:
-        """Synchronous Mistral call — runs in thread pool via asyncio.to_thread().
-
-        Returns the AI-rephrased description string, or None on failure.
-        """
-        import os
-
-        import boto3
-
-        # Build the same prompt format as agent-tools-handler Lambda
-        parameters = []
-        if isinstance(tool_input, dict):
-            for param_name, param_value in tool_input.items():
-                parameters.append(
-                    {
-                        "name": param_name,
-                        "type": type(param_value).__name__,
-                        "description": "",
-                        "value": param_value,
-                    }
-                )
-
-        tool_data = json.dumps(
-            {
-                "toolName": tool_name,
-                "toolDescription": "",
-                "parameters": parameters,
-            }
-        )
-
-        sys_prompt = (
-            "You are a UI assistant that explains agent actions to non-technical users.\n\n"
-            "Given a JSON object describing a tool invocation, generate a brief, friendly "
-            "one-sentence description of what the agent is doing.\n\n"
-            "Rules:\n"
-            "- Use simple, everyday language (no technical jargon)\n"
-            "- Keep it under 30 words\n"
-            '- Use present continuous tense ("Looking up...", "Retrieving...", "Checking...")\n'
-            "- Focus on the user benefit or action, not the technical details\n"
-            "- Include relevant parameter values when they add context\n"
-            '- Do not mention "tool", "API", "function", or "parameter"\n\n'
-            "Respond with only the description text, nothing else."
-        )
-
-        bedrock_client = boto3.client(
-            "bedrock-runtime",
-            region_name=os.environ.get("AWS_REGION", "us-east-1"),
-        )
-
-        response = bedrock_client.converse(
-            modelId="mistral.ministral-3-8b-instruct",
-            messages=[{"role": "user", "content": [{"text": tool_data}]}],
-            system=[{"text": sys_prompt}],
-            inferenceConfig={"maxTokens": 1024, "temperature": 0.2},
-        )
-
-        return response["output"]["message"]["content"][0]["text"]

@@ -706,9 +706,9 @@ async def _handle_voice_mode(
     )
 
     # NOTE: BeforeToolCallEvent/AfterToolCallEvent are standard Agent hooks and do NOT
-    # fire in BidiAgent. Tool descriptions for voice mode are handled directly by
-    # WebSocketBidiOutput._send_tool_description() which calls Mistral when it detects
-    # a ToolUseStreamEvent in the output stream.
+    # fire in BidiAgent. Tool descriptions for voice mode are sent directly by
+    # WebSocketBidiOutput as a raw tool_description WS event (no LLM rephrasing) when
+    # it detects a ToolUseStreamEvent in the output stream.
 
     try:
         ws_input = WebSocketBidiInput(websocket)
