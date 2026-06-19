@@ -15,6 +15,7 @@ from .base_constants import RETRIEVE_FROM_KB_PREFIX
 from .kb_types import Citation, RetrievedReference
 
 if TYPE_CHECKING:
+    from concurrent.futures import Future
     from logging import Logger
 
 # Max characters of a single tool-argument value forwarded to the browser. Tool
@@ -248,7 +249,11 @@ class BaseAgentCallbacks:
             coro = self._websocket.send_json(payload)
             if self._ws_loop is not None:
                 # Schedule onto the WS loop from any thread and wake it now.
-                asyncio.run_coroutine_threadsafe(coro, self._ws_loop)
+                # run_coroutine_threadsafe runs the send on the loop, so a failure
+                # there (e.g. the socket closed) lands in the Future, not this
+                # try/except — log it via a done-callback to honour the docstring.
+                future = asyncio.run_coroutine_threadsafe(coro, self._ws_loop)
+                future.add_done_callback(self._log_send_failure)
             else:
                 # Fallback: no captured loop (attach_websocket not used).
                 loop = asyncio.get_event_loop()
@@ -256,6 +261,13 @@ class BaseAgentCallbacks:
                     asyncio.ensure_future(coro)
                 else:
                     loop.run_until_complete(coro)
+        except Exception as ws_err:
+            self._logger.warning(f"Failed to send WebSocket event: {ws_err}")
+
+    def _log_send_failure(self, future: Future) -> None:
+        """Surface an exception raised inside a threadsafe-scheduled send."""
+        try:
+            future.result()
         except Exception as ws_err:
             self._logger.warning(f"Failed to send WebSocket event: {ws_err}")
 
