@@ -32,7 +32,6 @@ AGENT_CORE_RUNTIME_ROLE_ARN = os.environ["AGENT_CORE_RUNTIME_ROLE_ARN"]
 AGENT_CORE_RUNTIME_TABLE = os.environ["AGENT_CORE_RUNTIME_TABLE"]
 TOOL_REGISTRY_TABLE = os.environ["TOOL_REGISTRY_TABLE"]
 MCP_SERVER_REGISTRY_TABLE = os.environ["MCP_SERVER_REGISTRY_TABLE"]
-AGENT_TOOLS_TOPIC_ARN = os.environ["AGENT_TOOLS_TOPIC_ARN"]
 ACCOUNT_ID = os.environ["ACCOUNT_ID"]
 AGENTS_TABLE_NAME = os.environ.get("AGENTS_TABLE_NAME", "")
 AGENTS_SUMMARY_TABLE_NAME = os.environ.get("AGENTS_SUMMARY_TABLE_NAME", "")
@@ -253,7 +252,6 @@ def handler(event: InputModel, _) -> dict:
             "agentName": event.agentName,
             "createdAt": str(created_at),
             "accountId": ACCOUNT_ID,
-            "agentToolsTopicArn": AGENT_TOOLS_TOPIC_ARN,
             "sessionsTableName": os.environ.get("SESSIONS_TABLE_NAME", ""),
             "agentcoreServerProtocol": event.protocol,
         },
