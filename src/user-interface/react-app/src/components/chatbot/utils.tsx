@@ -64,14 +64,17 @@ const MASK = "MASKED";
  * so it cannot rely on word boundaries (a preceding "%3A" ends in a letter).
  *
  * - Account IDs: standalone 12-digit numbers (not part of a longer digit run).
- * - Regions: codes like us-east-1, ap-southeast-2, us-gov-west-1 — a 2-letter
- *   code followed by one or more dash-separated lowercase segments and a digit.
+ * - Regions: real AWS region codes like us-east-1, ap-southeast-2,
+ *   us-gov-west-1 — a known geo prefix, an optional "-gov", a compass segment,
+ *   and a digit. Anchoring to the known prefix/compass set avoids masking
+ *   unrelated dash-digit tokens (e.g. "to-do-1", "created-at-1").
  */
+const AWS_REGION_RE =
+    /(?<![a-z])(?:us|eu|ap|sa|ca|me|af|il|mx|cn)(?:-gov)?-(?:central|north|south|east|west|northeast|northwest|southeast|southwest)-\d(?!\d)/g;
+
 export function maskSensitiveInfo(value: string): string {
     if (!value) return value;
-    return value
-        .replace(/(?<!\d)\d{12}(?!\d)/g, MASK)
-        .replace(/(?<![a-z])[a-z]{2}-(?:[a-z]+-)+\d(?!\d)/g, MASK);
+    return value.replace(/(?<!\d)\d{12}(?!\d)/g, MASK).replace(AWS_REGION_RE, MASK);
 }
 
 /**
@@ -103,8 +106,8 @@ export function appendToolAction(
     const lastMessage = messageHistory[messageHistory.length - 1];
     const actions = lastMessage.toolActions ? [...lastMessage.toolActions] : [];
 
-    // Dedup by invocationNumber (the WS and AppSync paths can both deliver the
-    // same step while both channels are live).
+    // Dedup by invocationNumber — guards against the same step being delivered
+    // more than once over the WebSocket.
     if (actions.some((ta) => ta.invocationNumber === invocationNumber)) {
         return false;
     }

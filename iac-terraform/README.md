@@ -32,7 +32,7 @@ iac-terraform/
     ├── observability/          # X-Ray Transaction Search, CloudWatch Dashboard
     ├── shared/                 # CodeBuild for Lambda layers and TypeScript builds
     ├── user_interface/         # CodeBuild for React app, S3, CloudFront distribution
-    └── websocket_backend/      # Real-time messaging via SNS
+    └── websocket_backend/      # Real-time messaging
 ```
 
 ## Prerequisites
