@@ -48,10 +48,20 @@ export interface Feedback {
     // other?: boolean;
 }
 
+export interface ToolParameter {
+    name: string;
+    // Display-ready value: the backend JSON-encodes non-strings and truncates
+    // long values to a preview before sending.
+    value: string;
+}
+
 export interface ToolActionItem {
     toolAction: string;
     toolName: string;
     invocationNumber: number;
+    // Argument name/value pairs the agent passed to the tool. Optional for
+    // backward compatibility with persisted records that predate this field.
+    parameters?: ToolParameter[];
     // Lifecycle of the tool invocation. Set to "running" when the tool_action
     // event arrives; flipped to "success"/"error" by the paired tool_complete
     // event. Optional for backward compatibility with persisted records that

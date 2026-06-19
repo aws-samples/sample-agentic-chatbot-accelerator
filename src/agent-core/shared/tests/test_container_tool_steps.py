@@ -54,8 +54,8 @@ async def test_before_after_emit_correlated_events(container):
 
     assert [a["invocationNumber"] for a in actions] == [1, 2]
     assert [a["toolName"] for a in actions] == ["search_docs", "get_order"]
-    # tool_action forwards param names only, never values.
-    assert actions[0]["parameters"] == ["query"]
+    # tool_action forwards param name/value pairs so the UI can show args.
+    assert actions[0]["parameters"] == [{"name": "query", "value": "abc"}]
 
     # Each tool_complete matches its action's invocationNumber.
     by_tool = {c["toolName"]: c["invocationNumber"] for c in completes}
