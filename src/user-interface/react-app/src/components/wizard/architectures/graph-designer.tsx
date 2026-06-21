@@ -15,6 +15,7 @@ import {
     Input,
     Select,
     SpaceBetween,
+    StatusIndicator,
     Table,
     Textarea,
     Toggle,
@@ -594,27 +595,45 @@ export default function GraphDesigner({
                                     header: "Agent / Function",
                                     cell: (item) => {
                                         const kind = getNodeKind(item);
-                                        if (kind === "fork") return <Box color="text-status-inactive" fontSize="body-s">built-in</Box>;
+                                        if (kind === "fork")
+                                            return <Box color="text-status-inactive">built-in</Box>;
                                         if (kind === "dynamic_map" && item.dynamicMapConfig) {
                                             const cfg = item.dynamicMapConfig;
-                                            return <Box fontSize="body-s">Send({cfg.sourceKey}) → {cfg.targetNode}</Box>;
+                                            return (
+                                                <Box variant="code">
+                                                    Send({cfg.sourceKey}) → {cfg.targetNode}
+                                                </Box>
+                                            );
                                         }
-                                        if (kind === "deterministic") return <Box fontWeight="bold" fontSize="body-s">{item.deterministicNodeKey}</Box>;
-                                        return <span>{item.agentName}</span>;
+                                        if (kind === "deterministic")
+                                            return (
+                                                <Box variant="code">
+                                                    {item.deterministicNodeKey}
+                                                </Box>
+                                            );
+                                        return <Box>{item.agentName}</Box>;
                                     },
                                 },
                                 {
                                     id: "entryPoint",
                                     header: "Entry Point",
-                                    cell: (item) => (
-                                        <Button
-                                            variant={graphConfig.entryPoint === item.id ? "primary" : "normal"}
-                                            onClick={() => setGraphConfig((prev) => ({ ...prev, entryPoint: item.id }))}
-                                        >
-                                            {graphConfig.entryPoint === item.id ? "✓ Entry" : "Set"}
-                                        </Button>
-                                    ),
-                                    width: 100,
+                                    cell: (item) =>
+                                        graphConfig.entryPoint === item.id ? (
+                                            <StatusIndicator type="success">Entry</StatusIndicator>
+                                        ) : (
+                                            <Button
+                                                variant="inline-link"
+                                                onClick={() =>
+                                                    setGraphConfig((prev) => ({
+                                                        ...prev,
+                                                        entryPoint: item.id,
+                                                    }))
+                                                }
+                                            >
+                                                Set as entry
+                                            </Button>
+                                        ),
+                                    width: 130,
                                 },
                                 {
                                     id: "actions",
@@ -623,11 +642,28 @@ export default function GraphDesigner({
                                         <SpaceBetween direction="horizontal" size="xs">
                                             <Button
                                                 variant="icon"
-                                                iconName={expandedNodeId === item.id ? "angle-up" : "angle-down"}
-                                                onClick={() => setExpandedNodeId(expandedNodeId === item.id ? null : item.id)}
-                                                ariaLabel={expandedNodeId === item.id ? "Collapse settings" : "Expand settings"}
+                                                iconName={
+                                                    expandedNodeId === item.id
+                                                        ? "angle-up"
+                                                        : "angle-down"
+                                                }
+                                                onClick={() =>
+                                                    setExpandedNodeId(
+                                                        expandedNodeId === item.id ? null : item.id,
+                                                    )
+                                                }
+                                                ariaLabel={
+                                                    expandedNodeId === item.id
+                                                        ? "Collapse settings"
+                                                        : "Expand settings"
+                                                }
                                             />
-                                            <Button variant="icon" iconName="close" onClick={() => removeNode(item.id)} ariaLabel="Remove node" />
+                                            <Button
+                                                variant="icon"
+                                                iconName="close"
+                                                onClick={() => removeNode(item.id)}
+                                                ariaLabel="Remove node"
+                                            />
                                         </SpaceBetween>
                                     ),
                                     width: 100,
@@ -637,62 +673,161 @@ export default function GraphDesigner({
                     )}
 
                     {/* Expanded node detail panel */}
-                    {expandedNodeId && (() => {
-                        const item = graphConfig.nodes.find((n) => n.id === expandedNodeId);
-                        if (!item) return null;
-                        const kind = getNodeKind(item);
-                        const isAgent = kind === "agent";
-                        const isDynamicMap = kind === "dynamic_map";
+                    {expandedNodeId &&
+                        (() => {
+                            const item = graphConfig.nodes.find((n) => n.id === expandedNodeId);
+                            if (!item) return null;
+                            const kind = getNodeKind(item);
+                            const isAgent = kind === "agent";
+                            const isDynamicMap = kind === "dynamic_map";
 
-                        return (
-                            <Box padding={{ horizontal: "l", vertical: "m" }}>
-                                <SpaceBetween direction="vertical" size="m">
-                                    <Header variant="h3">Settings for &ldquo;{item.label || item.id}&rdquo;</Header>
-                                    <ColumnLayout columns={isAgent || isDynamicMap ? 2 : 1} variant="text-grid">
-                                        <FormField label="Label" description="Display name for this node">
-                                            <Input value={item.label || ""} onChange={({ detail }) => updateNodeLabel(item.id, detail.value)} placeholder={item.id} />
-                                        </FormField>
-
-                                        {isDynamicMap && item.dynamicMapConfig && (
-                                            <>
-                                                <FormField label="Source Key" description="State field containing the list to fan over">
-                                                    <Input value={item.dynamicMapConfig.sourceKey} onChange={({ detail }) => updateNodeDynamicMapConfig(item.id, "sourceKey", detail.value)} />
-                                                </FormField>
-                                                <FormField label="Target Node" description="Node ID each Send() dispatches to">
-                                                    <Select
-                                                        expandToViewport
-                                                        selectedOption={nodeIdOptions.find((o) => o.value === item.dynamicMapConfig!.targetNode) || { label: item.dynamicMapConfig.targetNode, value: item.dynamicMapConfig.targetNode }}
-                                                        onChange={({ detail }) => updateNodeDynamicMapConfig(item.id, "targetNode", detail.selectedOption?.value || "")}
-                                                        options={nodeIdOptions.filter((o) => o.value !== item.id)}
-                                                    />
-                                                </FormField>
-                                                <FormField label="Item State Key" description="State key set per-branch with each item">
-                                                    <Input value={item.dynamicMapConfig.itemStateKey} onChange={({ detail }) => updateNodeDynamicMapConfig(item.id, "itemStateKey", detail.value)} />
-                                                </FormField>
-                                            </>
-                                        )}
-
-                                        {isAgent && (
-                                            <FormField label="Endpoint" description="Which endpoint/version to invoke">
-                                                <Select
-                                                    expandToViewport
-                                                    selectedOption={getEndpointOptions(item.agentName!).find((o) => o.value === item.endpointName) || { label: item.endpointName, value: item.endpointName }}
-                                                    onChange={({ detail }) => updateNodeEndpoint(item.id, detail.selectedOption?.value || "DEFAULT")}
-                                                    options={getEndpointOptions(item.agentName!)}
+                            return (
+                                <Box padding={{ horizontal: "l", vertical: "m" }}>
+                                    <SpaceBetween direction="vertical" size="m">
+                                        <Header variant="h3">
+                                            Settings for &ldquo;{item.label || item.id}&rdquo;
+                                        </Header>
+                                        <ColumnLayout
+                                            columns={isAgent || isDynamicMap ? 2 : 1}
+                                            variant="text-grid"
+                                        >
+                                            <FormField
+                                                label="Label"
+                                                description="Display name for this node"
+                                            >
+                                                <Input
+                                                    value={item.label || ""}
+                                                    onChange={({ detail }) =>
+                                                        updateNodeLabel(item.id, detail.value)
+                                                    }
+                                                    placeholder={item.id}
                                                 />
                                             </FormField>
-                                        )}
 
-                                        {isAgent && (
-                                            <FormField label="Prompt Template" description="Optional override with {variable} placeholders. Leave empty to use the graph-level prompt.">
-                                                <Textarea value={item.promptTemplate || ""} onChange={({ detail }) => updateNodePromptTemplate(item.id, detail.value)} placeholder="Uses graph prompt by default" rows={4} />
-                                            </FormField>
-                                        )}
-                                    </ColumnLayout>
-                                </SpaceBetween>
-                            </Box>
-                        );
-                    })()}
+                                            {isDynamicMap && item.dynamicMapConfig && (
+                                                <>
+                                                    <FormField
+                                                        label="Source Key"
+                                                        description="State field containing the list to fan over"
+                                                    >
+                                                        <Input
+                                                            value={item.dynamicMapConfig.sourceKey}
+                                                            onChange={({ detail }) =>
+                                                                updateNodeDynamicMapConfig(
+                                                                    item.id,
+                                                                    "sourceKey",
+                                                                    detail.value,
+                                                                )
+                                                            }
+                                                        />
+                                                    </FormField>
+                                                    <FormField
+                                                        label="Target Node"
+                                                        description="Node ID each Send() dispatches to"
+                                                    >
+                                                        <Select
+                                                            expandToViewport
+                                                            selectedOption={
+                                                                nodeIdOptions.find(
+                                                                    (o) =>
+                                                                        o.value ===
+                                                                        item.dynamicMapConfig!
+                                                                            .targetNode,
+                                                                ) || {
+                                                                    label: item.dynamicMapConfig
+                                                                        .targetNode,
+                                                                    value: item.dynamicMapConfig
+                                                                        .targetNode,
+                                                                }
+                                                            }
+                                                            onChange={({ detail }) =>
+                                                                updateNodeDynamicMapConfig(
+                                                                    item.id,
+                                                                    "targetNode",
+                                                                    detail.selectedOption?.value ||
+                                                                        "",
+                                                                )
+                                                            }
+                                                            options={nodeIdOptions.filter(
+                                                                (o) => o.value !== item.id,
+                                                            )}
+                                                        />
+                                                    </FormField>
+                                                    <FormField
+                                                        label="Item State Key"
+                                                        description="State key set per-branch with each item"
+                                                    >
+                                                        <Input
+                                                            value={
+                                                                item.dynamicMapConfig.itemStateKey
+                                                            }
+                                                            onChange={({ detail }) =>
+                                                                updateNodeDynamicMapConfig(
+                                                                    item.id,
+                                                                    "itemStateKey",
+                                                                    detail.value,
+                                                                )
+                                                            }
+                                                        />
+                                                    </FormField>
+                                                </>
+                                            )}
+
+                                            {isAgent && (
+                                                <FormField
+                                                    label="Endpoint"
+                                                    description="Which endpoint/version to invoke"
+                                                >
+                                                    <Select
+                                                        expandToViewport
+                                                        selectedOption={
+                                                            getEndpointOptions(
+                                                                item.agentName!,
+                                                            ).find(
+                                                                (o) =>
+                                                                    o.value === item.endpointName,
+                                                            ) || {
+                                                                label: item.endpointName,
+                                                                value: item.endpointName,
+                                                            }
+                                                        }
+                                                        onChange={({ detail }) =>
+                                                            updateNodeEndpoint(
+                                                                item.id,
+                                                                detail.selectedOption?.value ||
+                                                                    "DEFAULT",
+                                                            )
+                                                        }
+                                                        options={getEndpointOptions(
+                                                            item.agentName!,
+                                                        )}
+                                                    />
+                                                </FormField>
+                                            )}
+
+                                            {isAgent && (
+                                                <FormField
+                                                    label="Prompt Template"
+                                                    description="Optional override with {variable} placeholders. Leave empty to use the graph-level prompt."
+                                                >
+                                                    <Textarea
+                                                        value={item.promptTemplate || ""}
+                                                        onChange={({ detail }) =>
+                                                            updateNodePromptTemplate(
+                                                                item.id,
+                                                                detail.value,
+                                                            )
+                                                        }
+                                                        placeholder="Uses graph prompt by default"
+                                                        rows={4}
+                                                    />
+                                                </FormField>
+                                            )}
+                                        </ColumnLayout>
+                                    </SpaceBetween>
+                                </Box>
+                            );
+                        })()}
                 </SpaceBetween>
             </Container>
 
@@ -704,41 +839,110 @@ export default function GraphDesigner({
                             <Select
                                 placeholder="Select source..."
                                 options={nodeIdOptions.filter((o) => o.value !== newEdgeTarget)}
-                                selectedOption={newEdgeSource ? nodeIdOptions.find((o) => o.value === newEdgeSource) || null : null}
-                                onChange={({ detail }) => setNewEdgeSource(detail.selectedOption?.value || "")}
+                                selectedOption={
+                                    newEdgeSource
+                                        ? nodeIdOptions.find((o) => o.value === newEdgeSource) ||
+                                          null
+                                        : null
+                                }
+                                onChange={({ detail }) =>
+                                    setNewEdgeSource(detail.selectedOption?.value || "")
+                                }
                             />
                         </FormField>
                         <FormField label="Target Node">
                             <Select
                                 placeholder="Select target..."
                                 options={targetOptions.filter((o) => o.value !== newEdgeSource)}
-                                selectedOption={newEdgeTarget ? targetOptions.find((o) => o.value === newEdgeTarget) || null : null}
-                                onChange={({ detail }) => setNewEdgeTarget(detail.selectedOption?.value || "")}
+                                selectedOption={
+                                    newEdgeTarget
+                                        ? targetOptions.find((o) => o.value === newEdgeTarget) ||
+                                          null
+                                        : null
+                                }
+                                onChange={({ detail }) =>
+                                    setNewEdgeTarget(detail.selectedOption?.value || "")
+                                }
                             />
                         </FormField>
                         {newEdgeIsConditional && (
                             <FormField label="Condition Expression">
-                                <Input value={newEdgeCondition} onChange={({ detail }) => setNewEdgeCondition(detail.value)} placeholder="e.g. approved, rejected, done" />
+                                <Input
+                                    value={newEdgeCondition}
+                                    onChange={({ detail }) => setNewEdgeCondition(detail.value)}
+                                    placeholder="e.g. approved, rejected, done"
+                                />
                             </FormField>
                         )}
                         <FormField label=" ">
                             <SpaceBetween direction="horizontal" size="xs">
-                                <Toggle checked={newEdgeIsConditional} onChange={({ detail }) => setNewEdgeIsConditional(detail.checked)}>Conditional</Toggle>
-                                <Button onClick={addEdge} disabled={!newEdgeSource || !newEdgeTarget}>Add Edge</Button>
+                                <Toggle
+                                    checked={newEdgeIsConditional}
+                                    onChange={({ detail }) =>
+                                        setNewEdgeIsConditional(detail.checked)
+                                    }
+                                >
+                                    Conditional
+                                </Toggle>
+                                <Button
+                                    onClick={addEdge}
+                                    disabled={!newEdgeSource || !newEdgeTarget}
+                                >
+                                    Add Edge
+                                </Button>
                             </SpaceBetween>
                         </FormField>
                     </ColumnLayout>
                     {graphConfig.edges.length === 0 ? (
-                        <Alert type="info">No edges defined yet. Add edges to connect your nodes.</Alert>
+                        <Alert type="info">
+                            No edges defined yet. Add edges to connect your nodes.
+                        </Alert>
                     ) : (
                         <Table
                             items={graphConfig.edges.map((e, i) => ({ ...e, _index: i }))}
                             columnDefinitions={[
-                                { id: "source", header: "Source", cell: (item) => graphConfig.nodes.find((n) => n.id === item.source)?.label || item.source, isRowHeader: true },
-                                { id: "arrow", header: "", cell: (item) => (item.condition ? "- - →" : "———→"), width: 60 },
-                                { id: "target", header: "Target", cell: (item) => item.target === "__end__" ? "__end__" : (graphConfig.nodes.find((n) => n.id === item.target)?.label || item.target) },
-                                { id: "condition", header: "Condition", cell: (item) => item.condition || <Box color="text-status-inactive">Unconditional</Box> },
-                                { id: "actions", header: "Actions", cell: (item) => <Button variant="icon" iconName="close" onClick={() => removeEdge(item._index)} /> },
+                                {
+                                    id: "source",
+                                    header: "Source",
+                                    cell: (item) =>
+                                        graphConfig.nodes.find((n) => n.id === item.source)
+                                            ?.label || item.source,
+                                    isRowHeader: true,
+                                },
+                                {
+                                    id: "arrow",
+                                    header: "",
+                                    cell: (item) => (item.condition ? "- - →" : "———→"),
+                                    width: 60,
+                                },
+                                {
+                                    id: "target",
+                                    header: "Target",
+                                    cell: (item) =>
+                                        item.target === "__end__"
+                                            ? "__end__"
+                                            : graphConfig.nodes.find((n) => n.id === item.target)
+                                                  ?.label || item.target,
+                                },
+                                {
+                                    id: "condition",
+                                    header: "Condition",
+                                    cell: (item) =>
+                                        item.condition || (
+                                            <Box color="text-status-inactive">Unconditional</Box>
+                                        ),
+                                },
+                                {
+                                    id: "actions",
+                                    header: "Actions",
+                                    cell: (item) => (
+                                        <Button
+                                            variant="icon"
+                                            iconName="close"
+                                            onClick={() => removeEdge(item._index)}
+                                        />
+                                    ),
+                                },
                             ]}
                         />
                     )}
@@ -747,7 +951,16 @@ export default function GraphDesigner({
 
             {/* ── Graph Preview ────────────────────────────────────────────── */}
             {graphConfig.nodes.length > 0 && graphConfig.edges.length > 0 && (
-                <Container header={<Header variant="h2" description="Live preview of your graph topology. Use the button to switch orientation.">Graph Preview</Header>}>
+                <Container
+                    header={
+                        <Header
+                            variant="h2"
+                            description="Live preview of your graph topology. Use the button to switch orientation."
+                        >
+                            Graph Preview
+                        </Header>
+                    }
+                >
                     <GraphMinimap graphConfig={graphConfig} />
                 </Container>
             )}
@@ -758,14 +971,18 @@ export default function GraphDesigner({
                     <Box color="text-body-secondary">
                         Choose how to define the shared state that flows through the graph. Use{" "}
                         <b>Custom</b> to define flat fields manually, or select a <b>Predefined</b>{" "}
-                        state class for complex pipelines with typed structures, reducers, and nested types.
+                        state class for complex pipelines with typed structures, reducers, and
+                        nested types.
                     </Box>
 
                     <FormField label="State Mode">
                         <Select
                             selectedOption={
                                 graphConfig.stateClass
-                                    ? { label: `Predefined: ${availableStateClasses.find((s) => s.key === graphConfig.stateClass)?.label || graphConfig.stateClass}`, value: graphConfig.stateClass }
+                                    ? {
+                                          label: `Predefined: ${availableStateClasses.find((s) => s.key === graphConfig.stateClass)?.label || graphConfig.stateClass}`,
+                                          value: graphConfig.stateClass,
+                                      }
                                     : { label: "Custom (define flat fields)", value: "__custom__" }
                             }
                             onChange={({ detail }) => {
@@ -776,37 +993,67 @@ export default function GraphDesigner({
                                         return { ...rest, stateClass: undefined };
                                     });
                                 } else {
-                                    setGraphConfig((prev) => ({ ...prev, stateSchema: {}, stateClass: val }));
+                                    setGraphConfig((prev) => ({
+                                        ...prev,
+                                        stateSchema: {},
+                                        stateClass: val,
+                                    }));
                                 }
                             }}
                             options={[
-                                { label: "Custom (define flat fields)", value: "__custom__", description: "Define simple state fields with primitive types (str, int, dict, ...)" },
-                                ...availableStateClasses.map((sc) => ({ label: sc.label, value: sc.key, description: sc.description })),
+                                {
+                                    label: "Custom (define flat fields)",
+                                    value: "__custom__",
+                                    description:
+                                        "Define simple state fields with primitive types (str, int, dict, ...)",
+                                },
+                                ...availableStateClasses.map((sc) => ({
+                                    label: sc.label,
+                                    value: sc.key,
+                                    description: sc.description,
+                                })),
                             ]}
                         />
                     </FormField>
 
-                    {graphConfig.stateClass && (() => {
-                        const selected = availableStateClasses.find((s) => s.key === graphConfig.stateClass);
-                        if (!selected) return null;
-                        return (
-                            <Alert type="info" header={`${selected.label} (${selected.key})`}>
-                                <p>{selected.description}</p>
-                                <Box margin={{ top: "xs" }}><b>Fields:</b> <span style={{ fontFamily: "monospace" }}>{selected.fields.join(", ")}</span></Box>
-                            </Alert>
-                        );
-                    })()}
+                    {graphConfig.stateClass &&
+                        (() => {
+                            const selected = availableStateClasses.find(
+                                (s) => s.key === graphConfig.stateClass,
+                            );
+                            if (!selected) return null;
+                            return (
+                                <Alert type="info" header={`${selected.label} (${selected.key})`}>
+                                    <p>{selected.description}</p>
+                                    <Box margin={{ top: "xs" }}>
+                                        <b>Fields:</b>{" "}
+                                        <span style={{ fontFamily: "monospace" }}>
+                                            {selected.fields.join(", ")}
+                                        </span>
+                                    </Box>
+                                </Alert>
+                            );
+                        })()}
 
                     {!graphConfig.stateClass && (
                         <>
                             <ColumnLayout columns={3}>
                                 <FormField label="Field Name">
-                                    <Input value={newFieldName} onChange={({ detail }) => setNewFieldName(detail.value)} placeholder="e.g. messages" />
+                                    <Input
+                                        value={newFieldName}
+                                        onChange={({ detail }) => setNewFieldName(detail.value)}
+                                        placeholder="e.g. messages"
+                                    />
                                 </FormField>
                                 <FormField label="Field Type">
                                     <Select
-                                        selectedOption={{ label: newFieldType, value: newFieldType }}
-                                        onChange={({ detail }) => setNewFieldType(detail.selectedOption?.value || "str")}
+                                        selectedOption={{
+                                            label: newFieldType,
+                                            value: newFieldType,
+                                        }}
+                                        onChange={({ detail }) =>
+                                            setNewFieldType(detail.selectedOption?.value || "str")
+                                        }
                                         options={[
                                             { label: "str", value: "str" },
                                             { label: "int", value: "int" },
@@ -818,18 +1065,44 @@ export default function GraphDesigner({
                                     />
                                 </FormField>
                                 <FormField label=" ">
-                                    <Button onClick={addSchemaField} disabled={!newFieldName.trim()}>Add Field</Button>
+                                    <Button
+                                        onClick={addSchemaField}
+                                        disabled={!newFieldName.trim()}
+                                    >
+                                        Add Field
+                                    </Button>
                                 </FormField>
                             </ColumnLayout>
                             {stateSchemaEntries.length === 0 ? (
-                                <Alert type="info">No state fields defined. The graph will use a default messages-only state.</Alert>
+                                <Alert type="info">
+                                    No state fields defined. The graph will use a default
+                                    messages-only state.
+                                </Alert>
                             ) : (
                                 <Table
-                                    items={stateSchemaEntries.map(([name, type]) => ({ name, type }))}
+                                    items={stateSchemaEntries.map(([name, type]) => ({
+                                        name,
+                                        type,
+                                    }))}
                                     columnDefinitions={[
-                                        { id: "name", header: "Field Name", cell: (item) => item.name, isRowHeader: true },
+                                        {
+                                            id: "name",
+                                            header: "Field Name",
+                                            cell: (item) => item.name,
+                                            isRowHeader: true,
+                                        },
                                         { id: "type", header: "Type", cell: (item) => item.type },
-                                        { id: "actions", header: "Actions", cell: (item) => <Button variant="icon" iconName="close" onClick={() => removeSchemaField(item.name)} /> },
+                                        {
+                                            id: "actions",
+                                            header: "Actions",
+                                            cell: (item) => (
+                                                <Button
+                                                    variant="icon"
+                                                    iconName="close"
+                                                    onClick={() => removeSchemaField(item.name)}
+                                                />
+                                            ),
+                                        },
                                     ]}
                                 />
                             )}
@@ -842,14 +1115,18 @@ export default function GraphDesigner({
             {validationErrors.length > 0 && (
                 <Alert type="error" header="Validation Errors">
                     <ul style={{ margin: 0, paddingLeft: "1.2em" }}>
-                        {validationErrors.map((err, i) => <li key={i}>{err}</li>)}
+                        {validationErrors.map((err, i) => (
+                            <li key={i}>{err}</li>
+                        ))}
                     </ul>
                 </Alert>
             )}
             {warnings.length > 0 && (
                 <Alert type="warning" header="Warnings">
                     <ul style={{ margin: 0, paddingLeft: "1.2em" }}>
-                        {warnings.map((w, i) => <li key={i}>{w}</li>)}
+                        {warnings.map((w, i) => (
+                            <li key={i}>{w}</li>
+                        ))}
                     </ul>
                 </Alert>
             )}
