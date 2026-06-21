@@ -4,22 +4,24 @@
 // SPDX-License-Identifier: MIT-0
 // ----------------------------------------------------------------------
 import {
+    Alert,
     Box,
+    BreadcrumbGroup,
     Button,
     ColumnLayout,
     ExpandableSection,
     FormField,
+    Link,
     Modal,
     Select,
     SpaceBetween,
     StatusIndicator,
     Table,
-    Textarea,
 } from "@cloudscape-design/components";
 import CopyToClipboard from "@cloudscape-design/components/copy-to-clipboard";
 import { generateClient } from "aws-amplify/api";
 import { useContext, useEffect, useState } from "react";
-import { McpServer } from "../../../API";
+import { McpServer, RuntimeSummary } from "../../../API";
 import { AppContext } from "../../../common/app-context";
 import { listAvailableMcpServers as listAvailableMcpServersQuery } from "../../../graphql/queries";
 import GraphMinimap from "../../wizard/architectures/graph-minimap";
@@ -58,43 +60,159 @@ interface VersionInfo {
     qualifiers: string[];
 }
 
+// One step in the drill-down navigation. stack[0] is the agent the user opened
+// from the table; the top of the stack is the agent currently displayed.
+interface NavFrame {
+    agentName: string;
+    agentRuntimeId?: string; // needed to fetch versions; absent if unresolved
+    versions: VersionInfo[];
+    selectedVersion: string;
+    // Set when this frame was reached by drilling into a reference: the view is
+    // pinned to this referenced endpoint (read-only) instead of offering a free
+    // version selector. Absent for the root frame opened from the table.
+    pinnedEndpoint?: string;
+    config: AgentCoreRuntimeConfiguration | null;
+    error: string | null;
+}
+
 interface ViewVersionModalProps {
     visible: boolean;
     onDismiss: () => void;
     agentName: string;
+    agentRuntimeId: string;
     versions: VersionInfo[];
-    onVersionSelect: (version: string) => Promise<AgentCoreRuntimeConfiguration>;
+    agents: RuntimeSummary[];
+    onVersionSelect: (agentName: string, version: string) => Promise<AgentCoreRuntimeConfiguration>;
 }
 
 export default function ViewVersionModal({
     visible,
     onDismiss,
     agentName,
+    agentRuntimeId,
     versions,
+    agents,
     onVersionSelect,
 }: ViewVersionModalProps) {
     const appContext = useContext(AppContext);
 
-    const [selectedVersion, setSelectedVersion] = useState<string>("");
-    const [agentConfig, setAgentConfig] = useState<AgentCoreRuntimeConfiguration | null>(null);
+    const [stack, setStack] = useState<NavFrame[]>([]);
     const [loadingConfig, setLoadingConfig] = useState(false);
     const [availableMcpServers, setAvailableMcpServers] = useState<McpServer[]>([]);
 
-    const handleVersionChange = async (version: string) => {
-        if (!version) return;
+    const current = stack.length > 0 ? stack[stack.length - 1] : null;
+    const agentConfig = current?.config ?? null;
+    const selectedVersion = current?.selectedVersion ?? "";
 
-        setSelectedVersion(version);
-        setLoadingConfig(true);
+    // Merge a patch into the currently displayed (top) frame.
+    const updateTopFrame = (patch: Partial<NavFrame>) => {
+        setStack((prev) => {
+            if (prev.length === 0) return prev;
+            const next = [...prev];
+            next[next.length - 1] = { ...next[next.length - 1], ...patch };
+            return next;
+        });
+    };
 
+    // Load a config for a given agent + version, normalizing fetch failures into
+    // a frame-level error string (instead of a blank modal body).
+    const loadConfig = async (name: string, version: string) => {
         try {
-            const config = await onVersionSelect(version);
-            setAgentConfig(config);
+            const config = await onVersionSelect(name, version);
+            return { config, error: null as string | null };
         } catch (error) {
             console.error("Failed to load agent config:", error);
-            setAgentConfig(null);
+            return { config: null, error: "Failed to load configuration for this version." };
+        }
+    };
+
+    const handleVersionChange = async (version: string) => {
+        if (!version || !current) return;
+
+        const name = current.agentName;
+        updateTopFrame({ selectedVersion: version, error: null });
+        setLoadingConfig(true);
+        const { config, error } = await loadConfig(name, version);
+        updateTopFrame({ config, error });
+        setLoadingConfig(false);
+    };
+
+    // ---- Reference resolution (Part B2) --------------------------------
+    // Swarm / Graph references carry an agentName directly; Agents-as-Tools
+    // carries a runtimeId that is either the HTTP id (just-added) or the A2A
+    // twin ARN (persisted) — match both shapes.
+    const findRuntimeByName = (name: string): RuntimeSummary | null =>
+        agents.find((a) => a.agentName === name) ?? null;
+
+    const findRuntimeById = (id: string): RuntimeSummary | null =>
+        agents.find((a) => a.agentRuntimeId === id || a.agentRuntimeArnA2A === id) ?? null;
+
+    const getAgentNameByRuntimeId = (id: string): string => findRuntimeById(id)?.agentName ?? id;
+
+    // Push a sub-agent onto the stack and load its config. A reference targets a
+    // specific endpoint, so the pushed frame is pinned to it (Part B3): we resolve
+    // endpoint → version and lock the view rather than offering a version selector.
+    const drillInto = async (runtime: RuntimeSummary, endpointName?: string) => {
+        setLoadingConfig(true);
+        try {
+            const qtv = JSON.parse(runtime.qualifierToVersion || "{}");
+            // The endpoint named on the reference, defaulting to DEFAULT.
+            const pinnedEndpoint = endpointName || "DEFAULT";
+            const version = qtv[pinnedEndpoint] ?? qtv["DEFAULT"] ?? Object.values(qtv)[0] ?? "";
+            const { config, error } = await loadConfig(runtime.agentName, String(version));
+            setStack((prev) => [
+                ...prev,
+                {
+                    agentName: runtime.agentName,
+                    agentRuntimeId: runtime.agentRuntimeId,
+                    versions: [],
+                    selectedVersion: String(version),
+                    pinnedEndpoint,
+                    config,
+                    error,
+                },
+            ]);
+        } catch (error) {
+            console.error("Failed to drill into sub-agent:", error);
+            // Keep the parent intact; surface the failure in the pushed frame.
+            setStack((prev) => [
+                ...prev,
+                {
+                    agentName: runtime.agentName,
+                    agentRuntimeId: runtime.agentRuntimeId,
+                    versions: [],
+                    selectedVersion: "",
+                    pinnedEndpoint: endpointName || "DEFAULT",
+                    config: null,
+                    error: "Failed to load this sub-agent.",
+                },
+            ]);
         } finally {
             setLoadingConfig(false);
         }
+    };
+
+    const goBack = () => setStack((prev) => prev.slice(0, -1));
+    const popTo = (index: number) => setStack((prev) => prev.slice(0, index + 1));
+
+    // A reference is drillable only if it resolves to a runtime in this account.
+    // Otherwise (deleted, cross-account, raw runtimeId) render a non-clickable hint.
+    const renderAgentRef = (
+        displayName: string,
+        runtime: RuntimeSummary | null,
+        endpointName?: string,
+    ): React.ReactNode => {
+        if (runtime) {
+            return <Link onFollow={() => drillInto(runtime, endpointName)}>{displayName}</Link>;
+        }
+        return (
+            <SpaceBetween direction="horizontal" size="xs" alignItems="center">
+                <Box display="inline">{displayName}</Box>
+                <Box color="text-status-inactive" fontSize="body-s" display="inline">
+                    (sub-agent no longer available)
+                </Box>
+            </SpaceBetween>
+        );
     };
 
     const getModelName = (modelId: string) => {
@@ -169,15 +287,38 @@ export default function ViewVersionModal({
         }
     }, [visible]);
 
+    // Initialize the navigation stack with the opened (root) agent.
     useEffect(() => {
-        if (visible && versions.length > 0 && !selectedVersion) {
-            // First try to find a version with DEFAULT qualifier
+        if (visible && versions.length > 0 && stack.length === 0) {
             const defaultVersion = versions.find((v) => v.qualifiers.includes("DEFAULT"));
-
             const versionToSelect = defaultVersion ? defaultVersion.version : versions[0].version;
-            handleVersionChange(versionToSelect);
+
+            const initRoot = async () => {
+                setStack([
+                    {
+                        agentName,
+                        agentRuntimeId,
+                        versions,
+                        selectedVersion: versionToSelect,
+                        config: null,
+                        error: null,
+                    },
+                ]);
+                setLoadingConfig(true);
+                const { config, error } = await loadConfig(agentName, versionToSelect);
+                updateTopFrame({ config, error });
+                setLoadingConfig(false);
+            };
+
+            initRoot();
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [visible, versions]);
+
+    const handleDismiss = () => {
+        setStack([]);
+        onDismiss();
+    };
 
     // Recursive function to render parameter values
     const renderValue = (value: unknown, depth: number = 0): React.ReactNode => {
@@ -248,6 +389,41 @@ export default function ViewVersionModal({
         return <Box display="inline">{String(value)}</Box>;
     };
 
+    // Map a list of MCP server names to display rows with descriptions.
+    const buildMcpItems = (servers: string[]) =>
+        servers.map((serverName) => {
+            const serverInfo = availableMcpServers.find((s) => s.name === serverName);
+            return {
+                name: serverName,
+                description: serverInfo?.description || "No description available",
+            };
+        });
+
+    type McpServerRow = { name: string; description: string };
+    const mcpServerColumns = [
+        {
+            id: "name",
+            header: "Server Name",
+            cell: (item: McpServerRow) => item.name,
+            isRowHeader: true,
+        },
+        {
+            id: "description",
+            header: "Description",
+            cell: (item: McpServerRow) => (
+                <Box
+                    color={
+                        item.description === "No description available"
+                            ? "text-status-inactive"
+                            : undefined
+                    }
+                >
+                    {item.description}
+                </Box>
+            ),
+        },
+    ];
+
     const isSwarm = agentConfig && isSwarmConfig(agentConfig);
     const isAgentsAsTools =
         agentConfig &&
@@ -263,67 +439,108 @@ export default function ViewVersionModal({
               }))
             : [];
 
-    // Get MCP server details for configured servers
+    // Get MCP server details for configured servers (single-agent branch)
     const mcpServerTableItems =
-        !isSwarm && agentConfig?.mcpServers
-            ? agentConfig.mcpServers.map((serverName) => {
-                  const serverInfo = availableMcpServers.find((s) => s.name === serverName);
-                  return {
-                      name: serverName,
-                      description: serverInfo?.description || "No description available",
-                  };
-              })
-            : [];
+        !isSwarm && agentConfig?.mcpServers ? buildMcpItems(agentConfig.mcpServers) : [];
 
     return (
         <Modal
             visible={visible}
-            onDismiss={onDismiss}
-            header={`View Agent: ${agentName}`}
+            onDismiss={handleDismiss}
+            header={`View Agent: ${current?.agentName ?? agentName}`}
             size="max"
             footer={
                 <Box float="right">
-                    <Button onClick={onDismiss}>Close</Button>
+                    <Button onClick={handleDismiss}>Close</Button>
                 </Box>
             }
         >
             <SpaceBetween direction="vertical" size="l">
-                <FormField label="Version" constraintText="Select version to view details">
-                    <Select
-                        selectedOption={
-                            selectedVersion
-                                ? (() => {
-                                      const foundVersion = versions.find(
-                                          (v) => v.version === selectedVersion,
-                                      );
-                                      const hasQualifiers =
-                                          foundVersion?.qualifiers &&
-                                          foundVersion.qualifiers.length > 0;
-                                      return {
-                                          label: hasQualifiers
-                                              ? `${selectedVersion} (${foundVersion.qualifiers.join(", ")})`
-                                              : selectedVersion,
-                                          value: selectedVersion,
-                                      };
-                                  })()
-                                : null
-                        }
-                        onChange={({ detail }) =>
-                            handleVersionChange(detail.selectedOption?.value || "")
-                        }
-                        options={versions.map((v) => ({
-                            label:
-                                v.qualifiers.length > 0
-                                    ? `${v.version} (${v.qualifiers.join(", ")})`
-                                    : v.version,
-                            value: v.version,
-                        }))}
-                        placeholder="Select version"
-                    />
-                </FormField>
+                {/* Drill-down trail: breadcrumb + Back, shown only once nested */}
+                {stack.length > 1 && (
+                    <SpaceBetween direction="vertical" size="xs">
+                        <BreadcrumbGroup
+                            ariaLabel="Sub-agent navigation"
+                            items={stack.map((f, i) => ({
+                                text: f.agentName,
+                                href: String(i),
+                            }))}
+                            onFollow={(event) => {
+                                event.preventDefault();
+                                const index = parseInt(event.detail.href, 10);
+                                if (!Number.isNaN(index)) popTo(index);
+                            }}
+                        />
+                        <Box>
+                            <Button iconName="angle-left" onClick={goBack}>
+                                Back to {stack[stack.length - 2].agentName}
+                            </Button>
+                        </Box>
+                    </SpaceBetween>
+                )}
+
+                {current?.pinnedEndpoint ? (
+                    // Drilled-in via a reference: the reference targets a specific
+                    // endpoint, so the view is locked to it (read-only).
+                    <FormField
+                        label="Endpoint"
+                        constraintText="Pinned to the endpoint referenced by the parent agent"
+                    >
+                        <Box padding={{ top: "xxs" }}>
+                            <SpaceBetween direction="horizontal" size="xs" alignItems="center">
+                                <Box variant="awsui-key-label" display="inline">
+                                    {current.pinnedEndpoint}
+                                </Box>
+                                {selectedVersion && (
+                                    <Box color="text-status-inactive" display="inline">
+                                        (v{selectedVersion})
+                                    </Box>
+                                )}
+                            </SpaceBetween>
+                        </Box>
+                    </FormField>
+                ) : (
+                    <FormField label="Version" constraintText="Select version to view details">
+                        <Select
+                            selectedOption={
+                                selectedVersion
+                                    ? (() => {
+                                          const foundVersion = current?.versions.find(
+                                              (v) => v.version === selectedVersion,
+                                          );
+                                          const hasQualifiers =
+                                              foundVersion?.qualifiers &&
+                                              foundVersion.qualifiers.length > 0;
+                                          return {
+                                              label: hasQualifiers
+                                                  ? `${selectedVersion} (${foundVersion!.qualifiers.join(", ")})`
+                                                  : selectedVersion,
+                                              value: selectedVersion,
+                                          };
+                                      })()
+                                    : null
+                            }
+                            onChange={({ detail }) =>
+                                handleVersionChange(detail.selectedOption?.value || "")
+                            }
+                            options={(current?.versions ?? []).map((v) => ({
+                                label:
+                                    v.qualifiers.length > 0
+                                        ? `${v.version} (${v.qualifiers.join(", ")})`
+                                        : v.version,
+                                value: v.version,
+                            }))}
+                            placeholder="Select version"
+                        />
+                    </FormField>
+                )}
+
+                {current?.error && <Alert type="error">{current.error}</Alert>}
 
                 {loadingConfig ? (
-                    <Box textAlign="center">Loading configuration...</Box>
+                    <Box textAlign="center">
+                        <StatusIndicator type="loading">Loading configuration</StatusIndicator>
+                    </Box>
                 ) : agentConfig ? (
                     isSwarmConfig(agentConfig) ? (
                         <SpaceBetween direction="vertical" size="m">
@@ -332,50 +549,151 @@ export default function ViewVersionModal({
                             </FormField>
 
                             <FormField label="AgentCore Memory">
-                                <Box padding="m">
-                                    {renderMemoryStatus((agentConfig as any).useMemory)}
-                                </Box>
+                                <Box padding="m">{renderMemoryStatus(agentConfig.useMemory)}</Box>
                             </FormField>
 
                             {agentConfig.agents && agentConfig.agents.length > 0 && (
                                 <FormField label="Inline Agents">
-                                    <Table
-                                        items={agentConfig.agents}
-                                        columnDefinitions={[
-                                            {
-                                                id: "name",
-                                                header: "Name",
-                                                cell: (item: any) => item.name,
-                                                isRowHeader: true,
-                                            },
-                                            {
-                                                id: "model",
-                                                header: "Model",
-                                                cell: (item: any) =>
-                                                    getModelName(
-                                                        item.modelInferenceParameters?.modelId ||
-                                                            "",
-                                                    ),
-                                            },
-                                            {
-                                                id: "thinking",
-                                                header: "Thinking",
-                                                cell: (item: any) =>
-                                                    renderThinkingStatus(
-                                                        item.modelInferenceParameters
-                                                            ?.reasoningBudget,
-                                                    ),
-                                            },
-                                            {
-                                                id: "tools",
-                                                header: "Tools",
-                                                cell: (item: any) =>
-                                                    item.tools?.length > 0
-                                                        ? item.tools.join(", ")
-                                                        : "None",
-                                            },
-                                        ]}
-                                    />
+                                    <SpaceBetween direction="vertical" size="xs">
+                                        {agentConfig.agents.map((inlineAgent, idx) => {
+                                            const params =
+                                                inlineAgent.modelInferenceParameters?.parameters;
+                                            const inlineMcp = buildMcpItems(
+                                                inlineAgent.mcpServers || [],
+                                            );
+                                            const inlineToolParams =
+                                                inlineAgent.toolParameters || {};
+                                            return (
+                                                <ExpandableSection
+                                                    key={idx}
+                                                    variant="container"
+                                                    headerText={inlineAgent.name}
+                                                >
+                                                    <SpaceBetween direction="vertical" size="m">
+                                                        <ColumnLayout
+                                                            columns={4}
+                                                            variant="text-grid"
+                                                        >
+                                                            <div>
+                                                                <Box variant="awsui-key-label">
+                                                                    Model
+                                                                </Box>
+                                                                <Box>
+                                                                    {getModelName(
+                                                                        inlineAgent
+                                                                            .modelInferenceParameters
+                                                                            ?.modelId || "",
+                                                                    )}
+                                                                </Box>
+                                                            </div>
+                                                            <div>
+                                                                <Box variant="awsui-key-label">
+                                                                    Temperature
+                                                                </Box>
+                                                                <Box>
+                                                                    {params?.temperature ?? "N/A"}
+                                                                </Box>
+                                                            </div>
+                                                            <div>
+                                                                <Box variant="awsui-key-label">
+                                                                    Max Tokens
+                                                                </Box>
+                                                                <Box>
+                                                                    {params?.maxTokens ?? "N/A"}
+                                                                </Box>
+                                                            </div>
+                                                            <div>
+                                                                <Box variant="awsui-key-label">
+                                                                    Thinking
+                                                                </Box>
+                                                                <Box>
+                                                                    {renderThinkingStatus(
+                                                                        inlineAgent
+                                                                            .modelInferenceParameters
+                                                                            ?.reasoningBudget,
+                                                                    )}
+                                                                </Box>
+                                                            </div>
+                                                        </ColumnLayout>
+
+                                                        <div>
+                                                            <Box variant="awsui-key-label">
+                                                                Tools
+                                                            </Box>
+                                                            <Box>
+                                                                {inlineAgent.tools?.length > 0
+                                                                    ? inlineAgent.tools.join(", ")
+                                                                    : "None"}
+                                                            </Box>
+                                                        </div>
+
+                                                        {inlineMcp.length > 0 && (
+                                                            <div>
+                                                                <Box variant="awsui-key-label">
+                                                                    MCP Servers
+                                                                </Box>
+                                                                <Table
+                                                                    variant="embedded"
+                                                                    items={inlineMcp}
+                                                                    columnDefinitions={
+                                                                        mcpServerColumns
+                                                                    }
+                                                                />
+                                                            </div>
+                                                        )}
+
+                                                        {Object.keys(inlineToolParams).length >
+                                                            0 && (
+                                                            <div>
+                                                                <Box variant="awsui-key-label">
+                                                                    Tool Parameters
+                                                                </Box>
+                                                                {renderValue(inlineToolParams)}
+                                                            </div>
+                                                        )}
+
+                                                        <FormField
+                                                            label={
+                                                                <SpaceBetween
+                                                                    direction="horizontal"
+                                                                    size="xs"
+                                                                    alignItems="center"
+                                                                >
+                                                                    <span>Instructions</span>
+                                                                    <CopyToClipboard
+                                                                        textToCopy={
+                                                                            inlineAgent.instructions ||
+                                                                            ""
+                                                                        }
+                                                                        variant="icon"
+                                                                        copySuccessText="Instructions copied"
+                                                                        copyErrorText="Failed to copy"
+                                                                    />
+                                                                </SpaceBetween>
+                                                            }
+                                                        >
+                                                            <ExpandableSection
+                                                                headerText="Show instructions"
+                                                                defaultExpanded={false}
+                                                            >
+                                                                <Box padding="m" variant="code">
+                                                                    <pre
+                                                                        style={{
+                                                                            margin: 0,
+                                                                            whiteSpace: "pre-wrap",
+                                                                            wordWrap: "break-word",
+                                                                        }}
+                                                                    >
+                                                                        {inlineAgent.instructions}
+                                                                    </pre>
+                                                                </Box>
+                                                            </ExpandableSection>
+                                                        </FormField>
+                                                    </SpaceBetween>
+                                                </ExpandableSection>
+                                            );
+                                        })}
+                                    </SpaceBetween>
                                 </FormField>
                             )}
 
@@ -388,7 +706,12 @@ export default function ViewVersionModal({
                                                 {
                                                     id: "agentName",
                                                     header: "Agent Name",
-                                                    cell: (item: any) => item.agentName,
+                                                    cell: (item: any) =>
+                                                        renderAgentRef(
+                                                            item.agentName,
+                                                            findRuntimeByName(item.agentName),
+                                                            item.endpointName,
+                                                        ),
                                                     isRowHeader: true,
                                                 },
                                                 {
@@ -492,12 +815,39 @@ export default function ViewVersionModal({
                                 <Box padding="m">{renderMemoryStatus(agentConfig.useMemory)}</Box>
                             </FormField>
 
-                            <FormField label="Orchestrator Instructions">
-                                <Textarea
-                                    value={agentConfig.instructions || ""}
-                                    disabled
-                                    rows={6}
-                                />
+                            <FormField
+                                label={
+                                    <SpaceBetween
+                                        direction="horizontal"
+                                        size="xs"
+                                        alignItems="center"
+                                    >
+                                        <span>Orchestrator Instructions</span>
+                                        <CopyToClipboard
+                                            textToCopy={agentConfig.instructions || ""}
+                                            variant="icon"
+                                            copySuccessText="Instructions copied"
+                                            copyErrorText="Failed to copy"
+                                        />
+                                    </SpaceBetween>
+                                }
+                            >
+                                <ExpandableSection
+                                    headerText="Show instructions"
+                                    defaultExpanded={false}
+                                >
+                                    <Box padding="m" variant="code">
+                                        <pre
+                                            style={{
+                                                margin: 0,
+                                                whiteSpace: "pre-wrap",
+                                                wordWrap: "break-word",
+                                            }}
+                                        >
+                                            {agentConfig.instructions}
+                                        </pre>
+                                    </Box>
+                                </ExpandableSection>
                             </FormField>
 
                             {agentConfig.agentsAsTools && agentConfig.agentsAsTools.length > 0 && (
@@ -506,20 +856,20 @@ export default function ViewVersionModal({
                                         items={agentConfig.agentsAsTools}
                                         columnDefinitions={[
                                             {
-                                                id: "runtimeId",
-                                                header: "Runtime ID",
-                                                cell: (item: any) => item.runtimeId,
+                                                id: "agentName",
+                                                header: "Agent",
+                                                cell: (item: any) =>
+                                                    renderAgentRef(
+                                                        getAgentNameByRuntimeId(item.runtimeId),
+                                                        findRuntimeById(item.runtimeId),
+                                                        item.endpoint,
+                                                    ),
                                                 isRowHeader: true,
                                             },
                                             {
                                                 id: "endpoint",
                                                 header: "Endpoint",
                                                 cell: (item: any) => item.endpoint || "DEFAULT",
-                                            },
-                                            {
-                                                id: "role",
-                                                header: "Role",
-                                                cell: (item: any) => item.role || "-",
                                             },
                                         ]}
                                     />
@@ -560,6 +910,15 @@ export default function ViewVersionModal({
                                 </FormField>
                             )}
 
+                            {agentConfig.mcpServers && agentConfig.mcpServers.length > 0 && (
+                                <FormField label="MCP Servers">
+                                    <Table
+                                        items={buildMcpItems(agentConfig.mcpServers)}
+                                        columnDefinitions={mcpServerColumns}
+                                    />
+                                </FormField>
+                            )}
+
                             {agentConfig.conversationManager && (
                                 <FormField label="Conversation Manager">
                                     <Box padding="m">{agentConfig.conversationManager}</Box>
@@ -573,9 +932,7 @@ export default function ViewVersionModal({
                             </FormField>
 
                             <FormField label="AgentCore Memory">
-                                <Box padding="m">
-                                    {renderMemoryStatus((agentConfig as any).useMemory)}
-                                </Box>
+                                <Box padding="m">{renderMemoryStatus(agentConfig.useMemory)}</Box>
                             </FormField>
 
                             {agentConfig.nodes && agentConfig.nodes.length > 0 && (
@@ -593,7 +950,13 @@ export default function ViewVersionModal({
                                                 id: "agentName",
                                                 header: "Agent",
                                                 cell: (item: any) =>
-                                                    item.agentName || (
+                                                    item.agentName ? (
+                                                        renderAgentRef(
+                                                            item.agentName,
+                                                            findRuntimeByName(item.agentName),
+                                                            item.endpointName,
+                                                        )
+                                                    ) : (
                                                         <Box color="text-status-inactive">
                                                             {item.deterministicNodeKey ||
                                                                 item.nodeType ||
@@ -610,6 +973,19 @@ export default function ViewVersionModal({
                                                 id: "label",
                                                 header: "Label",
                                                 cell: (item: any) => item.label || "-",
+                                            },
+                                            {
+                                                id: "dynamicMap",
+                                                header: "Dynamic Map",
+                                                cell: (item: any) =>
+                                                    item.dynamicMapConfig ? (
+                                                        <Box fontSize="body-s">
+                                                            {item.dynamicMapConfig.sourceKey} →{" "}
+                                                            {item.dynamicMapConfig.targetNode}
+                                                        </Box>
+                                                    ) : (
+                                                        <Box color="text-status-inactive">-</Box>
+                                                    ),
                                             },
                                             {
                                                 id: "promptTemplate",
@@ -641,14 +1017,73 @@ export default function ViewVersionModal({
                                 </FormField>
                             )}
 
+                            {agentConfig.edges && agentConfig.edges.length > 0 && (
+                                <FormField label="Edges">
+                                    <Table
+                                        items={agentConfig.edges}
+                                        columnDefinitions={[
+                                            {
+                                                id: "source",
+                                                header: "Source",
+                                                cell: (item: any) => item.source,
+                                                isRowHeader: true,
+                                            },
+                                            {
+                                                id: "target",
+                                                header: "Target",
+                                                cell: (item: any) => item.target,
+                                            },
+                                            {
+                                                id: "condition",
+                                                header: "Condition",
+                                                cell: (item: any) =>
+                                                    item.condition || (
+                                                        <Box color="text-status-inactive">-</Box>
+                                                    ),
+                                            },
+                                        ]}
+                                    />
+                                </FormField>
+                            )}
+
+                            <FormField label="Graph State">
+                                <Box padding="m">
+                                    {agentConfig.stateClass ? (
+                                        <div>
+                                            <Box variant="awsui-key-label">State Class</Box>
+                                            <Box>{agentConfig.stateClass}</Box>
+                                        </div>
+                                    ) : agentConfig.stateSchema &&
+                                      Object.keys(agentConfig.stateSchema).length > 0 ? (
+                                        <SpaceBetween direction="vertical" size="xs">
+                                            {Object.entries(agentConfig.stateSchema).map(
+                                                ([key, type]) => (
+                                                    <Box key={key}>
+                                                        <Box
+                                                            variant="awsui-key-label"
+                                                            display="inline"
+                                                        >
+                                                            {key}:
+                                                        </Box>{" "}
+                                                        <Box display="inline">{String(type)}</Box>
+                                                    </Box>
+                                                ),
+                                            )}
+                                        </SpaceBetween>
+                                    ) : (
+                                        <Box color="text-status-inactive">Not configured</Box>
+                                    )}
+                                </Box>
+                            </FormField>
+
                             <FormField label="Graph Topology">
                                 <GraphMinimap
                                     graphConfig={{
                                         nodes: agentConfig.nodes || [],
                                         edges: agentConfig.edges || [],
                                         entryPoint: agentConfig.entryPoint,
-                                        stateSchema: (agentConfig as any).stateSchema || {},
-                                        stateClass: (agentConfig as any).stateClass,
+                                        stateSchema: agentConfig.stateSchema || {},
+                                        stateClass: agentConfig.stateClass,
                                         orchestrator: agentConfig.orchestrator || {
                                             maxIterations: 50,
                                             executionTimeoutSeconds: 300,
@@ -747,20 +1182,35 @@ export default function ViewVersionModal({
                                 </Box>
                             </FormField>
 
-                            <FormField label={
-                                <SpaceBetween direction="horizontal" size="xs" alignItems="center">
-                                    <span>Agent Instructions</span>
-                                    <CopyToClipboard
-                                        textToCopy={agentConfig.instructions}
-                                        variant="icon"
-                                        copySuccessText="Instructions copied"
-                                        copyErrorText="Failed to copy"
-                                    />
-                                </SpaceBetween>
-                            }>
-                                <ExpandableSection headerText="Show instructions" defaultExpanded={false}>
+                            <FormField
+                                label={
+                                    <SpaceBetween
+                                        direction="horizontal"
+                                        size="xs"
+                                        alignItems="center"
+                                    >
+                                        <span>Agent Instructions</span>
+                                        <CopyToClipboard
+                                            textToCopy={agentConfig.instructions}
+                                            variant="icon"
+                                            copySuccessText="Instructions copied"
+                                            copyErrorText="Failed to copy"
+                                        />
+                                    </SpaceBetween>
+                                }
+                            >
+                                <ExpandableSection
+                                    headerText="Show instructions"
+                                    defaultExpanded={false}
+                                >
                                     <Box padding="m" variant="code">
-                                        <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordWrap: "break-word" }}>
+                                        <pre
+                                            style={{
+                                                margin: 0,
+                                                whiteSpace: "pre-wrap",
+                                                wordWrap: "break-word",
+                                            }}
+                                        >
                                             {agentConfig.instructions}
                                         </pre>
                                     </Box>
@@ -799,9 +1249,7 @@ export default function ViewVersionModal({
 
                             {agentConfig.skills && agentConfig.skills.length > 0 && (
                                 <FormField label="Skills">
-                                    <Box padding="m">
-                                        {agentConfig.skills.join(", ")}
-                                    </Box>
+                                    <Box padding="m">{agentConfig.skills.join(", ")}</Box>
                                 </FormField>
                             )}
 
@@ -809,30 +1257,7 @@ export default function ViewVersionModal({
                                 <FormField label="MCP Servers">
                                     <Table
                                         items={mcpServerTableItems}
-                                        columnDefinitions={[
-                                            {
-                                                id: "name",
-                                                header: "Server Name",
-                                                cell: (item) => item.name,
-                                                isRowHeader: true,
-                                            },
-                                            {
-                                                id: "description",
-                                                header: "Description",
-                                                cell: (item) => (
-                                                    <Box
-                                                        color={
-                                                            item.description ===
-                                                            "No description available"
-                                                                ? "text-status-inactive"
-                                                                : undefined
-                                                        }
-                                                    >
-                                                        {item.description}
-                                                    </Box>
-                                                ),
-                                            },
-                                        ]}
+                                        columnDefinitions={mcpServerColumns}
                                     />
                                 </FormField>
                             )}

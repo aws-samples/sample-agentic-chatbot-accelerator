@@ -109,6 +109,7 @@ export interface SwarmConfiguration {
     entryAgent: string;
     orchestrator: SwarmOrchestratorConfig;
     conversationManager: "null" | "sliding_window" | "summarizing";
+    useMemory?: boolean;
 }
 
 /** Configuration for a dynamic_map node (Send()-based parallel fan-out). */
@@ -161,6 +162,7 @@ export interface GraphConfiguration {
     /** When set, uses a predefined state class instead of flat stateSchema. */
     stateClass?: string;
     orchestrator: GraphOrchestratorConfig;
+    useMemory?: boolean;
 }
 
 /** Metadata for a deterministic node function available in the backend registry. */
