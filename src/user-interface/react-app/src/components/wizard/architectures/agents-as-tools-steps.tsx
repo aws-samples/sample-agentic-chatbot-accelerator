@@ -30,6 +30,8 @@ export interface AgentsAsToolsStepsProps {
     agentsAsToolsConfig: AgentsAsToolsConfiguration;
     setAgentsAsToolsConfig: React.Dispatch<React.SetStateAction<AgentsAsToolsConfiguration>>;
     availableAgents: RuntimeSummary[];
+    /** True while the runtime list is still loading — gates raw-ARN flash. */
+    agentsLoading: boolean;
     modelOptions: { label: string; value: string }[];
     availableToolsOptions: { label: string; value: string; description?: string }[];
     availableMcpServersOptions: { label: string; value: string; description?: string }[];
@@ -69,6 +71,7 @@ export function getAgentsAsToolsSteps({
     agentsAsToolsConfig,
     setAgentsAsToolsConfig,
     availableAgents,
+    agentsLoading,
     modelOptions,
     availableToolsOptions,
     availableMcpServersOptions,
@@ -318,6 +321,8 @@ export function getAgentsAsToolsSteps({
                                     </Alert>
                                 ) : (
                                     <Table
+                                        loading={agentsLoading}
+                                        loadingText="Loading agents"
                                         items={agentsAsToolsConfig.agentsAsTools.map((a, i) => ({
                                             ...a,
                                             _index: i,

@@ -70,6 +70,10 @@ export default function AgentCoreRuntimeCreatorWizard({
     const [availableTools, setAvailableTools] = useState<Tool[]>([]);
     const [availableMcpServers, setAvailableMcpServers] = useState<McpServer[]>([]);
     const [availableAgents, setAvailableAgents] = useState<RuntimeSummary[]>([]);
+    // True until the runtime list resolves. Sub-agent references are stored as
+    // A2A ARNs and only resolve to display names once this list is loaded; without
+    // this flag the raw ARN flashes in the agents-as-tools table on first render.
+    const [agentsLoading, setAgentsLoading] = useState(true);
     const [availableStateClasses, setAvailableStateClasses] = useState<
         { key: string; label: string; description: string; fields: string[] }[]
     >([]);
@@ -186,7 +190,14 @@ export default function AgentCoreRuntimeCreatorWizard({
         const fetchData = async () => {
             try {
                 const knowledgeBaseSupported = appConfig?.knowledgeBaseIsSupported ?? false;
-                const [kbResult, toolsResult, mcpServersResult, agentsResult, stateClassesResult, detNodesResult] = await Promise.all([
+                const [
+                    kbResult,
+                    toolsResult,
+                    mcpServersResult,
+                    agentsResult,
+                    stateClassesResult,
+                    detNodesResult,
+                ] = await Promise.all([
                     knowledgeBaseSupported
                         ? apiClient.graphql({ query: listKnowledgeBasesQuery })
                         : Promise.resolve({ data: { listKnowledgeBases: [] } }),
@@ -205,12 +216,16 @@ export default function AgentCoreRuntimeCreatorWizard({
                     setAvailableMcpServers(mcpServersResult.data.listAvailableMcpServers);
                 if (agentsResult.data?.listRuntimeAgents)
                     setAvailableAgents(agentsResult.data.listRuntimeAgents);
+                setAgentsLoading(false);
                 if (stateClassesResult.data?.listAvailableStateClasses)
                     setAvailableStateClasses(stateClassesResult.data.listAvailableStateClasses);
                 if (detNodesResult.data?.listAvailableDeterministicNodes)
-                    setAvailableDeterministicNodes(detNodesResult.data.listAvailableDeterministicNodes);
+                    setAvailableDeterministicNodes(
+                        detNodesResult.data.listAvailableDeterministicNodes,
+                    );
             } catch (error) {
                 console.error("Failed to fetch data:", error);
+                if (!isCancelled) setAgentsLoading(false);
             }
         };
         fetchData();
@@ -463,6 +478,7 @@ export default function AgentCoreRuntimeCreatorWizard({
                       agentsAsToolsConfig,
                       setAgentsAsToolsConfig,
                       availableAgents,
+                      agentsLoading,
                       modelOptions,
                       availableToolsOptions,
                       availableMcpServersOptions,
