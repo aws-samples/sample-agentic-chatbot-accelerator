@@ -314,19 +314,18 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
         }
     };
 
-    const handleVersionSelect = async (version: string) => {
-        if (selectedItems.length === 1) {
-            const agent = selectedItems[0];
-            const result = await apiClient.graphql({
-                query: getRuntimeConfigurationByVersionQuery,
-                variables: {
-                    agentName: agent.agentName,
-                    agentVersion: version,
-                },
-            });
-            return JSON.parse(result.data.getRuntimeConfigurationByVersion);
-        }
-        throw new Error("No agent selected");
+    // Fetch a runtime configuration by agent name + version. Name is passed
+    // explicitly (rather than read from the selection) so the View modal can
+    // drill into arbitrary sub-agents, not just the selected row.
+    const handleVersionSelect = async (agentName: string, version: string) => {
+        const result = await apiClient.graphql({
+            query: getRuntimeConfigurationByVersionQuery,
+            variables: {
+                agentName,
+                agentVersion: version,
+            },
+        });
+        return JSON.parse(result.data.getRuntimeConfigurationByVersion);
     };
 
     const handleDelete = async (deleteMode: "all" | "specific", selectedQualifiers?: string[]) => {
@@ -790,7 +789,9 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
                     visible={showViewModal}
                     onDismiss={() => setShowViewModal(false)}
                     agentName={selectedItems[0].agentName}
+                    agentRuntimeId={selectedItems[0].agentRuntimeId}
                     versions={viewVersions}
+                    agents={agents}
                     onVersionSelect={handleVersionSelect}
                 />
             )}
