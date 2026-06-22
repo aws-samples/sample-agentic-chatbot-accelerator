@@ -87,6 +87,9 @@ const ChatInputPanel = forwardRef<ChatInputPanelHandle, ChatInputPanelProps>(fun
         value: "",
     });
     const [readyState, setReadyState] = useState<ReadyState>(ReadyState.UNINSTANTIATED);
+    // Bumped by the manual Reconnect button to force the connect effect to re-run
+    // and re-establish a dropped WebSocket without reloading the page.
+    const [reconnectNonce, setReconnectNonce] = useState(0);
 
     // Use lifted state from props
     const {
@@ -388,7 +391,7 @@ const ChatInputPanel = forwardRef<ChatInputPanelHandle, ChatInputPanelProps>(fun
                 wsConnectionRef.current = null;
             }
         };
-    }, [props.session.id, agentRuntimeId, qualifier, appContext]);
+    }, [props.session.id, agentRuntimeId, qualifier, appContext, reconnectNonce]);
 
     // Send heartbeat when a new session is initialized (no messages yet)
     useEffect(() => {
@@ -550,6 +553,18 @@ const ChatInputPanel = forwardRef<ChatInputPanelHandle, ChatInputPanelProps>(fun
     };
 
     const wsReady = readyState === ReadyState.OPEN;
+    const wsDisconnected =
+        readyState === ReadyState.CLOSED || readyState === ReadyState.CLOSING;
+
+    // Tear down any lingering socket and re-run the connect effect so a dropped
+    // connection can be re-established in place (no full page reload needed).
+    const reconnect = () => {
+        if (wsConnectionRef.current) {
+            wsConnectionRef.current.close();
+            wsConnectionRef.current = null;
+        }
+        setReconnectNonce((n) => n + 1);
+    };
 
     return (
         <SpaceBetween direction="vertical" size="l">
@@ -649,15 +664,32 @@ const ChatInputPanel = forwardRef<ChatInputPanelHandle, ChatInputPanelProps>(fun
                                     />
                                 </FormField>
                             </div>
-                            <Button
-                                iconName="refresh"
-                                variant="icon"
-                                onClick={refreshAgents}
-                                disabled={agentsLoading}
-                            />
-                            <StatusIndicator type={connectionStatus().type}>
-                                {connectionStatus().label}
-                            </StatusIndicator>
+                            {/* Match the Select input height (32px) so these
+                                unlabeled controls center on the boxes rather than
+                                bottom-hugging the taller labeled FormField columns. */}
+                            <div
+                                style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: "8px",
+                                    height: "32px",
+                                }}
+                            >
+                                <Button
+                                    iconName="refresh"
+                                    variant="icon"
+                                    onClick={refreshAgents}
+                                    disabled={agentsLoading}
+                                />
+                                <StatusIndicator type={connectionStatus().type}>
+                                    {connectionStatus().label}
+                                </StatusIndicator>
+                                {wsDisconnected && agentRuntimeId && qualifier && (
+                                    <Button iconName="refresh" onClick={reconnect}>
+                                        Reconnect
+                                    </Button>
+                                )}
+                            </div>
                         </>
                     )}
                 </SpaceBetween>
