@@ -5,7 +5,6 @@
 // ----------------------------------------------------------------------
 import {
     Alert,
-    Box,
     Button,
     ColumnLayout,
     Container,
@@ -19,6 +18,7 @@ import {
 import { RuntimeSummary } from "../../../API";
 import { AgentCoreRuntimeConfiguration, SwarmConfiguration } from "../types";
 import { CONVERSATION_MANAGER_OPTIONS, STEP_MIN_HEIGHT } from "../wizard-utils";
+import ReviewStep from "./review-step";
 
 interface SwarmAgentStepsProps {
     config: AgentCoreRuntimeConfiguration;
@@ -382,30 +382,25 @@ export function getSwarmAgentSteps({
         {
             title: "Review",
             content: (
-                <div style={{ minHeight: STEP_MIN_HEIGHT }}>
-                    <Container header={<Header variant="h2">Review Configuration</Header>}>
-                        <SpaceBetween direction="vertical" size="m">
-                            {!isCreating && (
-                                <Alert type="info" header="Configuration Summary">
-                                    Review your swarm agent configuration before creating.
-                                </Alert>
-                            )}
-                            <Box padding="m" variant="code">
-                                <pre style={{ margin: 0, overflow: "auto" }}>
-                                    {JSON.stringify(
-                                        {
-                                            agentName: config.agentName,
-                                            architectureType,
-                                            swarmConfig,
-                                        },
-                                        null,
-                                        2,
-                                    )}
-                                </pre>
-                            </Box>
-                        </SpaceBetween>
-                    </Container>
-                </div>
+                <ReviewStep
+                    // Flatten to the shape AgentConfigView's swarm guard expects
+                    // (entryAgent + agents/agentReferences at the top level).
+                    config={
+                        {
+                            agentName: config.agentName,
+                            architectureType,
+                            ...swarmConfig,
+                        } as unknown as AgentCoreRuntimeConfiguration
+                    }
+                    // Raw JSON mirrors the saved (nested) submission shape.
+                    rawForJson={{
+                        agentName: config.agentName,
+                        architectureType,
+                        swarmConfig,
+                    }}
+                    summary="Review your swarm agent configuration before creating."
+                    isCreating={isCreating}
+                />
             ),
         },
     ];
