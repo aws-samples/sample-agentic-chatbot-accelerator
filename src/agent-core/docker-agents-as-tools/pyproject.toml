@@ -4,7 +4,7 @@ version = "2.0.0"
 description = "AgentCore orchestrator + sub-agents (agents-as-tools) container dependencies."
 requires-python = ">=3.13"
 dependencies = [
-    "strands-agents[bidi,a2a]==1.37.0",
+    "strands-agents[bidi,a2a]==1.41.0",
     "strands-agents-tools[a2a-client]==0.7.0",
     "strands-agents-evals==0.1.8",
     "bedrock-agentcore==1.6.4",

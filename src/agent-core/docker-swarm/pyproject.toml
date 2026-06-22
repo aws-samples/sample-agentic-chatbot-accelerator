@@ -4,7 +4,7 @@ version = "2.0.0"
 description = "AgentCore collaborative swarm container dependencies."
 requires-python = ">=3.13"
 dependencies = [
-    "strands-agents==1.37.0",
+    "strands-agents==1.41.0",
     "strands-agents-evals==0.1.2",
     "bedrock-agentcore==1.6.4",
     "mcp-proxy-for-aws==1.2.0",

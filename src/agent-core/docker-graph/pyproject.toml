@@ -5,7 +5,7 @@ description = "AgentCore directed-graph workflow container dependencies."
 requires-python = ">=3.13"
 dependencies = [
     "langgraph==1.0.10",
-    "strands-agents[a2a]==1.37.0",
+    "strands-agents[a2a]==1.41.0",
     "mcp-proxy-for-aws==1.2.0",
     "pydantic==2.12.3",
     "bedrock-agentcore==1.6.4",
