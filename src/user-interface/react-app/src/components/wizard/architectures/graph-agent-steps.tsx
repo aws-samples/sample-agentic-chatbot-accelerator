@@ -4,8 +4,6 @@
 // SPDX-License-Identifier: MIT-0
 // ----------------------------------------------------------------------
 import {
-    Alert,
-    Box,
     ColumnLayout,
     Container,
     FormField,
@@ -22,6 +20,7 @@ import {
 } from "../types";
 import { STEP_MIN_HEIGHT } from "../wizard-utils";
 import GraphDesigner from "./graph-designer";
+import ReviewStep from "./review-step";
 
 export interface GraphAgentStepsProps {
     config: AgentCoreRuntimeConfiguration;
@@ -44,54 +43,6 @@ export function getGraphAgentSteps({
     availableDeterministicNodes = [],
     isCreating,
 }: GraphAgentStepsProps) {
-    // Build a simple visual minimap of the graph for the review step
-    const renderMinimap = () => {
-        if (graphConfig.nodes.length === 0) {
-            return <Box color="text-status-inactive">No nodes to display.</Box>;
-        }
-
-        const nodeMap = new Map(
-            graphConfig.nodes.map((n) => [n.id, n.label || n.id]),
-        );
-
-        return (
-            <div
-                style={{
-                    padding: "16px",
-                    background: "#fafafa",
-                    borderRadius: "8px",
-                    border: "1px solid #eaeded",
-                    fontFamily: "monospace",
-                    fontSize: "13px",
-                    lineHeight: "1.8",
-                    overflow: "auto",
-                }}
-            >
-                <div style={{ marginBottom: "8px", fontWeight: "bold" }}>
-                    Entry: [{graphConfig.entryPoint}]
-                </div>
-                {graphConfig.edges.map((edge, i) => (
-                    <div key={i} style={{ paddingLeft: "8px" }}>
-                        [{nodeMap.get(edge.source) || edge.source}]
-                        {edge.condition ? " - - → " : " ———→ "}
-                        [{edge.target === "__end__"
-                            ? "END"
-                            : nodeMap.get(edge.target) || edge.target}]
-                        {edge.condition && (
-                            <span style={{ color: "#687078" }}>
-                                {" "}
-                                if: {edge.condition}
-                            </span>
-                        )}
-                    </div>
-                ))}
-                {graphConfig.edges.length === 0 && (
-                    <div style={{ color: "#687078" }}>No edges defined.</div>
-                )}
-            </div>
-        );
-    };
-
     return [
         // Step 1: Graph Design
         {
@@ -243,50 +194,26 @@ export function getGraphAgentSteps({
         {
             title: "Review",
             content: (
-                <div style={{ minHeight: STEP_MIN_HEIGHT }}>
-                    <SpaceBetween direction="vertical" size="l">
-                        {!isCreating && (
-                            <Alert type="info" header="Configuration Summary">
-                                Review your graph agent configuration before
-                                creating.
-                            </Alert>
-                        )}
-
-                        <Container
-                            header={<Header variant="h2">Graph Minimap</Header>}
-                        >
-                            {renderMinimap()}
-                        </Container>
-
-                        <Container
-                            header={
-                                <Header variant="h2">
-                                    Configuration JSON
-                                </Header>
-                            }
-                        >
-                            <Box padding="m" variant="code">
-                                <pre
-                                    style={{
-                                        margin: 0,
-                                        overflow: "auto",
-                                        maxHeight: "400px",
-                                    }}
-                                >
-                                    {JSON.stringify(
-                                        {
-                                            agentName: config.agentName,
-                                            architectureType: "GRAPH",
-                                            graphConfig,
-                                        },
-                                        null,
-                                        2,
-                                    )}
-                                </pre>
-                            </Box>
-                        </Container>
-                    </SpaceBetween>
-                </div>
+                <ReviewStep
+                    // Flatten to the shape AgentConfigView's graph guard expects
+                    // (nodes + entryPoint at the top level). AgentConfigView renders
+                    // its own Graph Topology minimap, so no separate minimap here.
+                    config={
+                        {
+                            agentName: config.agentName,
+                            architectureType: "GRAPH",
+                            ...graphConfig,
+                        } as unknown as AgentCoreRuntimeConfiguration
+                    }
+                    // Raw JSON mirrors the saved (nested) submission shape.
+                    rawForJson={{
+                        agentName: config.agentName,
+                        architectureType: "GRAPH",
+                        graphConfig,
+                    }}
+                    summary="Review your graph agent configuration before creating."
+                    isCreating={isCreating}
+                />
             ),
         },
     ];

@@ -23,6 +23,7 @@ import {
 } from "../types";
 import { AdditionalToolsSection, AgentConfigSection } from "../wizard-shared-components";
 import { STEP_MIN_HEIGHT, getReasoningType } from "../wizard-utils";
+import ReviewStep from "./review-step";
 
 export interface AgentsAsToolsStepsProps {
     config: AgentCoreRuntimeConfiguration;
@@ -533,61 +534,28 @@ export function getAgentsAsToolsSteps({
         {
             title: "Review",
             content: (
-                <div style={{ minHeight: STEP_MIN_HEIGHT }}>
-                    <SpaceBetween direction="vertical" size="l">
-                        {!isCreating && (
-                            <Alert type="info" header="Configuration Summary">
-                                Review your agents-as-tools configuration before creating.
-                            </Alert>
-                        )}
-
-                        <Container header={<Header variant="h2">Sub-Agent Tools</Header>}>
-                            {agentsAsToolsConfig.agentsAsTools.length === 0 ? (
-                                <Box color="text-status-inactive">No sub-agents configured.</Box>
-                            ) : (
-                                <Table
-                                    items={agentsAsToolsConfig.agentsAsTools}
-                                    columnDefinitions={[
-                                        {
-                                            id: "agent",
-                                            header: "Agent",
-                                            cell: (item) => getAgentNameByRuntimeId(item.runtimeId),
-                                            isRowHeader: true,
-                                        },
-                                        {
-                                            id: "endpoint",
-                                            header: "Endpoint",
-                                            cell: (item) => item.endpoint,
-                                        },
-                                    ]}
-                                />
-                            )}
-                        </Container>
-
-                        <Container header={<Header variant="h2">Configuration JSON</Header>}>
-                            <Box padding="m" variant="code">
-                                <pre
-                                    style={{
-                                        margin: 0,
-                                        overflow: "auto",
-                                        maxHeight: "400px",
-                                    }}
-                                >
-                                    {JSON.stringify(
-                                        {
-                                            agentName: config.agentName,
-                                            ...(config.useMemory ? { useMemory: true } : {}),
-                                            architectureType: "AGENTS_AS_TOOLS",
-                                            agentsAsToolsConfig: buildPreviewConfig(),
-                                        },
-                                        null,
-                                        2,
-                                    )}
-                                </pre>
-                            </Box>
-                        </Container>
-                    </SpaceBetween>
-                </div>
+                <ReviewStep
+                    // Flatten to the shape AgentConfigView's guard expects (agentsAsTools,
+                    // modelInferenceParameters and instructions at the top level).
+                    config={
+                        {
+                            agentName: config.agentName,
+                            useMemory: config.useMemory,
+                            architectureType: "AGENTS_AS_TOOLS",
+                            ...buildPreviewConfig(),
+                        } as unknown as AgentCoreRuntimeConfiguration
+                    }
+                    // Raw JSON mirrors the saved (nested) submission shape.
+                    rawForJson={{
+                        agentName: config.agentName,
+                        ...(config.useMemory ? { useMemory: true } : {}),
+                        architectureType: "AGENTS_AS_TOOLS",
+                        agentsAsToolsConfig: buildPreviewConfig(),
+                    }}
+                    agents={availableAgents}
+                    summary="Review your agents-as-tools configuration before creating."
+                    isCreating={isCreating}
+                />
             ),
         },
     ];

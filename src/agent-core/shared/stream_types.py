@@ -69,7 +69,7 @@ class InferenceConfig(BaseModel):
     stopSequences: Optional[list[str]] = None
 
 
-class ReasoningEffort(Enum):
+class ReasoningEffort(str, Enum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"

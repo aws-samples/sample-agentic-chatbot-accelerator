@@ -26,6 +26,7 @@ import { listSkills as listSkillsQuery } from "../../../graphql/queries";
 import { AgentCoreRuntimeConfiguration } from "../types";
 import { AdditionalToolsSection, AgentConfigSection } from "../wizard-shared-components";
 import { PYTHON_TYPE_OPTIONS, STEP_MIN_HEIGHT, getReasoningType } from "../wizard-utils";
+import ReviewStep from "./review-step";
 
 interface SingleAgentStepsProps {
     config: AgentCoreRuntimeConfiguration;
@@ -468,28 +469,11 @@ export function getSingleAgentSteps({
         {
             title: "Review",
             content: (
-                <div style={{ minHeight: STEP_MIN_HEIGHT }}>
-                    <SpaceBetween direction="vertical" size="l">
-                        {!isCreating && (
-                            <Alert type="info" header="Configuration Summary">
-                                Review your agent configuration before creating.
-                            </Alert>
-                        )}
-                        <Container header={<Header variant="h2">Configuration JSON</Header>}>
-                            <Box padding="m" variant="code">
-                                <pre
-                                    style={{
-                                        margin: 0,
-                                        overflow: "auto",
-                                        maxHeight: "400px",
-                                    }}
-                                >
-                                    {JSON.stringify(config, null, 2)}
-                                </pre>
-                            </Box>
-                        </Container>
-                    </SpaceBetween>
-                </div>
+                <ReviewStep
+                    config={config}
+                    summary="Review your agent configuration before creating."
+                    isCreating={isCreating}
+                />
             ),
         },
     ];
