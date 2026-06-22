@@ -346,7 +346,7 @@ export default function ChatMessage(props: ChatMessageProps) {
                                     onClick={scrollToUserQuestion}
                                     ariaLabel="Scroll to question"
                                 />
-                                {props.message.executionTimeMs && (
+                                {props.message.executionTimeMs != null && (
                                     <span
                                         style={{
                                             fontSize: "12px",
