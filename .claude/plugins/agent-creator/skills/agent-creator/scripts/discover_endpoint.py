@@ -10,7 +10,10 @@ Resolution order:
 Resolved values are cached to .agent-creator-cache.json (gitignored) so repeated
 calls in a session don't re-hit CloudFormation. Pass --refresh to bypass the cache.
 
-Env (honoured like the project Makefile):
+Settings (honoured like the project Makefile) are read from the process
+environment first, then from the sibling `.env` file as a fallback — so you can
+either `export PROFILE=…` or drop `PROFILE="…"` in `.env` alongside the Cognito
+creds. A real environment variable always wins over `.env`.
   PROFILE  — AWS profile name
   REGION   — AWS region
   ACA_STACK_NAME       — explicit stack name (else scan for a *-aca stack)
@@ -24,6 +27,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -34,22 +38,65 @@ from botocore.exceptions import BotoCoreError, ClientError
 # works regardless of the caller's CWD.
 _SCRIPT_DIR = Path(__file__).resolve().parent
 _CACHE_PATH = _SCRIPT_DIR / ".agent-creator-cache.json"
+_ENV_PATH = _SCRIPT_DIR / ".env"
 
-# Output key suffixes we need, mapped to the dict key we return. We match on
-# suffix because CDK prefixes nested-construct output keys with the construct path.
+# Output key suffixes we need, mapped to the dict key we return. CDK wraps the
+# logical name on BOTH sides: it prefixes the nested-construct path
+# (e.g. "ChatbotApiGraphQLApiUrl") and appends an 8-hex-char uniqueness hash
+# (e.g. "...GraphQLApiUrl1ED912E9"). So we strip the trailing hash, then match on
+# suffix — a plain endswith() would miss every hashed key.
 _OUTPUT_SUFFIXES = {
     "GraphQLApiUrl": "endpoint",
     "UserPoolId": "userPoolId",
     "UserPoolWebClientId": "clientId",
 }
 
+# CDK appends an 8-char uppercase-hex hash to CfnOutput logical IDs.
+_CDK_HASH_SUFFIX = re.compile(r"[0-9A-F]{8}$")
+
 # Best-effort walk up to the repo root to locate the React app's aws-exports.json.
 _AWS_EXPORTS_RELATIVE = Path("src/user-interface/react-app/public/aws-exports.json")
 
 
+def load_env_file() -> dict[str, str]:
+    """Minimal .env reader (KEY=VALUE per line); avoids a python-dotenv dep.
+
+    Shared by get_token.py for the Cognito creds and by _setting() below for
+    PROFILE/REGION — one parser so the two never drift."""
+    values: dict[str, str] = {}
+    if not _ENV_PATH.exists():
+        return values
+    for line in _ENV_PATH.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        values[key.strip()] = val.strip().strip('"').strip("'")
+    return values
+
+
+def _setting(name: str) -> str | None:
+    """Resolve a setting from the real environment first, then the .env file.
+
+    A genuine environment variable always wins so callers can override .env
+    ad hoc (e.g. `REGION=eu-west-1 python discover_endpoint.py`)."""
+    return os.environ.get(name) or load_env_file().get(name)
+
+
+# The settings that determine WHICH stack we resolve. The cache is stamped with
+# these so it self-invalidates when you switch profile/region/stack — otherwise a
+# valid-but-stale cache would mask a changed .env (the #1 footgun of this script).
+_FINGERPRINT_KEYS = ("PROFILE", "REGION", "ACA_STACK_NAME", "ACA_AWS_EXPORTS_PATH")
+_FINGERPRINT_FIELD = "_settings"
+
+
+def _settings_fingerprint() -> dict[str, str | None]:
+    return {k: _setting(k) for k in _FINGERPRINT_KEYS}
+
+
 def _session() -> boto3.Session:
-    profile = os.environ.get("PROFILE")
-    region = os.environ.get("REGION")
+    profile = _setting("PROFILE")
+    region = _setting("REGION")
     kwargs = {}
     if profile:
         kwargs["profile_name"] = profile
@@ -96,7 +143,8 @@ def _from_cloudformation(stack_name: str | None) -> dict | None:
     for st in stacks:
         resolved = {"region": region}
         for out in st.get("Outputs", []):
-            key = out["OutputKey"]
+            # Drop CDK's trailing uniqueness hash so the suffix match can land.
+            key = _CDK_HASH_SUFFIX.sub("", out["OutputKey"])
             for suffix, target in _OUTPUT_SUFFIXES.items():
                 if key.endswith(suffix):
                     resolved[target] = out["OutputValue"]
@@ -110,7 +158,7 @@ def _from_aws_exports(path: str | None) -> dict | None:
     if path:
         candidate = Path(path)
     else:
-        env_path = os.environ.get("ACA_AWS_EXPORTS_PATH")
+        env_path = _setting("ACA_AWS_EXPORTS_PATH")
         if env_path:
             candidate = Path(env_path)
         else:
@@ -149,15 +197,22 @@ def discover_endpoint(
     """Return {endpoint, region, userPoolId, clientId}.
 
     Raises RuntimeError with an actionable message if nothing resolves."""
+    fingerprint = _settings_fingerprint()
     if not refresh and _CACHE_PATH.exists():
         try:
             cached = json.loads(_CACHE_PATH.read_text())
-            if all(k in cached for k in ("endpoint", "userPoolId", "clientId")):
-                return cached
+            has_values = all(
+                k in cached for k in ("endpoint", "userPoolId", "clientId")
+            )
+            # Honour the cache only if it was produced under the SAME settings.
+            # A mismatch (you switched profile/region/stack) means it's stale, so
+            # we fall through and re-resolve instead of returning the old stack.
+            if has_values and cached.get(_FINGERPRINT_FIELD) == fingerprint:
+                return {k: v for k, v in cached.items() if k != _FINGERPRINT_FIELD}
         except (OSError, json.JSONDecodeError):
             pass  # corrupt cache — fall through to re-resolve
 
-    stack_name = stack_name or os.environ.get("ACA_STACK_NAME")
+    stack_name = stack_name or _setting("ACA_STACK_NAME")
     resolved = _from_cloudformation(stack_name) or _from_aws_exports(aws_exports_path)
 
     if not resolved:
@@ -169,7 +224,11 @@ def discover_endpoint(
         )
 
     try:
-        _CACHE_PATH.write_text(json.dumps(resolved, indent=2))
+        # Stamp the settings alongside the values so the next read can detect a
+        # changed .env and self-invalidate.
+        _CACHE_PATH.write_text(
+            json.dumps({**resolved, _FINGERPRINT_FIELD: fingerprint}, indent=2)
+        )
     except OSError:
         pass  # caching is best-effort; never fail the call over it
 
