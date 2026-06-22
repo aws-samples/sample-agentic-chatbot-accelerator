@@ -35,29 +35,25 @@ from pathlib import Path
 from botocore.exceptions import BotoCoreError, ClientError
 
 try:
-    from discover_endpoint import _find_repo_root, _session, discover_endpoint
+    from discover_endpoint import (
+        _find_repo_root,
+        _session,
+        discover_endpoint,
+        load_env_file,
+    )
 except ImportError:  # allow running as a module from elsewhere
-    from .discover_endpoint import _find_repo_root, _session, discover_endpoint
+    from .discover_endpoint import (
+        _find_repo_root,
+        _session,
+        discover_endpoint,
+        load_env_file,
+    )
 
 _SCRIPT_DIR = Path(__file__).resolve().parent
 _ENV_PATH = _SCRIPT_DIR / ".env"
 
 _ENV_USERNAME = "ACA_COGNITO_USERNAME"
 _ENV_PASSWORD = "ACA_COGNITO_PASSWORD"  # pragma: allowlist secret # nosec B105 - env var name, not a credential
-
-
-def _load_env_file() -> dict[str, str]:
-    """Minimal .env reader (KEY=VALUE per line); avoids a python-dotenv dep."""
-    values: dict[str, str] = {}
-    if not _ENV_PATH.exists():
-        return values
-    for line in _ENV_PATH.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, val = line.partition("=")
-        values[key.strip()] = val.strip().strip('"').strip("'")
-    return values
 
 
 def _ensure_env_gitignored() -> None:
@@ -102,7 +98,7 @@ def _prompt_and_store_creds() -> tuple[str, str]:
 
 
 def _resolve_creds() -> tuple[str, str]:
-    env = _load_env_file()
+    env = load_env_file()
     username = env.get(_ENV_USERNAME) or os.environ.get(_ENV_USERNAME)
     password = env.get(_ENV_PASSWORD) or os.environ.get(_ENV_PASSWORD)
     if username and password:

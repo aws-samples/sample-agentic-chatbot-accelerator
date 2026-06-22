@@ -1,30 +1,19 @@
 # agent-creator
 
-A Claude Code plugin that creates and modifies **live AgentCore runtime agents** in a
-**deployed** instance of this accelerator — the same agents you'd otherwise build by
-clicking through the Agent Factory UI, driven instead from a conversation in your editor.
+A Claude Code plugin that creates and modifies **live AgentCore runtime agents** in a **deployed** instance of this accelerator — the same agents you'd otherwise build by clicking through the Agent Factory UI, driven instead from a conversation in your editor.
 
-You describe what you want ("an orchestrator that consults an AWS-docs specialist and a
-cost specialist, then writes the recommendation"); the plugin picks the right agentic
-pattern, wires it from the building-blocks already in your running system (tools, MCP
-servers, skills, existing agents), validates the config with parity to the server, and
-submits it through the same GraphQL mutation the UI uses — polling until the runtime is
-**Ready**.
+You describe what you want ("an orchestrator that consults an AWS-docs specialist and a cost specialist, then writes the recommendation"); the plugin picks the right agentic pattern, wires it from the building-blocks already in your running system (tools, MCP servers, skills, existing agents), validates the config with parity to the server, and submits it through the same GraphQL mutation the UI uses — polling until the runtime is **Ready**.
 
-> **This plugin talks to a *deployed* stack over the Agent Factory API.** It does **not**
-> generate IaC. For build-time, baked-into-the-stack config (`config.yaml` / `tfvars`),
-> use the `iac-config-generator` skill instead.
+> **This plugin talks to a *deployed* stack over the Agent Factory API.** It does **not** generate IaC. For build-time, baked-into-the-stack config (`config.yaml` / `tfvars`), use the `iac-config-generator` skill instead.
 
 ## When to use it
 
 Invoke it (via `/agent-creator:agent-creator`, or just describe the task) when you want to:
 
 - **Create** a new runtime agent — single, or a multi-agent orchestrator / swarm / graph.
-- **Modify** a live agent — change its model or system prompt, add/remove tools, MCP
-  servers, or skills.
+- **Modify** a live agent — change its model or system prompt, add/remove tools, MCP servers, or skills.
 - **Diagnose** a misbehaving agent from traces / eval output, and apply the config-level fix.
-- **Author a skill** — a reusable, loadable instruction package an agent picks up at start,
-  live with no redeploy.
+- **Author a skill** — a reusable, loadable instruction package an agent picks up at start, live with no redeploy.
 
 ## The four paths
 
@@ -37,89 +26,86 @@ Invoke it (via `/agent-creator:agent-creator`, or just describe the task) when y
 
 ## Architecture patterns it can build
 
-The plugin classifies your request into one of four patterns (it decides — you don't have
-to name it):
+The plugin classifies your request into one of four patterns (it decides — you don't have to name it):
 
 - **Single** — one agent, one job (tools + MCP + skills, optional structured output).
-- **Agents as Tools** — a coordinator that delegates to specialist sub-agents it chooses at
-  runtime.
-- **Swarm** — peer agents that hand control to each other collaboratively, with emergent
-  order.
+- **Agents as Tools** — a coordinator that delegates to specialist sub-agents it chooses at runtime.
+- **Swarm** — peer agents that hand control to each other collaboratively, with emergent order.
 - **Graph** — a fixed, author-defined workflow of nodes and edges with shared state.
 
-Multi-agent patterns reference sub-agents that must already exist (and, for Agents-as-Tools
-and Graph, have an **A2A twin**), so the plugin builds bottom-up: specialists first, the
-coordinator last.
+Multi-agent patterns reference sub-agents that must already exist (and, for Agents-as-Tools and Graph, have an **A2A twin**), so the plugin builds bottom-up: specialists first, the coordinator last.
 
 ## What makes it safe to iterate
 
-The server's config validation is strict and **silent** — a bad config is rejected by
-returning an empty string with no reason. The plugin's local validator (`validate_config.py`)
-has **parity with the server**, so problems are caught locally with an explanation instead
-of as a silent server reject. And because there is no partial-update mutation, every
-modification is a **full-config replacement** that mints a new version — which is why the
-modify path always re-submits the whole config, never a patch.
+The server's config validation is strict and **silent** — a bad config is rejected by returning an empty string with no reason. The plugin's local validator (`validate_config.py`) has **parity with the server**, so problems are caught locally with an explanation instead of as a silent server reject. And because there is no partial-update mutation, every modification is a **full-config replacement** that mints a new version — which is why the modify path always re-submits the whole config, never a patch.
 
-> Every submit is validated and polled to Ready, but **not behaviorally tested** — static
-> validation only. After a create or modify, run the agent in the UI to confirm it actually
-> behaves as intended.
+> Every submit is validated and polled to Ready, but **not behaviorally tested** — static validation only. After a create or modify, run the agent in the UI to confirm it actually behaves as intended.
 
 ## How it's invoked
 
-The plugin's scripts share Cognito auth and endpoint discovery against your deployed stack;
-the first call prompts once for credentials and caches them in a gitignored `.env`. The
-skill (`skills/agent-creator/SKILL.md`) drives the whole flow — you interact in natural
-language and confirm before anything is submitted.
+The plugin's scripts share Cognito auth and endpoint discovery against your deployed stack; the first call prompts once for credentials and caches them in a gitignored `.env`. The skill (`skills/agent-creator/SKILL.md`) drives the whole flow — you interact in natural language and confirm before anything is submitted.
+
+### Pointing it at the right stack (profile & region)
+
+Endpoint discovery (`scripts/discover_endpoint.py`) resolves the AppSync GraphQL URL, Cognito user pool, and client ID in three tiers:
+
+1. **Cache** — `scripts/.agent-creator-cache.json` (gitignored). Returned as-is if present **and** the settings that selected it (`PROFILE` / `REGION` / `ACA_STACK_NAME` / `ACA_AWS_EXPORTS_PATH`) are unchanged. The cache is stamped with those settings, so changing your `.env` (e.g. switching profile) **auto-invalidates** it — discovery re-resolves without you needing `--refresh`. Pass `--refresh` to force a re-resolve regardless.
+2. **CloudFormation** — `describe-stacks` on the AWS session, matching the `GraphQLApiUrl` / `UserPoolId` / `UserPoolWebClientId` output **suffixes**. With no `ACA_STACK_NAME` it scans for a stack whose name ends in `-aca`.
+3. **`aws-exports.json` fallback** — `src/user-interface/react-app/public/aws-exports.json` if CloudFormation finds nothing.
+
+`PROFILE`, `REGION`, `ACA_STACK_NAME`, and `ACA_AWS_EXPORTS_PATH` are read from the **process environment first, then from `.env`** as a fallback (a real environment variable always wins). So to target a non-default profile, you can either export them, or just add them to `.env` alongside the Cognito creds. **In most cases `PROFILE` alone is enough** — the region comes from that profile's `~/.aws/config` entry (and a profile's region beats an `AWS_REGION` set in your shell), so you rarely need `REGION`:
+
+```ini
+ACA_COGNITO_USERNAME="you@example.com"
+ACA_COGNITO_PASSWORD="…"
+PROFILE="your-aws-profile"
+```
+
+Only set `REGION` in the two cases where the profile can't supply it: your profile has **no** `region` configured, or you want to **override** it (same credentials, a stack in a different region):
+
+```ini
+REGION="eu-west-1"
+```
+
+Then refresh the cache so the new target is resolved:
+
+```bash
+python3 .claude/plugins/agent-creator/skills/agent-creator/scripts/discover_endpoint.py --refresh
+```
+
+**Gotcha — silent fallback to a stale `aws-exports.json`.** Changing your `PROFILE`/`REGION`/stack settings now auto-invalidates the cache, but it can't fix the case where discovery resolves *nothing* from CloudFormation (wrong profile/region, or the stack genuinely isn't found) and falls back to whatever `aws-exports.json` is on disk — which may be a leftover from a previous deployment with the **old** endpoint. The auto-invalidation re-runs discovery, but discovery itself still lands on the stale file. The tell-tale and fix:
+
+- **Tell-tale:** the resolved `region` should match your target (on the CloudFormation path it comes from the AWS session). If it shows an old region, you're on the `aws-exports.json` fallback, not CloudFormation.
+- **Fix:** make sure `PROFILE` (and `REGION` if the profile doesn't pin one) point at the deployment you want, and that a `-aca` stack actually exists there — or set `ACA_STACK_NAME` explicitly. Failing that, update `src/user-interface/react-app/public/aws-exports.json` to the current deployment.
+
+> Note: auto-invalidation keys off the **settings**, not the deployed stack. If the *same* settings now point at a **redeployed** stack (you tore down and recreated it with a new endpoint), nothing in the settings changed — use `--refresh` to pick up the new values.
 
 ## Sample prompts
 
-You don't name the architecture — the plugin infers it from the shape of what you describe.
-The four prompts below each steer it toward a different pattern; use them as starting points.
+You don't name the architecture — the plugin infers it from the shape of what you describe. The four prompts below each steer it toward a different pattern; use them as starting points.
 
 **Single — one agent, one job:**
 
-> "Create an agent that answers AWS questions from the official docs — it should search the
-> documentation, cite a URL for every claim, and say so when the docs don't cover something."
+> "Create an agent that answers AWS questions from the official docs — it should search the documentation, cite a URL for every claim, and say so when the docs don't cover something."
 
 **Agents as Tools — a coordinator that decides who to consult at runtime:**
 
-> "Build something that, given a workload description, recommends an AWS architecture. One
-> part digs through the AWS docs to pick services and cite best practices; another reasons
-> about cost and sizing. Add a layer on top that decides which to consult, then writes up
-> the final recommendation."
+> "Build something that, given a workload description, recommends an AWS architecture. One part digs through the AWS docs to pick services and cite best practices; another reasons about cost and sizing. Add a layer on top that decides which to consult, then writes up the final recommendation."
 
 **Graph — a fixed pipeline, same steps every time:**
 
-> "I want a fixed pipeline for AWS workload reviews. For every workload, always run a
-> docs/architecture specialist and a cost specialist in parallel, then merge their two
-> outputs into one combined recommendation. The steps never change."
+> "I want a fixed pipeline for AWS workload reviews. For every workload, always run a docs/architecture specialist and a cost specialist in parallel, then merge their two outputs into one combined recommendation. The steps never change."
 
 **Swarm — peers that hand off collaboratively, no fixed order:**
 
-> "Create a swarm debate agent to help decide when serverless or managed is better suited to
-> a given architecture."
+> "Create a swarm debate agent to help decide when serverless or managed is better suited to a given architecture."
 
-This is the prompt behind the worked example below. The plugin builds three SINGLE persona
-agents bottom-up — a `serverless_advocate` and a `managed_advocate` (each grounded in the
-`aws-knowledge` MCP server, arguing in good faith and conceding honest weaknesses) and a
-neutral `debate_moderator` — then assembles a `serverless_vs_managed_debate` SWARM with the
-moderator as the entry agent. The moderator frames the workload (asking for any missing
-decision-critical facts), the advocates hand the problem back and forth until each has
-rebutted the other's strongest point, and the moderator writes the final verdict — including
-the losing side's best argument and the conditions under which the recommendation would flip.
+This is the prompt behind the worked example below. The plugin builds three SINGLE persona agents bottom-up — a `serverless_advocate` and a `managed_advocate` (each grounded in the `aws-knowledge` MCP server, arguing in good faith and conceding honest weaknesses) and a neutral `debate_moderator` — then assembles a `serverless_vs_managed_debate` SWARM with the moderator as the entry agent. The moderator frames the workload (asking for any missing decision-critical facts), the advocates hand the problem back and forth until each has rebutted the other's strongest point, and the moderator writes the final verdict — including the losing side's best argument and the conditions under which the recommendation would flip.
 
 A workload prompt to run the finished swarm against in the UI:
 
-> "We're building the backend for a B2B SaaS document-processing API — customers upload PDFs,
-> we extract and transform text, store structured JSON. Traffic is spiky and low-volume today
-> (~5,000 docs/day in business hours, near-zero overnight) but could grow 10–20x. Each doc is
-> CPU-bound and takes 8–40s; results are persisted and queried; p95 under ~2 min is fine. We're
-> a 3-person team with limited ops experience, tight budget now but predictability matters at
-> scale. Serverless or provisioned/managed? Debate it and give me a verdict."
+> "We're building the backend for a B2B SaaS document-processing API — customers upload PDFs, we extract and transform text, store structured JSON. Traffic is spiky and low-volume today (~5,000 docs/day in business hours, near-zero overnight) but could grow 10–20x. Each doc is CPU-bound and takes 8–40s; results are persisted and queried; p95 under ~2 min is fine. We're a 3-person team with limited ops experience, tight budget now but predictability matters at scale. Serverless or provisioned/managed? Debate it and give me a verdict."
 
-Modify, diagnose, and skill-authoring requests are just as conversational — e.g. "remove the
-skills from `pubmed_study_ideator`", "it keeps picking the wrong tool, here are the traces:
-…", or "create a skill that teaches the agent PubMed search craft."
+Modify, diagnose, and skill-authoring requests are just as conversational — e.g. "remove the skills from `pubmed_study_ideator`", "it keeps picking the wrong tool, here are the traces: …", or "create a skill that teaches the agent PubMed search craft."
 
-After a build, the plugin can suggest behavioral prompts to run the new agent against in the
-UI — confirming it actually routes, merges, or hands off as intended before you rely on it.
+After a build, the plugin can suggest behavioral prompts to run the new agent against in the UI — confirming it actually routes, merges, or hands off as intended before you rely on it.
