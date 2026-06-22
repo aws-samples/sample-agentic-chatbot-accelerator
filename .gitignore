@@ -32,8 +32,8 @@ src/user-interface/react-app/public/aws-exports.json
 !src/user-interface/react-app/public/audio-processor.worklet.js
 
 # Local Configurations
-iac-cdk/bin/config.json
-iac-cdk/bin/config.yaml
+iac-cdk/bin/*.json
+iac-cdk/bin/*.yaml
 
 # Documentation artifacts
 site/
@@ -73,3 +73,5 @@ iac-terraform/build/
 checkov-report.json
 
 iac-terraform/modules/knowledge_base/build
+
+presentation/
