@@ -143,8 +143,10 @@ export default function ConversationHistory() {
     }, [sessions]);
 
     const renderSessionItem = (session: Session) => {
-        const isoTime = new Date(session.startTime).toISOString();
-        const relative = DateTime.fromISO(isoTime).toRelative() ?? isoTime;
+        const parsed = new Date(session.startTime);
+        const isValid = !Number.isNaN(parsed.getTime());
+        const isoTime = isValid ? parsed.toISOString() : session.startTime;
+        const relative = (isValid ? DateTime.fromISO(isoTime).toRelative() : null) ?? isoTime;
         const voice = isVoiceSession(session);
         const title = session.title || session.id;
         return {

@@ -821,25 +821,25 @@ export default function AgentConfigView({
                     <ColumnLayout columns={4} variant="text-grid">
                         <div>
                             <Box variant="awsui-key-label">Model</Box>
-                            <Box>{getModelName(config.modelInferenceParameters.modelId)}</Box>
+                            <Box>{getModelName(config.modelInferenceParameters?.modelId || "")}</Box>
                         </div>
                         <div>
                             <Box variant="awsui-key-label">Temperature</Box>
                             <Box>
-                                {config.modelInferenceParameters.parameters.temperature ?? "N/A"}
+                                {config.modelInferenceParameters?.parameters?.temperature ?? "N/A"}
                             </Box>
                         </div>
                         <div>
                             <Box variant="awsui-key-label">Max Tokens</Box>
                             <Box>
-                                {config.modelInferenceParameters.parameters.maxTokens ?? "N/A"}
+                                {config.modelInferenceParameters?.parameters?.maxTokens ?? "N/A"}
                             </Box>
                         </div>
                         <div>
                             <Box variant="awsui-key-label">Thinking</Box>
                             <Box>
                                 {renderThinkingStatus(
-                                    config.modelInferenceParameters.reasoningBudget,
+                                    config.modelInferenceParameters?.reasoningBudget,
                                 )}
                             </Box>
                         </div>
