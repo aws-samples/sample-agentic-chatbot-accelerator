@@ -15,6 +15,7 @@ import {
     Input,
     Modal,
     Pagination,
+    PropertyFilter,
     SpaceBetween,
     Table,
     TableProps,
@@ -40,11 +41,43 @@ export interface SessionsProps {
     readonly toolsOpen: boolean;
 }
 
+// The "AgentName" column is derived from runtimeId (the agent name is the
+// prefix before the first "-"). Surface it as a real field so it can be
+// filtered/sorted like the other columns.
+type SessionRow = Session & { agentName: string };
+
+const FILTERING_PROPERTIES = [
+    {
+        key: "title",
+        propertyLabel: "Title",
+        groupValuesLabel: "Title values",
+        operators: [":", "!:", "=", "!="],
+    },
+    {
+        key: "agentName",
+        propertyLabel: "AgentName",
+        groupValuesLabel: "AgentName values",
+        operators: [":", "!:", "=", "!="],
+    },
+    {
+        key: "runtimeVersion",
+        propertyLabel: "RuntimeVersion",
+        groupValuesLabel: "RuntimeVersion values",
+        operators: [":", "!:", "=", "!="],
+    },
+    {
+        key: "endpoint",
+        propertyLabel: "Endpoint",
+        groupValuesLabel: "Endpoint values",
+        operators: [":", "!:", "=", "!="],
+    },
+];
+
 export default function Sessions(props: SessionsProps) {
     const appContext = useContext(AppContext);
-    const [sessions, setSessions] = useState<Session[]>([]);
+    const [sessions, setSessions] = useState<SessionRow[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const [selectedItems, setSelectedItems] = useState<Session[]>([]);
+    const [selectedItems, setSelectedItems] = useState<SessionRow[]>([]);
     const [preferences, setPreferences] = useState({ pageSize: 20 });
     const [showModalDelete, setShowModalDelete] = useState(false);
     const [deleteAllSessions, setDeleteAllSessions] = useState(false);
@@ -56,27 +89,36 @@ export default function Sessions(props: SessionsProps) {
 
     const { t } = useTranslation("ACA");
 
-    const { items, collectionProps, paginationProps } = useCollection(sessions, {
-        filtering: {
-            empty: (
-                <Box margin={{ vertical: "xs" }} textAlign="center" color="inherit">
-                    <SpaceBetween size="m">
-                        <b>{t("CHATBOT.SESSIONS.EMPTY_MSG")}</b>
-                    </SpaceBetween>
-                </Box>
-            ),
-        },
-        pagination: { pageSize: preferences.pageSize },
-        sorting: {
-            defaultState: {
-                sortingColumn: {
-                    sortingField: "startTime",
-                },
-                isDescending: true,
+    const { items, collectionProps, paginationProps, propertyFilterProps, filteredItemsCount } =
+        useCollection(sessions, {
+            propertyFiltering: {
+                filteringProperties: FILTERING_PROPERTIES,
+                empty: (
+                    <Box margin={{ vertical: "xs" }} textAlign="center" color="inherit">
+                        <SpaceBetween size="m">
+                            <b>{t("CHATBOT.SESSIONS.EMPTY_MSG")}</b>
+                        </SpaceBetween>
+                    </Box>
+                ),
+                noMatch: (
+                    <Box margin={{ vertical: "xs" }} textAlign="center" color="inherit">
+                        <SpaceBetween size="m">
+                            <b>{t("CHATBOT.SESSIONS.EMPTY_MSG")}</b>
+                        </SpaceBetween>
+                    </Box>
+                ),
             },
-        },
-        selection: {},
-    });
+            pagination: { pageSize: preferences.pageSize },
+            sorting: {
+                defaultState: {
+                    sortingColumn: {
+                        sortingField: "startTime",
+                    },
+                    isDescending: true,
+                },
+            },
+            selection: {},
+        });
 
     const listSessions = useCallback(async () => {
         if (!appContext) return;
@@ -87,7 +129,12 @@ export default function Sessions(props: SessionsProps) {
             const result = await apiClient.graphql({
                 query: listSessionQuery,
             });
-            setSessions(result.data!.listSessions);
+            setSessions(
+                result.data!.listSessions.map((s) => ({
+                    ...s,
+                    agentName: s.runtimeId.split("-")[0],
+                })),
+            );
         } catch (error) {
             console.log(Utils.getErrorMessage(error));
             setGlobalError(Utils.getErrorMessage(error));
@@ -260,6 +307,14 @@ export default function Sessions(props: SessionsProps) {
                     itemSelectionLabel: (e, item) => item.title!,
                 }}
                 pagination={<Pagination {...paginationProps} />}
+                filter={
+                    <PropertyFilter
+                        {...propertyFilterProps}
+                        countText={`${filteredItemsCount} matches`}
+                        filteringPlaceholder="Filter sessions by property"
+                        filteringAriaLabel="Filter sessions"
+                    />
+                }
                 loadingText="Loading history"
                 loading={isLoading}
                 resizableColumns
@@ -382,22 +437,25 @@ export default function Sessions(props: SessionsProps) {
                         {
                             id: "agentName",
                             header: "AgentName",
+                            sortingField: "agentName",
                             width: 200,
-                            cell: (e) => e.runtimeId.split("-")[0],
+                            cell: (e) => e.agentName,
                         },
                         {
                             id: "runtimeVersion",
                             header: "RuntimeVersion",
+                            sortingField: "runtimeVersion",
                             width: 200,
                             cell: (e) => e.runtimeVersion,
                         },
                         {
                             id: "endpoint",
                             header: "Endpoint",
+                            sortingField: "endpoint",
                             width: 200,
                             cell: (e) => e.endpoint,
                         },
-                    ] as TableProps.ColumnDefinition<Session>[]
+                    ] as TableProps.ColumnDefinition<SessionRow>[]
                 }
             />
             {renameSessionModal}
