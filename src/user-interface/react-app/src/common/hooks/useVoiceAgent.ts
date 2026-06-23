@@ -67,6 +67,8 @@ export interface UseVoiceAgentOptions {
     qualifier: string;
     sessionId: string;
     config: ConnectOptions["config"];
+    /** Concrete runtime version for the selected endpoint — persisted to session history. */
+    runtimeVersion?: string;
 }
 
 export interface UseVoiceAgentReturn {
@@ -491,6 +493,7 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
                     sessionId: options.sessionId,
                     agentRuntimeId: options.agentRuntimeId,
                     qualifier: options.qualifier,
+                    runtimeVersion: options.runtimeVersion ?? "",
                     turns: finalTurns,
                 });
             }
@@ -500,7 +503,7 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
         }
         connectionRef.current = null;
         setIsConnected(false);
-    }, [options.sessionId, options.agentRuntimeId, options.qualifier]);
+    }, [options.sessionId, options.agentRuntimeId, options.qualifier, options.runtimeVersion]);
 
     // Cleanup on unmount — fully disconnect
     useEffect(() => {
