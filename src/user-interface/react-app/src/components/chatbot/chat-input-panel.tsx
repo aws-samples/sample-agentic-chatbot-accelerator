@@ -30,7 +30,7 @@ import {
     LLMToken,
     ToolActionItem,
 } from "./types";
-import { appendToolAction, markToolComplete, updateMessageHistoryRef } from "./utils";
+import { appendToolAction, markToolComplete, resolveRuntimeVersion, updateMessageHistoryRef } from "./utils";
 
 export interface ChatInputPanelProps {
     running: boolean;
@@ -483,6 +483,11 @@ const ChatInputPanel = forwardRef<ChatInputPanelHandle, ChatInputPanelProps>(fun
                 console.warn("Could not fetch user attributes for userId");
             }
 
+            // Resolve the concrete runtime version for the selected endpoint so
+            // the container can persist it to session history (Sessions table).
+            const selectedAgent = availableAgents.find((a) => a.value === agentRuntimeId);
+            const runtimeVersion = resolveRuntimeVersion(selectedAgent?.qualifierToVersion, qualifier);
+
             wsConnectionRef.current.send({
                 type: "text_input",
                 text: value,
@@ -491,6 +496,7 @@ const ChatInputPanel = forwardRef<ChatInputPanelHandle, ChatInputPanelProps>(fun
                 messageId: message_id,
                 agentRuntimeId: agentRuntimeId,
                 qualifier: qualifier,
+                runtimeVersion: runtimeVersion,
             });
         } catch (err) {
             console.log(Utils.getErrorMessage(err));

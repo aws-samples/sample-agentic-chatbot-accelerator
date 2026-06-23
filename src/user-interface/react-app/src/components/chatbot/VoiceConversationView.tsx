@@ -18,7 +18,7 @@ import { useVoiceAgent, VoiceConversationTurn } from "../../common/hooks/useVoic
 import { getDefaultRuntimeConfiguration as getDefaultRuntimeConfigurationQuery } from "../../graphql/queries";
 import { ConnectOptions } from "../../websocket-presigned";
 import { AgentOption, EndpointOption } from "./types";
-import { maskSensitiveInfo } from "./utils";
+import { maskSensitiveInfo, resolveRuntimeVersion } from "./utils";
 import MarkdownContent from "./side-view/markdown-content";
 
 export interface VoiceConversationViewProps {
@@ -68,13 +68,17 @@ export default function VoiceConversationView({
             accountId: appContext?.aws_account_id || "",
             qualifier,
             sessionId,
+            runtimeVersion: resolveRuntimeVersion(
+                availableAgents.find((a) => a.value === agentRuntimeId)?.qualifierToVersion,
+                qualifier,
+            ),
             config: {
                 aws_project_region: appContext?.aws_project_region || "",
                 aws_user_pools_id: appContext?.aws_user_pools_id || "",
                 aws_cognito_identity_pool_id: appContext?.aws_cognito_identity_pool_id || "",
             } as ConnectOptions["config"],
         }),
-        [agentRuntimeId, qualifier, sessionId, appContext],
+        [agentRuntimeId, qualifier, sessionId, appContext, availableAgents],
     );
 
     const { isRecording, isConnected, conversationTurns, activeSpeaker, startVoice, stopVoice, disconnectVoice: _disconnectVoice, error } =

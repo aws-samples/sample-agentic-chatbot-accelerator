@@ -91,6 +91,7 @@ class WebSocketBidiInput:
         turns = data.get("turns", [])
         runtime_id = data.get("agentRuntimeId", "")
         qualifier = data.get("qualifier", "DEFAULT")
+        runtime_version = data.get("runtimeVersion")
 
         if not session_id or not turns:
             logger.warning("voice_save: missing sessionId or turns — skipping")
@@ -119,6 +120,7 @@ class WebSocketBidiInput:
                             user_message=user_text.strip(),
                             ai_response=assistant_text.strip(),
                             runtime_id=runtime_id,
+                            runtime_version=runtime_version,
                             endpoint_name=qualifier,
                         )
                     except Exception as e:
@@ -149,6 +151,7 @@ class WebSocketBidiInput:
                     user_message=user_text.strip() if user_text else "(voice session)",
                     ai_response=assistant_text.strip() if assistant_text else "",
                     runtime_id=runtime_id,
+                    runtime_version=runtime_version,
                     endpoint_name=qualifier,
                 )
             except Exception as e:

@@ -382,6 +382,7 @@ async def graph_text_chat(websocket: WebSocket):
                             runtime_id=message.get(
                                 "agentRuntimeId", os.environ.get("agentName", "")
                             ),
+                            runtime_version=message.get("runtimeVersion"),
                             endpoint_name=message.get("qualifier", "DEFAULT"),
                         )
                     except Exception as hist_err:

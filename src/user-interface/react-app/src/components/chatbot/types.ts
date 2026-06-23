@@ -146,6 +146,9 @@ export interface AgentOption {
     iconName?: IconProps.Name;
     disabled?: boolean;
     architectureType?: string;
+    // JSON string mapping each endpoint (qualifier) to its numeric runtime
+    // version. Used to persist the served version into session history.
+    qualifierToVersion?: string;
 }
 
 export interface EndpointOption {

@@ -175,6 +175,7 @@ export default function Chat(props: { sessionId?: string }) {
                         iconName: getStatusIcon(agent.status),
                         disabled: agent.status.toLowerCase() !== "ready",
                         architectureType: agent.architectureType || undefined,
+                        qualifierToVersion: agent.qualifierToVersion || undefined,
                     };
                 }) || [];
 
