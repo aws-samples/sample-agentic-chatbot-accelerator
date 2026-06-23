@@ -480,8 +480,13 @@ async def text_chat(websocket: WebSocket):
                                 },
                             )
 
-                            # Extract reasoning content
-                            reasoning_content = _extract_reasoning(raw_result)
+                            # Prefer accumulated reasoning (captures ALL model
+                            # calls); fall back to final-only extraction.
+                            reasoning_content = (
+                                callbacks.accumulated_reasoning
+                                if callbacks and callbacks.accumulated_reasoning
+                                else _extract_reasoning(raw_result)
+                            )
 
                             final_data: dict = {
                                 "type": "final_response",

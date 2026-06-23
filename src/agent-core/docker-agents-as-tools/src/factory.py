@@ -16,6 +16,7 @@ from shared.mcp_client import MCPClientManager
 from shared.sigv4_auth import SigV4HTTPXAuth
 from strands import Agent
 from strands.hooks.events import (
+    AfterModelCallEvent,
     AfterToolCallEvent,
     BeforeToolCallEvent,
 )
@@ -83,6 +84,7 @@ def create_orchestrator(
 
     agent.hooks.add_callback(BeforeToolCallEvent, callbacks.log_tool_entries)
     agent.hooks.add_callback(AfterToolCallEvent, callbacks.log_tool_results)
+    agent.hooks.add_callback(AfterModelCallEvent, callbacks.accumulate_reasoning)
 
     if configuration.tools and any(
         [t.startswith(RETRIEVE_FROM_KB_PREFIX) for t in configuration.tools]
