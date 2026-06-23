@@ -45,7 +45,7 @@ This is a **3-stack-equivalent CDK app** (`iac-cdk/bin/aca.ts`):
 Two CDK aspects run in `aca.ts`: `LambdaNodejsRuntimeUpgrader` (forces all `nodejs*` Lambdas to `nodejs24.x`, including framework-managed ones), then `AwsSolutionsChecks` (cdk-nag). Order matters — runtime upgrade must happen before nag validation.
 
 ### Runtime data plane
-The browser talks to AgentCore **directly over WebSocket** (`wss://bedrock-agentcore.<region>.amazonaws.com/runtimes/<ARN>/ws`) using a SigV4-signed presigned URL. AppSync/Lambda are **not** in the chat data path — they are only used for CRUD (sessions, agent config, evaluations) and a *side-channel* for AI-rephrased tool-action descriptions (SNS → `agentTools` topic → Agent Tools Handler Lambda → `chatMessages` topic → Outgoing Message Handler → AppSync subscription → browser).
+The browser talks to AgentCore **directly over WebSocket** (`wss://bedrock-agentcore.<region>.amazonaws.com/runtimes/<ARN>/ws`) using a SigV4-signed presigned URL. AppSync/Lambda are **not** in the chat data path — chat tokens *and* tool-step updates ("Using X…", arguments, success/error status) stream to the browser over that same WebSocket. AppSync is used for CRUD (sessions, agent config, evaluations) and for runtime/evaluation status notifications (e.g. `notify-runtime-update` → `publishRuntimeUpdate` → subscription → browser). Note: tool-step descriptions are no longer AI-rephrased and routed through SNS — the old `agentTools` topic and Agent Tools Handler Lambda have been removed.
 
 FastAPI inside the AgentCore container exposes:
 - `/ws` — text + voice (`voice_init` flips into Nova Sonic BidiAgent mode)
