@@ -36,13 +36,15 @@
 |----------|------|
 | λ Notify Runtime Update | Notifies the frontend via AppSync when runtime status changes (creation complete, deletion complete) |
 
-> **Note:** Tool steps ("Using X…", arguments, success/error status) are no longer
-> rephrased by an LLM and routed through SNS. The AgentCore container now emits them
-> **directly over the browser WebSocket** alongside the chat stream (see [Real-Time
-> Communication](#real-time-communication-direct-websocket)). The former side-channel
-> — the `agentTools` SNS topic and the Agent Tools Handler Lambda — has been removed.
+> **Note:** Tool steps ("Using X…", arguments, success/error status) are emitted by the
+> AgentCore container **directly over the browser WebSocket** alongside the chat stream
+> (see [Real-Time Communication](#real-time-communication-direct-websocket)). AppSync is
+> used only to notify the frontend of runtime status changes, not for the live chat or
+> tool-step stream.
 
-## Agent Core Infrastructure
+## AgentCore Infrastructure
+
+Each agentic pattern ships as its own container image. For how to build and use each, see the pattern guides: [Single Agent](./agentic-patterns/single-agent.md), [Agents as Tools](./agentic-patterns/agents-as-tools.md), [Swarm](./agentic-patterns/swarm-agents.md), and [Graph](./agentic-patterns/graph-agents.md).
 
 | Resource | Role |
 |----------|------|
@@ -79,13 +81,14 @@ Browser → SigV4 presigned URL → wss://bedrock-agentcore.<region>.amazonaws.c
 
 ## Amazon Bedrock — Foundation Models
 
+The default configuration (`iac-cdk/bin/config.ts`) ships the three text models below. Add any other Bedrock model — including the voice model — to `supportedModels` in your `config.yaml`; see [How to Deploy](./how-to-deploy.md).
+
 | Model | Use Case |
 |-------|----------|
-| Claude Opus 4.7 | Complex reasoning, high-quality responses |
 | Claude Sonnet 4.6 | Balanced performance/cost, extended thinking |
 | Claude Haiku 4.5 | Fast responses, cost-efficient |
 | Amazon Nova 2 Lite | Fast text inference |
-| Amazon Nova Sonic | Voice-to-voice bidirectional streaming (BidiAgent) |
+| Amazon Nova 2 Sonic | Voice-to-voice bidirectional streaming (BidiAgent) — add to enable voice |
 
 ## Data Processing *(optional)*
 

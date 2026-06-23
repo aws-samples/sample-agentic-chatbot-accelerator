@@ -54,14 +54,14 @@ In the **Agents as Tools** step:
 
 There is **no role field on this step** — the orchestrator reads each sub-agent's own Description (the one you set when creating the sub-agent) from its A2A agent card. To change how the orchestrator perceives a sub-agent, edit that sub-agent's Description (create a new version of the sub-agent), don't try to override it here.
 
-![Agents as Tools — Step 1: Adding sub-agents with endpoint and role configuration](../../imgs/agentic-patterns/agents-as-tools-01.png)
+![Agents as Tools — Step 1: Adding sub-agents by selecting an existing agent and its endpoint](../../imgs/agentic-patterns/agents-as-tools-01.png)
 
 ### 4. Configure the orchestrator
 
 In the **Orchestrator Configuration** step:
 
 1. **Model**: Select the LLM model for the orchestrator (e.g. Claude Haiku 4.5)
-2. **Instructions**: Write a system prompt that tells the orchestrator how to use its sub-agents. Reference the sub-agents by their roles and explain the delegation strategy.
+2. **Instructions**: Write a system prompt that tells the orchestrator how to use its sub-agents. Refer to each sub-agent by name and explain the delegation strategy — but remember the orchestrator decides *which* sub-agent fits a task from that sub-agent's own Description (its A2A card), not from anything you write here.
 3. **Conversation Manager**: Choose how conversation history is managed (Sliding Window is recommended)
 4. **Additional Tools** (optional): Add extra tools, knowledge bases, or MCP servers that the orchestrator can use directly alongside its sub-agent tools
 
@@ -100,7 +100,7 @@ For each sub-agent, fill in **both** Instructions (how it should behave) and Des
 Create each one through the UI:
 
 1. **Agent Factory** → **Create Agent** → **Single Agent**
-2. Set the agent name, instructions, **description**, and model (e.g. `us.anthropic.claude-haiku-4-5-20251001-v1:0`)
+2. Set the agent name, instructions, **description**, and model (e.g. Claude Haiku 4.5)
 3. Do **not** add any tools — the agents will simulate their responses
 4. Wait for "Ready" status
 
@@ -190,7 +190,7 @@ To update an agents-as-tools configuration:
 ## How It Works Under the Hood
 
 1. The UI sends a `createAgentCoreRuntime` mutation with `architectureType: AGENTS_AS_TOOLS` and the orchestrator config as `configValue`
-2. The Agent Factory Resolver validates the config against `OrchestratorConfiguration` (Pydantic), verifies all referenced runtime IDs exist, and rewrites each sub-agent's `runtimeId` from the HTTP runtime id to the **A2A twin ARN** (sub-agents deploy as twin runtimes — HTTP for UI standalone access, A2A for orchestrator calls)
+2. The Agent Factory Resolver validates the config against `AgentsAsToolsConfiguration` (Pydantic), verifies all referenced runtime IDs exist, and rewrites each sub-agent's `runtimeId` from the HTTP runtime id to the **A2A twin ARN** (sub-agents deploy as twin runtimes — HTTP for UI standalone access, A2A for orchestrator calls)
 3. The Step Function invokes the Create Runtime Version Lambda, which selects the agents-as-tools Docker container (`docker-agents-as-tools/`)
 4. At runtime, the container's `data_source.py` loads the orchestrator configuration from DynamoDB
 5. `factory.py` creates a Strands `Agent` with the orchestrator's model and instructions, then wires each sub-agent in via Strands' `A2AClientToolProvider`:

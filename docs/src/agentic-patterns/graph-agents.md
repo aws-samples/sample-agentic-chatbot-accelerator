@@ -181,7 +181,7 @@ A linear pipeline where content is researched, written, and reviewed.
 
 Create each one through the UI:
 1. **Agent Factory** → **Create Agent** → **Single Agent**
-2. Set the agent name, instructions, and model (e.g. `us.anthropic.claude-haiku-4-5-20251001-v1:0`)
+2. Set the agent name, instructions, and model (e.g. Claude Haiku 4.5)
 3. Wait for "Ready" status
 
 ### Step 2 — Create the graph

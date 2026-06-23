@@ -152,7 +152,7 @@ allowedGeoRegions: []
 # dataProcessingParameters: omitted
 # knowledgeBaseParameters: omitted
 supportedModels:
-    Claude Haiku 3.5: "[REGION-PREFIX].anthropic.claude-3-5-haiku-20241022-v1:0"
+    Claude Haiku 4.5: "[REGION-PREFIX].anthropic.claude-haiku-4-5-20251001-v1:0"
     # ... other models
 toolRegistry:
   - name: "get_current_time"
@@ -180,7 +180,7 @@ Include `agentRuntimeConfig` in your configuration to automatically deploy an ag
 ```yaml
 agentRuntimeConfig:
     modelInferenceParameters:
-        modelId: "[REGION-PREFIX].anthropic.claude-3-5-haiku-20241022-v1:0"
+        modelId: "[REGION-PREFIX].anthropic.claude-haiku-4-5-20251001-v1:0"
         parameters:
             temperature: 0.5
             maxTokens: 4096

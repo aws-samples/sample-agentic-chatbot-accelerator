@@ -72,7 +72,7 @@ AppSync → EvaluationResolver → SQS Queue → EvaluationExecutor → DynamoDB
 
 ## Available Evaluators
 
-The system supports nine evaluator types — eight from the Strands Evaluation SDK plus one custom evaluator:
+The system supports nine evaluator types — eight from the Strands Evaluation SDK plus one custom evaluator (**StructuredOutputEvaluator**, defined in `evaluation-executor/evaluator.py`; it is deterministic and needs no LLM):
 
 | Evaluator | Purpose | Requires Rubric | Requires Trajectory | Best For |
 |-----------|---------|-----------------|---------------------|----------|
@@ -110,8 +110,8 @@ StructuredOutputEvaluator, OutputEvaluator
 
 ## Pass/Fail Logic
 
-- **Pass threshold**: Configurable via `passThreshold` in `config.yaml`
-- **Overall pass**: Based on **average score** across all evaluators
+- **Pass threshold**: Configurable via `passThreshold` in `config.yaml` (default `0.8`)
+- **Overall pass**: The test case passes when the **average score across all selected evaluators** is `>= passThreshold`
 - **Individual evaluators**: Each produces a score from 0.0 to 1.0
 
 Example (with passThreshold: 0.8):
@@ -120,6 +120,8 @@ OutputEvaluator: 100%
 HelpfulnessEvaluator: 83%
 Average: 91.5% → PASSED (>= 80%)
 ```
+
+> **Note on binary evaluators**: `GoalSuccessRateEvaluator` and `StructuredOutputEvaluator` emit only `1.0` or `0.0`. Because the overall result is a plain average, mixing a binary evaluator with graded ones pulls the average sharply on failure (e.g. a `0.0` binary score alongside a `1.0` graded score averages to `0.5`). If you need a binary evaluator to be strictly gating, run it in its own evaluation rather than averaging it with rubric-based ones.
 
 ## Concurrency and Throttling
 
@@ -261,7 +263,7 @@ For `InteractionsEvaluator`, use the `expected_interactions` field to define the
 4. **Provide clear expected outputs**: Evaluators compare against your expected output
 5. **Define expected_trajectory for workflow validation**: Use this with `TrajectoryEvaluator` to verify action sequences
 6. **Test iteratively**: Run small test sets first to validate evaluator selection
-7. **Monitor pass rates**: A consistent pass rate below 70% may indicate evaluator mismatch
+7. **Monitor pass rates**: A consistently low pass rate (e.g. most cases falling well under your `passThreshold`) may indicate an evaluator mismatch rather than a bad agent — revisit which evaluators you've selected for the agent type
 8. **Use StructuredOutputEvaluator for JSON outputs**: For agents that return structured data (e.g., extracted `loop_id`, `template_tags`), this evaluator provides deterministic field-level comparison without LLM costs. Use `null` in `expected_output` to assert a field should be absent.
 
 ## Related Resources

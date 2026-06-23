@@ -1,5 +1,7 @@
 # Troubleshooting Guide
 
+> [← Documentation index](./index.md)
+
 This guide covers common issues encountered during development and deployment of the Agentic Chatbot Accelerator.
 
 ## Deployment Issues
