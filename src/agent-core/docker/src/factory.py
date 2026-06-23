@@ -15,6 +15,7 @@ from shared.base_factory import BaseAgentFactory
 from shared.mcp_client import MCPClientManager
 from strands import Agent, AgentSkills
 from strands.hooks.events import (
+    AfterModelCallEvent,
     AfterToolCallEvent,
     BeforeToolCallEvent,
 )
@@ -258,6 +259,7 @@ def create_agent(
 
     agent.hooks.add_callback(BeforeToolCallEvent, callbacks.log_tool_entries)
     agent.hooks.add_callback(AfterToolCallEvent, callbacks.log_tool_results)
+    agent.hooks.add_callback(AfterModelCallEvent, callbacks.accumulate_reasoning)
 
     if any([t.startswith(RETRIEVE_FROM_KB_PREFIX) for t in configuration.tools]):
         logger.info(

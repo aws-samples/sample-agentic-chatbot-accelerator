@@ -598,8 +598,13 @@ def _build_final_response(
         "messageId": message_id,
     }
 
-    # Reasoning content
-    reasoning_content = _extract_reasoning_content(agent_result)
+    # Prefer accumulated reasoning (captures ALL model calls); fall back to
+    # final-only extraction.
+    reasoning_content = (
+        callbacks.accumulated_reasoning
+        if callbacks and callbacks.accumulated_reasoning
+        else _extract_reasoning_content(agent_result)
+    )
     if reasoning_content:
         logger.info(
             "Model reasoning process",

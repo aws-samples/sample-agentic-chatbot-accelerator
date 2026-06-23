@@ -11,6 +11,8 @@ import asyncio
 import json
 from typing import TYPE_CHECKING
 
+from strands.hooks.events import AfterModelCallEvent
+
 from .base_constants import RETRIEVE_FROM_KB_PREFIX
 from .kb_types import Citation, RetrievedReference
 
@@ -150,6 +152,7 @@ class BaseAgentCallbacks:
         self._metadata = dict()
         self._logger = logger
         self._nb_tool_invocations = 0
+        self._reasoning_chunks: list[str] = []
         self._session_id = session_id
         self._user_id = user_id
         self._websocket = None  # Optional WebSocket for direct tool action delivery
@@ -186,6 +189,31 @@ class BaseAgentCallbacks:
         """Reset metadata and tool invocation counter."""
         self._metadata = dict()
         self._nb_tool_invocations = 0
+        self._reasoning_chunks = []
+
+    @property
+    def accumulated_reasoning(self) -> str:
+        """Reasoning text accumulated from all model calls in this turn."""
+        return "\n".join(self._reasoning_chunks) if self._reasoning_chunks else ""
+
+    def accumulate_reasoning(self, event: AfterModelCallEvent) -> None:
+        """Accumulate reasoning content from each model call.
+
+        Registered as an AfterModelCallEvent hook so it fires after every model
+        inference — not just the final one — capturing the full chain of thought
+        across tool-use loops.
+        """
+        if event.stop_response is None:
+            return
+        for block in event.stop_response.message.get("content", []):
+            if not isinstance(block, dict) or "reasoningContent" not in block:
+                continue
+            r_content = block["reasoningContent"]
+            if not isinstance(r_content, dict) or "reasoningText" not in r_content:
+                continue
+            r_text = r_content["reasoningText"]
+            if isinstance(r_text, dict) and r_text.get("text"):
+                self._reasoning_chunks.append(r_text["text"])
 
     def _extract_tool_parameters(self, event, specs) -> list[dict]:
         """Extract and format tool parameters from event.
