@@ -13,6 +13,8 @@ A swarm agent consists of:
 
 Unlike single agents where one agent handles everything, swarm agents hand off conversations between specialised agents. For example, a software development swarm might have a researcher, a coder, a reviewer, and an architect — each handling their area of expertise and handing off when another specialist is needed.
 
+The swarm is built on the [Strands Agents](https://strandsagents.com/) multi-agent swarm primitive and runs as a containerized runtime on Amazon Bedrock AgentCore.
+
 ## Prerequisites
 
 Before creating a swarm agent, you need:
@@ -64,7 +66,7 @@ These defaults work well for most use cases. Increase timeouts for complex multi
 
 ### 6. Review and create
 
-Review the configuration summary and click **Create**. The swarm agent will go through the same creation pipeline as single agents (Step Function → AgentCore Runtime).
+Review the configuration summary and click **Create Runtime**. The swarm agent will go through the same creation pipeline as single agents (Step Function → AgentCore Runtime).
 
 ### 7. Test the swarm
 
@@ -89,7 +91,7 @@ A team of specialised agents collaborating on a software task.
 
 Create each one through the UI:
 1. **Agent Factory** → **Create Agent** → **Single Agent**
-2. Set the agent name, instructions, and model (e.g. `us.anthropic.claude-haiku-4-5-20251001-v1:0`)
+2. Set the agent name, instructions, and model (e.g. Claude Haiku 4.5)
 3. Wait for "Ready" status
 
 ### Step 2 — Create the swarm
@@ -139,6 +141,18 @@ To inspect an existing swarm agent's configuration:
 3. Click on a version to open the **View Version** modal
 4. The modal displays: entry agent, agent references with endpoints, orchestrator settings, and conversation manager
 
+## Creating a New Version
+
+To update a swarm's configuration:
+
+1. Select the swarm in the **Agent Factory** table
+2. Click **New version**
+3. The wizard opens with the existing configuration pre-populated
+4. Modify the agent references, entry agent, orchestrator settings, or conversation manager as needed
+5. Click **Create Runtime** to deploy the new version
+
+> Updating a swarm only changes the swarm-level config (which agents participate, the entry agent, limits). To change a *member* agent's model, instructions, or tools, create a new version of that single agent and point the referenced endpoint (e.g. DEFAULT) at it — the swarm resolves each reference's endpoint to a specific version when it loads members, so the member only changes once that endpoint moves.
+
 ## How It Works Under the Hood
 
 1. The UI sends a `createAgentCoreRuntime` mutation with `architectureType: SWARM` and the swarm config as `configValue`
@@ -146,6 +160,24 @@ To inspect an existing swarm agent's configuration:
 3. The Step Function invokes the Create Runtime Version Lambda, which selects the swarm Docker container
 4. At runtime, the swarm container's `data_source.py` loads each referenced agent's configuration from DynamoDB
 5. The swarm orchestrator manages handoffs between agents based on the orchestrator settings
+
+## Best Practices
+
+### Designing the swarm
+
+- **Give each member a single, clear specialty** — overlapping responsibilities cause agents to hand off back and forth instead of converging.
+- **Write handoff cues into member instructions** — tell each agent *when* its job is done and *which* specialist should take over next (the swarm reads these to route handoffs).
+- **Pick the entry agent deliberately** — it should be a triage/coordinator role that can route the first message, not a deep specialist.
+- **Tune limits to the workflow** — raise execution and node timeouts for long multi-step tasks; lower max handoffs if agents loop.
+
+### When to use swarm vs. other patterns
+
+| Pattern | Best for |
+|---|---|
+| **Single Agent** | Focused tasks with direct tool access — the simplest and fastest to set up |
+| **Agents as Tools** | Dynamic delegation where an orchestrator decides which specialists to invoke |
+| **Swarm** | Collaborative workflows where agents hand off conversations to each other |
+| **Graph** | Predefined workflows with fixed execution paths and conditional routing |
 
 ## Troubleshooting
 

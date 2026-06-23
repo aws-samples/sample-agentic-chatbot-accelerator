@@ -64,7 +64,7 @@ These steps will create an MCP server on AgentCore Gateway using AWS Lambda func
 
 
 #### Configuration
-**Add** MCP server details in the `bin/config.yaml` file. The MCP URL is automatically composed at deployment time based on the runtime or gateway ID you provide, along with the AWS region and account ID from your deployment context.
+**Add** MCP server details in the `iac-cdk/bin/config.yaml` file. The MCP URL is automatically composed at deployment time based on the runtime or gateway ID you provide, along with the AWS region and account ID from your deployment context.
 
 For each MCP server, you must specify exactly one of:
 - **runtimeId**: The runtime identifier from your AgentCore Runtime deployment (visible in the AgentCore console or returned when creating the runtime)
@@ -239,7 +239,7 @@ class MyTool(AbstractToolObject):
 
 ### 1. Implement Tool Logic
 
-Add your tool to [lib/agent-core/docker/src/registry.py](../../src/agent-core/docker/src/registry.py):
+Define your tool in [src/agent-core/shared/base_registry.py](../../src/agent-core/shared/base_registry.py), where the `@tool` decorator, `AbstractToolObject`, `ToolFactory`, and `TOOL_FACTORY_MAP` all live. (The per-container [registry.py](../../src/agent-core/docker/src/registry.py) imports `TOOL_FACTORY_MAP` from there — you don't edit it.)
 
 ```python
 # Function-based example
@@ -266,7 +266,7 @@ class MLModelTool(AbstractToolObject):
 
 ### 2. Register Tool Factory
 
-Add factory method to `ToolFactory` class:
+Add a factory method to the `ToolFactory` class (in the same `base_registry.py`):
 
 ```python
 class ToolFactory:
@@ -294,10 +294,11 @@ TOOL_FACTORY_MAP = {
 
 ### 4. Register in Configuration
 
-Create a `config.yaml` in the [iac-cdk/bin/ folder](../../iac-cdk/bin/) with your custom toolRegistry:
+Add your tools to the `toolRegistry` block in [iac-cdk/bin/config.yaml](../../iac-cdk/bin/) (create the file if it does not yet exist — it overrides the defaults in `config.ts`):
 
 ```yaml
 toolRegistry:
+  # ... existing tools
   - name: "get_current_time"
     description: "Get the current date and time in the specified timezone. Helpful when user refers to relative time (yesterday, today, this year, now, etc.)"
     invokesSubAgent: false
@@ -305,12 +306,11 @@ toolRegistry:
     description: "Invoke a sub-agent to handle specialized tasks or domain-specific queries that require dedicated processing"
     invokesSubAgent: true
   - name: "analyze_data"
-    description: "Analyze scientific datasets with statistical methods",
-    invokesSubAgent: false,
+    description: "Analyze scientific datasets with statistical methods"
+    invokesSubAgent: false
   - name: "ml_model_tool"
-    description: "Invoke ML models for predictions and analysis",
-    invokesSubAgent: false,
-    # ... existing tools
+    description: "Invoke ML models for predictions and analysis"
+    invokesSubAgent: false
 ```
 
 ## Advanced Tool Patterns

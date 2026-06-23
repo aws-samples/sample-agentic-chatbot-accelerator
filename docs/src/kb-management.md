@@ -1,6 +1,6 @@
 # Knowledge Base Management
 
-> ⚠️ **Note:** The Knowledge Base feature is optional. It is only available when `knowledgeBaseParameters` and `dataProcessingParameters` are configured in `bin/config.yaml`. If these parameters are omitted, the Knowledge Base navigation items will not appear in the UI. See [How to Deploy](./how-to-deploy.md#deployment-scenarios) for more details on deployment configurations.
+> ⚠️ **Note:** The Knowledge Base feature is optional. It is only available when `knowledgeBaseParameters` and `dataProcessingParameters` are configured in `iac-cdk/bin/config.yaml` (which overrides the defaults in `iac-cdk/bin/config.ts`). If these parameters are omitted, the Knowledge Base navigation items will not appear in the UI. See [How to Deploy](./how-to-deploy.md#deployment-scenarios) for more details on deployment configurations.
 
 ## Document Processing Pipeline
 

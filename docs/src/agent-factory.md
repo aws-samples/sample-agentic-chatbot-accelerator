@@ -24,12 +24,16 @@ Creates a new AgentCore Runtime by starting a Step Function execution.
 
 **Parameters:**
 - `agentName` (string): The unique name identifier for the agent runtime
-- `configValue` (string): A JSON string containing the agent configuration conforming to the AgentConfiguration schema (for single agents) or SwarmConfiguration schema (for swarm agents)
-- `architectureType` (ArchitectureType, optional): `SINGLE` or `SWARM`. Defaults to `SINGLE` when omitted
+- `configValue` (string): A JSON string containing the agent configuration. The schema it must conform to depends on `architectureType` (see Validation below)
+- `architectureType` (ArchitectureType, optional): `SINGLE`, `AGENTS_AS_TOOLS`, `SWARM`, or `GRAPH`. Defaults to `SINGLE` when omitted
 
 **Validation:**
 - First validates the input is valid JSON
-- Then validates against the `AgentConfiguration` Pydantic model (when `architectureType` is `SINGLE` or omitted) or the `SwarmConfiguration` model (when `architectureType` is `SWARM`)
+- Then validates against the Pydantic model matching `architectureType`:
+  - `SINGLE` (or omitted) → `AgentConfiguration`
+  - `AGENTS_AS_TOOLS` → `AgentsAsToolsConfiguration`
+  - `SWARM` → `SwarmConfiguration`
+  - `GRAPH` → `GraphConfiguration`
 
 **Returns:**
 - The `agentName` if Step Function execution started successfully

@@ -1,6 +1,10 @@
 # Agentic Chatbot Accelerator
 
-The Agentic Chatbot Accelerator is a full-stack solution for building, deploying, and iterating on agentic chatbots. It implements an iterative agent development lifecycle:
+> A full-stack agentic harness on AWS — spin up multi-agent chatbots, voice-to-voice AI, RAG, and an Agent Factory on Bedrock AgentCore. From idea to deployed agent, fast.
+
+The Agentic Chatbot Accelerator is a **full-stack agentic harness on AWS** — everything you need to build, deploy, run, and iterate on multi-agent chatbots in one place. Instead of standing up a single agent in isolation, it wraps your agents in the complete lifecycle: an Agent Factory to design and configure them, a managed runtime to deploy them, a chat interface (text and voice) to exercise them, and evaluation, observability, and feedback tooling to measure and improve them.
+
+It implements an iterative agent development lifecycle:
 
 <p align="center">
   <img src="./docs/imgs/agent-lifecycle.png" alt="Agent Development Lifecycle" />
@@ -12,7 +16,7 @@ The Agentic Chatbot Accelerator is a full-stack solution for building, deploying
 4. **Deploy Agent** – Managed runtime environment for your agents
 5. **Experiment & Gather Feedback** – Agent behavior testing, human feedback collection, and iterative refinement
 
-The accelerator provides a web-based interface, agent factory, knowledge base management, and observability tooling to support this full cycle. The current implementation deploys on AWS using CDK or Terraform, leveraging Amazon Bedrock AgentCore.
+As a harness, it closes the loop end to end: a web-based interface and Agent Factory to author agents, four agentic patterns (single, agents-as-tools, swarm, graph), an MCP server registry and knowledge base management to extend them, a managed runtime to host them, and evaluation, experiments, and observability tooling to measure and refine them. The current implementation deploys on AWS using CDK or Terraform, leveraging Amazon Bedrock AgentCore.
 
 ## How to Get Started
 
@@ -61,11 +65,15 @@ Everything the Agent Factory UI does, you can also drive from a conversation in 
 
 > The plugin operates on a **deployed** stack via the Agent Factory API — it does not generate IaC. For build-time `config.yaml`/`tfvars`, see [How to Deploy](./docs/src/how-to-deploy.md).
 
-## AWS Platform Details
+## Documentation
 
-- [Architecture](./docs/src/architecture.md)
-- [API Reference](./docs/src/api.md)
-- [Observability & Insights](./docs/src/observability-insights.md)
+📚 **[Full documentation index](./docs/src/index.md)** — the complete map of guides, grouped by lifecycle stage.
+
+Frequently referenced:
+
+- [How to Deploy](./docs/src/how-to-deploy.md) · [Development Guide](./docs/src/development-guide.md) · [Troubleshooting](./docs/src/troubleshooting.md)
+- [Architecture](./docs/src/architecture.md) · [API Reference](./docs/src/api.md) · [Observability & Insights](./docs/src/observability-insights.md)
+- [Agent Skills](./docs/src/skills.md) · [Expanding AI Tools](./docs/src/expanding-ai-tools.md) · [Knowledge Base Management](./docs/src/kb-management.md)
 
 ## Optional Features
 

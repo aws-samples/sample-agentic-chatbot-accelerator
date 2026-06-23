@@ -6,6 +6,17 @@ This guide explains how to query and analyze AgentCore runtime logs using Amazon
 
 When an AgentCore runtime is deployed, it automatically logs metrics and events to CloudWatch Logs. CloudWatch Insights provides a powerful query language to extract meaningful insights from these logs.
 
+This guide focuses on the **CloudWatch Logs Insights** queries available out of the box. For distributed, span-level tracing across agent invocations (including multi-agent calls), enable **X-Ray Transaction Search** — see [Distributed Tracing with X-Ray](#distributed-tracing-with-x-ray) below.
+
+## Distributed Tracing with X-Ray
+
+The accelerator can provision [AWS X-Ray Transaction Search](https://docs.aws.amazon.com/xray/latest/devguide/transaction-search.html) to trace agent invocations end to end. Enable it by adding the `agentCoreObservability` block to your deployment configuration (CDK `config.yaml` / Terraform `tfvars`); see [How to Deploy](./how-to-deploy.md). When enabled, the stack:
+
+- Turns on X-Ray Transaction Search so traces are indexed and searchable in the CloudWatch console (**CloudWatch → X-Ray traces → Transaction Search**), with the indexing percentage controlled by `indexingPercentage`.
+- Surfaces an `X-Ray P99 (s)` latency widget on the generated CloudWatch dashboard.
+
+Use X-Ray when you need to follow a single request across the orchestrator and its sub-agents; use the Logs Insights queries below for aggregate token, cache, and latency analysis.
+
 ## How to Run Queries
 
 1. Navigate to **CloudWatch** → **Logs** → **Logs Insights** in the AWS Console

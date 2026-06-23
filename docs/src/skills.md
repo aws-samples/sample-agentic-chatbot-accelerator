@@ -1,5 +1,7 @@
 # Agent Skills
 
+> [← Documentation index](./index.md)
+
 Skills give agents on-demand access to specialized instructions without bloating the system prompt. Instead of front-loading every possible instruction into a single prompt, you define modular skill packages that the agent discovers and activates only when relevant.
 
 This feature implements the [Agent Skills specification](https://agentskills.io/specification) via the Strands SDK `AgentSkills` plugin.

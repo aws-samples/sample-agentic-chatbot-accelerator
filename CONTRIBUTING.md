@@ -102,10 +102,12 @@ Contributions should align with the following principles:
 
 For complete development environment setup, project structure, IDE configuration, and local development instructions, see the **[Development Guide](./docs/src/development-guide.md)**.
 
+> **Note:** This is the toolchain for *contributing* — building containers, layers, and linting Lambdas locally. Just *deploying* the accelerator needs far less (Node.js + AWS CLI + `zip`); Docker/Finch/Python are not required because builds run on AWS CodeBuild. See [How to Deploy](./docs/src/how-to-deploy.md#pre-requisites).
+
 In summary, you will need:
 
 - **Node.js** (version 20 recommended)
-- **Docker** or **Finch** (for container builds)
+- **Docker** or **Finch** (for local container builds)
 - **AWS CLI** (configured with appropriate credentials)
 - **Python 3.11+** (for Lambda development and linting)
 - **Git**
@@ -166,7 +168,7 @@ For detailed information on code quality tools, frontend testing, CDK synthesis,
 
 - **Infrastructure (CDK)**: Modifications to `iac-cdk/lib/` directory constructs
 - **Lambda Functions**: Python handlers in `src/*/functions/`
-- **Frontend (React)**: Components in `lib/user-interface/react-app/src/`
+- **Frontend (React)**: Components in `src/user-interface/react-app/src/`
 - **Agent Runtime**: Docker container and Python code in `src/agent-core/docker/`
 
 ### Documentation Contributions

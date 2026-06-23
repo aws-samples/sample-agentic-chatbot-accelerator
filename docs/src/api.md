@@ -1,68 +1,124 @@
 # API Reference
 
-The following table documents the [GraphQL API schema](../../src/api/schema/schema.graphql).
+> [← Documentation index](./index.md)
 
-| FieldName | Type | Functionality | Callable from Internet | Authorized Callers | Comments |
-|-----------|------|---------------|------------------------|-------------------|----------|
-| sendQuery | Mutation | Send user message to the backend for an agent runtime to process | Yes | User authenticated via Cognito | Fire and forget approach - the client sends the query and subscribes to receive response |
-| publishResponse | Mutation | Publish to the client the tokens and the final agent answer | No | Lambda function |  |
-| receiveMessages | Subscription | Subscription on publishResponse | Yes | User authenticated via Cognito |  |
-| listSessions | Query | List all user's chatbot sessions | Yes | User authenticated via Cognito |  |
-| getSession | Query | Get a specific user's session by session id | Yes | User authenticated via Cognito | Allows to reload a conversation to visualize or continue it |
-| deleteUserSessions | Mutation | Delete all the user sessions | Yes | User authenticated via Cognito |  |
-| deleteSession | Mutation | Delete a specific user session | Yes | User authenticated via Cognito |  |
-| renameSession | Mutation | Modify a session title | Yes | User authenticated via Cognito | By default, a session title is composed of the first 100 characters of the first user message |
-| saveToolActions | Mutation | Save tool actions for a specific message in a session | Yes | User authenticated via Cognito | Persists user friendly description of the agent's tool invocations to the session history |
-| updateMessageExecutionTime | Mutation | Update execution time for a message in a session | Yes | User authenticated via Cognito |  |
-| publishFeedback | Mutation | Publish user's feedback on an agent generated response | Yes | User authenticated via Cognito | Thumbs up/down and free-text form feedback |
-| getPresignedUrl | Query | Get S3 object presigned URL | Yes | User authenticated via Cognito | Used to display the document that corresponds to a reference if the agent is using a knowledge base as data source |
-| listKnowledgeBases | Query | List available Bedrock Knowledge Bases | Yes | User authenticated via Cognito | This filters on AWS tags: stack name and environment |
-| listDataSources | Query | List data sources associated with a Bedrock Knowledge Base | Yes | User authenticated via Cognito |  |
-| listDocuments | Query | List documents in a data source | Yes | User authenticated via Cognito |  |
-| getInputPrefix | Query | Get the raw input prefix associated with a knowledge base data source | Yes | User authenticated via Cognito |  |
-| checkOnProcessStarted | Query | Check if document processing has started for a given set of S3 objects. | Yes | User authenticated via Cognito | Used when user uploads documents through the UI. This could potentially be refactored with a mutation/subscription pattern |
-| checkOnProcessCompleted | Query | Check if document processing has completed for a given set of S3 objects. | Yes | User authenticated via Cognito | Used when user uploads documents through the UI. This could potentially be refactored with a mutation/subscription pattern. |
-| checkOnDocumentsRemoved | Query | Check if documents have been removed from DynamoDB that stores the doc processing states | Yes | User authenticated via Cognito | Used when user deletes documents through the UI. This could potentially be refactored with a mutation/subscription pattern. |
-| checkOnSyncInProgress | Query | Check if a knowledge base data source sync is currently in progress. | Yes | User authenticated via Cognito | Used when user adds/deletes documents through the UI. This could potentially be refactored with a mutation/subscription pattern. |
-| deleteDocument | Mutation | Delete a document from a data source | Yes | User authenticated via Cognito |  |
-| createKnowledgeBase | Mutation | Create a new Bedrock Knowledge Base from the application | Yes | User authenticated via Cognito |  |
-| deleteKnowledgeBase | Mutation | Delete an existing Bedrock Knowledge Base from the application | Yes | User authenticated via Cognito |  |
-| createDataSource | Mutation | Create a new S3 data source and attach it to an existing Bedrock Knowledge Base | Yes | User authenticated via Cognito |  |
-| deleteDataSource | Mutation | Remove an existing S3 data source from a Bedrock Knowledge Base | Yes | User authenticated via Cognito |  |
-| syncKnowledgeBase | Mutation | Synchronize a Bedrock Knowledge Base | Yes | User authenticated via Cognito | Used a fallback mechanism because Knowledge Base synchronization is automatically done. |
-| getDocumentMetadata | Query | Get the metadata associated with a document | Yes | User authenticated via Cognito |  |
-| updateMetadata | Mutation | Update the metadata of a single document | Yes | User authenticated via Cognito |  |
-| batchUpdateMetadata | Mutation | Update the metadata of a set of documents | Yes | User authenticated via Cognito | Used to upload the metadata as JSONL |
-| listAvailableTools | Query | List the AI tools that can be attached to an agent | Yes | User authenticated via Cognito |  |
-| listAvailableMcpServers | Query | List the MCP Servers that can be attached to an agent | Yes | User authenticated via Cognito |  |
-| listRuntimeAgents | Query | List AgentCore runtimes | Yes | User authenticated via Cognito | This filters on AWS tags: stack name and environment |
-| getRuntimeConfigurationByVersion | Query | Get the configuration (model, agent instructions, tools, and knowledge bases) associated with a specific runtime version | Yes | User authenticated via Cognito |  |
-| getRuntimeConfigurationByQualifier | Query | Get the configuration (model, agent instructions, tools, and knowledge bases) associated with a specific endpoint label | Yes | User authenticated via Cognito | Qualifier = endpoint name |
-| getDefaultRuntimeConfiguration | Query | Get the configuration (model, agent instructions, tools, and knowledge bases) associated with the DEFAULT endpoint | Yes | User authenticated via Cognito | Qualifier = DEFAULT that is the latest version |
-| listAgentVersions | Query | List all the versions of an AgentCore runtime | Yes | User authenticated via Cognito |  |
-| listAgentEndpoints | Query | List all the endpoints (qualifiers) of an AgentCore runtime | Yes | User authenticated via Cognito |  |
-| getFavoriteRuntime | Query | Get the favorite AgentCore runtime and endpoint names | Yes | User authenticated via Cognito | The chatbot is initialized with the favorite runtime if any. |
-| createAgentCoreRuntime | Mutation | Create an AgentCore runtime | Yes | User authenticated via Cognito |  |
-| tagAgentCoreRuntime | Mutation | Tag an AgentCore runtime version with a label | Yes | User authenticated via Cognito | This creates de-facto an endpoint |
-| deleteAgentRuntime | Mutation | Delete an AgentCore runtime | Yes | User authenticated via Cognito |  |
-| deleteAgentRuntimeEndpoints | Mutation | Delete an AgentCore runtime endpoint | Yes | User authenticated via Cognito |  |
-| updateFavoriteRuntime | Mutation | Update the favorite AgentCore runtime and endpoint | Yes | User authenticated via Cognito |  |
-| resetFavoriteRuntime | Mutation | Remove the favorite endpoint for a given user | Yes | User authenticated via Cognito |  |
-| publishRuntimeUpdate | Mutation | Notify on AgentCore Runtime Update | No | Lambda Function | Used for both delete runtime and delete endpoints |
-| receiveUpdateNotification | Subscription |Receive AgentCore Runtime update | Yes | User authenticated via Cognito |  |
-| listEvaluators | Query | List all evaluation configurations | Yes | User authenticated via Cognito | Returns evaluator metadata including status, progress, and pass rates |
-| getEvaluator | Query | Get a specific evaluator by ID | Yes | User authenticated via Cognito | Includes detailed results if evaluation is completed |
-| createEvaluator | Mutation | Create a new evaluation configuration | Yes | User authenticated via Cognito | Defines test cases, evaluator type, and target agent |
-| deleteEvaluator | Mutation | Delete an evaluator and its results | Yes | User authenticated via Cognito | Removes all associated S3 results |
-| runEvaluation | Mutation | Start an evaluation run | Yes | User authenticated via Cognito | Queues test cases to SQS for processing |
-| publishEvaluationUpdate | Mutation | Publish evaluation status update | No | Lambda Function |  |
-| receiveEvaluationUpdate | Subscription | Receive evaluation status updates | Yes | User authenticated via Cognito | Subscribes to publishEvaluationUpdate |
-| registerMcpServer | Mutation | Register an MCP server | Yes | User authenticated via Cognito |  |
-| deleteMcpServer | Mutation | Delete an MCP server | Yes | User authenticated via Cognito |  |
-| listExperiments | Query | List all experiments | Yes | User authenticated via Cognito |  |
-| getExperiment | Query | Get a specific experiment by ID | Yes | User authenticated via Cognito |  |
-| getExperimentPresignedUrl | Query | Get a presigned URL for experiment S3 objects | Yes | User authenticated via Cognito |  |
-| createExperiment | Mutation | Create a new experiment | Yes | User authenticated via Cognito |  |
-| updateExperiment | Mutation | Update an existing experiment | Yes | User authenticated via Cognito |  |
-| deleteExperiment | Mutation | Delete an experiment | Yes | User authenticated via Cognito |  |
-| runExperiment | Mutation | Run an experiment | Yes | User authenticated via Cognito |  |
+This page documents the AppSync GraphQL API. The authoritative source for argument and return types is the [GraphQL schema](../../src/api/schema/schema.graphql) — refer to it for exact input/output shapes.
+
+> **Authorization:** Every operation is callable over the internet and requires a user authenticated via Amazon Cognito (`@aws_cognito_user_pools`), **except** the three `publish*` mutations (`publishResponse`, `publishRuntimeUpdate`, `publishEvaluationUpdate`), which are invoked **only by backend Lambda functions** via IAM (`@aws_iam`) and are not user-callable. The tables below note only the exceptions in the **Auth** column.
+
+> **Note:** The chat data path does **not** go through this API. The browser streams to AgentCore directly over a SigV4-signed WebSocket — including tool-step updates. AppSync is used for CRUD (sessions, agents, knowledge bases, evaluations, experiments, skills) and for runtime/evaluation status notifications via subscriptions. See [Architecture](./architecture.md).
+
+## Chat & Messaging
+
+User messages are sent to the agent over the direct WebSocket, not through this API (there is no `sendQuery` mutation — it was removed when chat moved to the direct WebSocket). The operations below cover the AppSync side-channel that delivers responses and tool-action descriptions back to the browser, plus feedback.
+
+| Operation | Type | Functionality | Auth | Comments |
+|-----------|------|---------------|------|----------|
+| publishResponse | Mutation | Publish response tokens and the final agent answer to the client | Lambda only | The browser subscribes via `receiveMessages` |
+| receiveMessages | Subscription | Subscribe to `publishResponse` for a session | | |
+| publishFeedback | Mutation | Publish a user's feedback on an agent-generated response | | Thumbs up/down and free-text feedback |
+
+## Sessions
+
+| Operation | Type | Functionality | Auth | Comments |
+|-----------|------|---------------|------|----------|
+| listSessions | Query | List all of the user's chatbot sessions | | |
+| getSession | Query | Get a specific session by session id | | Allows reloading a conversation to view or continue it |
+| deleteUserSessions | Mutation | Delete all of the user's sessions | | |
+| deleteSession | Mutation | Delete a specific user session | | |
+| renameSession | Mutation | Modify a session title | | A session title defaults to the first 100 characters of the first user message |
+| saveToolActions | Mutation | Save tool actions for a specific message in a session | | Persists a user-friendly description of the agent's tool invocations to the session history |
+| saveVoiceSession | Mutation | Persist a voice-to-voice conversation's history to a session | | Used by Nova Sonic voice sessions to save the transcript and runtime/endpoint |
+| updateMessageExecutionTime | Mutation | Update the execution time for a message in a session | | |
+
+## Knowledge Bases & Documents
+
+| Operation | Type | Functionality | Auth | Comments |
+|-----------|------|---------------|------|----------|
+| listKnowledgeBases | Query | List available Bedrock Knowledge Bases | | Filters on AWS tags: stack name and environment |
+| createKnowledgeBase | Mutation | Create a new Bedrock Knowledge Base from the application | | |
+| deleteKnowledgeBase | Mutation | Delete an existing Bedrock Knowledge Base | | |
+| listDataSources | Query | List data sources associated with a Knowledge Base | | |
+| createDataSource | Mutation | Create a new S3 data source and attach it to a Knowledge Base | | |
+| deleteDataSource | Mutation | Remove an S3 data source from a Knowledge Base | | |
+| getInputPrefix | Query | Get the raw input prefix associated with a data source | | |
+| syncKnowledgeBase | Mutation | Synchronize a Knowledge Base | | A fallback mechanism — Knowledge Base synchronization normally runs automatically |
+| listDocuments | Query | List documents in a data source | | |
+| deleteDocument | Mutation | Delete a document from a data source | | |
+| getDocumentMetadata | Query | Get the metadata associated with a document | | |
+| updateMetadata | Mutation | Update the metadata of a single document | | |
+| batchUpdateMetadata | Mutation | Update the metadata of a set of documents | | Used to upload metadata as JSONL |
+| getPresignedUrl | Query | Get an S3 object presigned URL | | Used to display the document behind a knowledge-base reference |
+| checkOnProcessStarted | Query | Check whether document processing has started for a set of S3 objects | | Polled after the user uploads documents through the UI |
+| checkOnProcessCompleted | Query | Check whether document processing has completed for a set of S3 objects | | Polled after the user uploads documents through the UI |
+| checkOnDocumentsRemoved | Query | Check whether documents have been removed from the doc-processing state table | | Polled after the user deletes documents through the UI |
+| checkOnSyncInProgress | Query | Check whether a data-source sync is currently in progress | | Polled after the user adds/deletes documents through the UI |
+
+## Agent Runtimes (Agent Factory)
+
+| Operation | Type | Functionality | Auth | Comments |
+|-----------|------|---------------|------|----------|
+| listRuntimeAgents | Query | List AgentCore runtimes | | Filters on AWS tags: stack name and environment |
+| createAgentCoreRuntime | Mutation | Create an AgentCore runtime | | See [Agent Factory Operations](./agent-factory.md) for the `architectureType` → config-schema mapping |
+| tagAgentCoreRuntime | Mutation | Tag an AgentCore runtime version with a label | | Tagging a version is what creates an endpoint (qualifier) |
+| deleteAgentRuntime | Mutation | Delete an AgentCore runtime | | |
+| deleteAgentRuntimeEndpoints | Mutation | Delete an AgentCore runtime endpoint | | |
+| listAgentVersions | Query | List all versions of an AgentCore runtime | | |
+| listAgentEndpoints | Query | List all endpoints (qualifiers) of an AgentCore runtime | | |
+| getRuntimeConfigurationByVersion | Query | Get the configuration for a specific runtime version | | Configuration = model, instructions, tools, knowledge bases |
+| getRuntimeConfigurationByQualifier | Query | Get the configuration for a specific endpoint label | | Qualifier = endpoint name |
+| getDefaultRuntimeConfiguration | Query | Get the configuration for the DEFAULT endpoint | | DEFAULT qualifier points to the latest version |
+| getFavoriteRuntime | Query | Get the user's favorite AgentCore runtime and endpoint | | The chatbot initializes with the favorite runtime if set |
+| updateFavoriteRuntime | Mutation | Update the user's favorite AgentCore runtime and endpoint | | |
+| resetFavoriteRuntime | Mutation | Remove the favorite endpoint for the user | | |
+| publishRuntimeUpdate | Mutation | Notify on an AgentCore runtime update | Lambda only | Used for both delete-runtime and delete-endpoints |
+| receiveUpdateNotification | Subscription | Receive AgentCore runtime updates | | |
+
+## Tools, MCP Servers & Building Blocks
+
+| Operation | Type | Functionality | Auth | Comments |
+|-----------|------|---------------|------|----------|
+| listAvailableTools | Query | List the AI tools that can be attached to an agent | | |
+| listAvailableMcpServers | Query | List the MCP servers that can be attached to an agent | | |
+| registerMcpServer | Mutation | Register an MCP server | | |
+| deleteMcpServer | Mutation | Delete an MCP server | | |
+| listAvailableStateClasses | Query | List the state classes available to swarm/graph agents | | |
+| listAvailableDeterministicNodes | Query | List the deterministic nodes available to graph agents | | |
+
+## Skills
+
+| Operation | Type | Functionality | Auth | Comments |
+|-----------|------|---------------|------|----------|
+| listSkills | Query | List all registered agent skills | | See [Agent Skills](./skills.md) |
+| getSkillContent | Query | Get a skill's content by name | | |
+| createSkill | Mutation | Create a new skill | | |
+| updateSkill | Mutation | Update an existing skill's description or content | | |
+| deleteSkill | Mutation | Delete a skill | | |
+| listSkillResources | Query | List the resource files attached to a skill | | |
+| getSkillResource | Query | Get a single skill resource file by path | | |
+| uploadSkillResource | Mutation | Upload a resource file to a skill | | |
+| deleteSkillResource | Mutation | Delete a skill resource file by path | | |
+
+## Evaluations
+
+| Operation | Type | Functionality | Auth | Comments |
+|-----------|------|---------------|------|----------|
+| listEvaluators | Query | List all evaluation configurations | | Returns evaluator metadata including status, progress, and pass rates |
+| getEvaluator | Query | Get a specific evaluator by ID | | Includes detailed results when the evaluation is completed |
+| createEvaluator | Mutation | Create a new evaluation configuration | | Defines test cases, evaluator type, and target agent |
+| deleteEvaluator | Mutation | Delete an evaluator and its results | | Removes all associated S3 results |
+| runEvaluation | Mutation | Start an evaluation run | | Queues test cases to SQS for processing |
+| publishEvaluationUpdate | Mutation | Publish an evaluation status update | Lambda only | |
+| receiveEvaluationUpdate | Subscription | Receive evaluation status updates | | Subscribes to `publishEvaluationUpdate` |
+
+## Experiments
+
+| Operation | Type | Functionality | Auth | Comments |
+|-----------|------|---------------|------|----------|
+| listExperiments | Query | List all experiments | | |
+| getExperiment | Query | Get a specific experiment by ID | | |
+| getExperimentPresignedUrl | Query | Get a presigned URL for experiment S3 objects | | |
+| createExperiment | Mutation | Create a new experiment | | |
+| updateExperiment | Mutation | Update an existing experiment | | |
+| deleteExperiment | Mutation | Delete an experiment | | |
+| runExperiment | Mutation | Run an experiment | | |
