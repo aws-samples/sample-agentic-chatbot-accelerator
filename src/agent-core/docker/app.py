@@ -65,6 +65,12 @@ _inv_agent = None
 _inv_mcp_manager: MCPClientManager | None = None
 _inv_structured_output_model = None
 _inv_session_id: str | None = None
+# Trajectory capture state for evaluation. The in-memory span exporter is set
+# up once (lazily, on the first invocation that requests a trajectory) and the
+# agent's callbacks are retained so tool args/results can enrich the trajectory
+# — mirroring the /ws handler, which is the reference implementation.
+_inv_callbacks = None
+_inv_memory_exporter = None
 
 
 @app.post("/invocations")
@@ -81,11 +87,17 @@ async def invocations(request: Request):
         - sessionId (str, optional): Auto-generated if absent.
     """
     global _inv_agent, _inv_mcp_manager, _inv_structured_output_model, _inv_session_id
+    global _inv_callbacks, _inv_memory_exporter
 
     body = await request.json()
     prompt = body.get("prompt", "")
     user_id = body.get("userId", "evaluator")
     session_id = body.get("sessionId", str(uuid.uuid4()))
+    # The evaluation executor always sends includeTrajectory=True; capture the
+    # agent's reasoning/tool trajectory so trajectory-based evaluators
+    # (Helpfulness, ToolSelection, Trajectory, …) receive a real Session
+    # instead of None.
+    include_trajectory = body.get("includeTrajectory", False)
 
     logger.info(
         "Invocation received",
@@ -130,13 +142,27 @@ async def invocations(request: Request):
                     region_name=AWS_REGION,
                 )
 
-            _inv_agent, _ = create_agent(
+            # Set up an in-memory span exporter so the agent's reasoning/tool
+            # spans can be mapped to a Session trajectory after the run. Pass
+            # matching trace attributes into the agent so its spans carry the
+            # session id the mapper keys on (same contract as the /ws handler).
+            trace_attrs = None
+            if include_trajectory:
+                telemetry = StrandsEvalsTelemetry().setup_in_memory_exporter()
+                _inv_memory_exporter = telemetry.in_memory_exporter
+                trace_attrs = {
+                    "gen_ai.conversation.id": session_id,
+                    "session.id": session_id,
+                }
+
+            _inv_agent, _inv_callbacks = create_agent(
                 configuration,
                 logger,
                 session_id,
                 user_id,
                 _inv_mcp_manager,
                 session_manager,
+                trace_attributes=trace_attrs,
             )
             _inv_session_id = session_id
 
@@ -170,6 +196,11 @@ async def invocations(request: Request):
 
     async def _sse_generator():
         try:
+            # Drop any spans from a previous turn so the captured trajectory
+            # reflects only this invocation.
+            if include_trajectory and _inv_memory_exporter is not None:
+                _inv_memory_exporter.clear()
+
             _stream_kwargs: dict = {
                 "invocation_state": {"userId": user_id, "sessionId": session_id},
             }
@@ -212,6 +243,47 @@ async def invocations(request: Request):
                             logger.warning(
                                 "structured_output serialization failed",
                                 extra={"rawErrorMessage": str(exc)},
+                            )
+
+                    # Capture trajectory for evaluation features. Built from the
+                    # in-memory spans and enriched with tool args/results held by
+                    # the agent's callbacks — identical to the /ws handler.
+                    if include_trajectory and _inv_memory_exporter is not None:
+                        try:
+                            finished_spans = _inv_memory_exporter.get_finished_spans()
+                            if finished_spans:
+                                mapper = StrandsInMemorySessionMapper()
+                                trajectory_session = mapper.map_to_session(
+                                    finished_spans, session_id=session_id  # type: ignore
+                                )
+                                if _inv_callbacks and hasattr(
+                                    _inv_callbacks, "tool_executions"
+                                ):
+                                    trajectory_session = enrich_trajectory(
+                                        trajectory_session,
+                                        _inv_callbacks.tool_executions,
+                                        logger,
+                                    )
+                                # enrich_trajectory returns a dict when tool
+                                # data was injected, but the raw Session object
+                                # otherwise. Coerce to a dict so json.dumps can
+                                # serialize the SSE event (unlike /ws's
+                                # send_json, this path has no Pydantic encoder).
+                                if hasattr(trajectory_session, "model_dump"):
+                                    trajectory_session = trajectory_session.model_dump(
+                                        mode="json"
+                                    )
+                                final_data["trajectory"] = trajectory_session
+                                logger.info(
+                                    "Trajectory captured for evaluation",
+                                    extra={"spanCount": len(finished_spans)},
+                                )
+                            else:
+                                logger.warning("No spans captured for trajectory")
+                        except Exception as traj_err:
+                            logger.warning(
+                                f"Failed to capture trajectory: {traj_err}",
+                                extra={"error": str(traj_err)},
                             )
 
                     final_event = json.dumps(
