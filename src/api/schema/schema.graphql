@@ -177,6 +177,8 @@ type AgentFactoryNotification @aws_iam @aws_cognito_user_pools {
 }
 
 # Evaluator Types
+# An Evaluator is a reusable definition of WHAT to test and HOW.
+# It holds no run state — each execution is a separate EvaluatorRun.
 type Evaluator @aws_cognito_user_pools {
     evaluatorId: ID!
     name: String!
@@ -187,18 +189,47 @@ type Evaluator @aws_cognito_user_pools {
     qualifier: String!
     modelId: String
     passThreshold: Float
+    repeatCount: Int
+    testCasesS3Path: String
+    testCasesCount: Int
+    createdAt: AWSDateTime!
+    updatedAt: AWSDateTime
+    # Denormalized pointer to the most recent run (for the list view).
+    # The full run state/results live on EvaluatorRun.
+    lastRunId: String
+    lastRunStatus: String
+    lastRunPassedCases: Int
+    lastRunFailedCases: Int
+    lastRunAt: AWSDateTime
+}
+
+# An EvaluatorRun is one execution of an evaluator. It snapshots the
+# evaluator config it used so history stays accurate if the evaluator
+# is later edited or deleted.
+type EvaluatorRun @aws_cognito_user_pools {
+    runId: ID!
+    evaluatorId: ID!
+    evaluatorName: String
+    # Snapshot of the evaluator config at run time
+    evaluatorType: String
+    customRubric: String
+    agentRuntimeName: String
+    qualifier: String
+    modelId: String
+    passThreshold: Float
+    repeatCount: Int
     testCasesS3Path: String
     testCasesCount: Int
     resultsS3Path: String
-    # Status: Created, Running, Completed, Failed
+    # Status: Queued, Running, Completed, Failed
     status: String!
-    # Run results
+    totalCases: Int
     passedCases: Int
     failedCases: Int
+    skippedCases: Int
     totalTimeMs: Int
     results: [EvaluationResult]
     errorMessage: String
-    # Timestamps
     createdAt: AWSDateTime!
     startedAt: AWSDateTime
     completedAt: AWSDateTime
@@ -211,6 +242,24 @@ type EvaluationResult @aws_cognito_user_pools {
     actualOutput: String
     score: Float!
     passed: Boolean!
+    # Per-case status: scored | skipped | error.
+    # "skipped" means no selected evaluator applied to this agent.
+    status: String
+    reason: String
+    latencyMs: Int
+    # When repeatCount > 1, this case score is the MEAN across repetitions and
+    # the individual runs are listed here. Empty/absent when repeatCount == 1.
+    repeatCount: Int
+    repetitions: [EvaluationRepetition]
+}
+
+# A single repetition of a test case (one agent invocation + evaluation).
+type EvaluationRepetition @aws_cognito_user_pools {
+    repeatIndex: Int!
+    actualOutput: String
+    score: Float!
+    passed: Boolean!
+    status: String
     reason: String
     latencyMs: Int
 }
@@ -224,11 +273,26 @@ input CreateEvaluatorInput {
     qualifier: String!
     modelId: String!
     passThreshold: Float!
+    repeatCount: Int
     testCases: String!
+}
+
+input UpdateEvaluatorInput {
+    name: String
+    description: String
+    evaluatorType: String
+    customRubric: String
+    agentRuntimeName: String
+    qualifier: String
+    modelId: String
+    passThreshold: Float
+    repeatCount: Int
+    testCases: String
 }
 
 type EvaluationNotification @aws_iam @aws_cognito_user_pools {
     evaluatorId: String
+    runId: String
     status: String
 }
 
@@ -264,9 +328,12 @@ type Mutation {
     publishRuntimeUpdate(agentName: String!): AgentFactoryNotification @aws_iam
     # Evaluators
     createEvaluator(input: CreateEvaluatorInput!): Evaluator @aws_cognito_user_pools
+    updateEvaluator(evaluatorId: ID!, input: UpdateEvaluatorInput!): Evaluator @aws_cognito_user_pools
     deleteEvaluator(evaluatorId: ID!): Boolean @aws_cognito_user_pools
-    runEvaluation(evaluatorId: ID!): Evaluator @aws_cognito_user_pools
-    publishEvaluationUpdate(evaluatorId: String!, status: String!): EvaluationNotification @aws_iam
+    # Evaluator runs
+    startEvaluatorRun(evaluatorId: ID!): EvaluatorRun @aws_cognito_user_pools
+    deleteEvaluatorRun(evaluatorId: ID!, runId: ID!): Boolean @aws_cognito_user_pools
+    publishEvaluationUpdate(evaluatorId: String!, runId: String, status: String!): EvaluationNotification @aws_iam
     # Skills
     createSkill(name: String!, description: String!, content: String!): Skill @aws_cognito_user_pools
     updateSkill(name: String!, description: String, content: String): Skill @aws_cognito_user_pools
@@ -331,6 +398,11 @@ type Query {
     # Evaluators
     listEvaluators: [Evaluator!] @aws_cognito_user_pools
     getEvaluator(evaluatorId: ID!): Evaluator @aws_cognito_user_pools
+    # Evaluator runs
+    listEvaluatorRuns(evaluatorId: ID!): [EvaluatorRun!] @aws_cognito_user_pools
+    getEvaluatorRun(evaluatorId: ID!, runId: ID!): EvaluatorRun @aws_cognito_user_pools
+    # Raw test-case JSON for an evaluator (used to prefill the edit form)
+    getEvaluatorTestCases(evaluatorId: ID!): String @aws_cognito_user_pools
     # Experiments
     listExperiments: [Experiment!]! @aws_cognito_user_pools
     getExperiment(experimentId: String!): Experiment @aws_cognito_user_pools

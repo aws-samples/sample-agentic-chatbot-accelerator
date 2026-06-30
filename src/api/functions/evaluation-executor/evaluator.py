@@ -18,6 +18,7 @@ Classes:
 
 Note: Requires strands-agents-evals package to be installed.
 """
+
 from __future__ import annotations
 
 import json
@@ -78,12 +79,20 @@ class EvaluationResult:
         passed: Whether the evaluation passed based on threshold
         reason: Explanation of the evaluation result
         evaluator_type: Type of evaluator that produced this result
+        status: Outcome classification, set explicitly by the runner so callers
+            never have to infer it from ``reason``:
+            - "scored": the evaluator ran and produced a score.
+            - "skipped": the evaluator does not apply to this case (a required
+              input is absent, e.g. no trajectory / not a swarm / non-JSON
+              output). Must be excluded from score aggregation.
+            - "error": a genuine evaluator failure.
     """
 
     score: float
     passed: bool
     reason: str
     evaluator_type: str = ""
+    status: str = "scored"
 
     def to_dict(self) -> dict:
         """Convert to dictionary representation."""
@@ -92,6 +101,7 @@ class EvaluationResult:
             "passed": self.passed,
             "reason": self.reason,
             "evaluator_type": self.evaluator_type,
+            "status": self.status,
         }
 
     @classmethod
@@ -102,6 +112,21 @@ class EvaluationResult:
             passed=False,
             reason=f"Evaluator error: {message}",
             evaluator_type=evaluator_type,
+            status="error",
+        )
+
+    @classmethod
+    def skipped(cls, reason: str, evaluator_type: str = "") -> EvaluationResult:
+        """Create a skipped result (evaluator does not apply to this case).
+
+        Skipped results are excluded from score aggregation by callers.
+        """
+        return cls(
+            score=0.0,
+            passed=False,
+            reason=reason,
+            evaluator_type=evaluator_type,
+            status="skipped",
         )
 
     @classmethod
@@ -587,6 +612,27 @@ class EvaluatorFactory:
         "StructuredOutputEvaluator",
     }
 
+    # Evaluators that require an execution trajectory (OpenTelemetry spans /
+    # tool calls). Not applicable to agents that don't produce one.
+    EVALUATORS_REQUIRING_TRAJECTORY = {
+        "HelpfulnessEvaluator",
+        "FaithfulnessEvaluator",
+        "GoalSuccessRateEvaluator",
+        "ToolSelectionAccuracyEvaluator",
+        "ToolParameterAccuracyEvaluator",
+        "TrajectoryEvaluator",
+    }
+
+    # Evaluators that only apply to swarm (multi-agent) configurations.
+    EVALUATORS_REQUIRING_INTERACTIONS = {
+        "InteractionsEvaluator",
+    }
+
+    # Evaluators that require structured (JSON) output from the agent.
+    EVALUATORS_REQUIRING_STRUCTURED_OUTPUT = {
+        "StructuredOutputEvaluator",
+    }
+
     @classmethod
     def get_available_types(cls) -> List[str]:
         """Get list of available evaluator types."""
@@ -725,6 +771,62 @@ class EvaluationRunner:
         )
 
         try:
+            # ---- Applicability checks (explicit, input-driven) ---------------
+            # Decide up front whether this evaluator can run against the data we
+            # have. Returning a "skipped" result here means callers never have to
+            # infer applicability from error-message text.
+            structured_is_json = (
+                StructuredOutputEvaluator._to_dict(actual_structured_output) is not None
+                if actual_structured_output is not None
+                else False
+            )
+
+            if (
+                evaluator_type in EvaluatorFactory.EVALUATORS_REQUIRING_TRAJECTORY
+                and not trajectory
+            ):
+                logger.info(f"Skipping {evaluator_type}: no trajectory available")
+                return EvaluationResult.skipped(
+                    "Skipped: this evaluator needs the agent's execution "
+                    "trajectory (tool calls / reasoning steps), which this agent "
+                    "did not produce.",
+                    evaluator_type,
+                )
+
+            if evaluator_type == "TrajectoryEvaluator" and not expected_trajectory:
+                logger.info(
+                    "Skipping TrajectoryEvaluator: no expected_trajectory provided"
+                )
+                return EvaluationResult.skipped(
+                    "Skipped: this evaluator compares against an expected "
+                    "trajectory, but the test case defines no expected tool/action "
+                    "sequence to evaluate.",
+                    evaluator_type,
+                )
+
+            if (
+                evaluator_type in EvaluatorFactory.EVALUATORS_REQUIRING_INTERACTIONS
+                and not (trajectory and trajectory.get("interactions"))
+            ):
+                logger.info(f"Skipping {evaluator_type}: not a swarm interaction")
+                return EvaluationResult.skipped(
+                    "Skipped: this evaluator assesses agent-to-agent handoffs and "
+                    "only applies to swarm (multi-agent) configurations.",
+                    evaluator_type,
+                )
+
+            if (
+                evaluator_type
+                in EvaluatorFactory.EVALUATORS_REQUIRING_STRUCTURED_OUTPUT
+                and not structured_is_json
+            ):
+                logger.info(f"Skipping {evaluator_type}: no structured JSON output")
+                return EvaluationResult.skipped(
+                    "Skipped: this evaluator compares structured JSON output, but "
+                    "the agent did not return structured output for this case.",
+                    evaluator_type,
+                )
+
             # Create evaluator
             evaluator = EvaluatorFactory.create_from_type(
                 evaluator_type=evaluator_type,

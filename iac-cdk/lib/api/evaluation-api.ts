@@ -28,7 +28,9 @@ export interface EvaluationApiProps {
     readonly config: SystemConfig;
     readonly api: appsync.GraphqlApi;
     readonly evaluatorsTable: dynamodb.Table;
+    readonly evaluatorRunsTable: dynamodb.Table;
     readonly byUserIdIndex: string;
+    readonly byRunIdIndex: string;
     /** Pre-built evaluation executor Lambda bundle (from BuilderStack via CodeBuild). */
     readonly evaluationExecutorBundle: CodeBuildPipBundle;
 }
@@ -116,8 +118,13 @@ export class EvaluationApi extends Construct {
             "listEvaluators",
             "getEvaluator",
             "createEvaluator",
+            "updateEvaluator",
             "deleteEvaluator",
-            "runEvaluation",
+            "startEvaluatorRun",
+            "deleteEvaluatorRun",
+            "listEvaluatorRuns",
+            "getEvaluatorRun",
+            "getEvaluatorTestCases",
         ];
 
         // Create CloudWatch log group for the EvaluationResolver
@@ -140,9 +147,11 @@ export class EvaluationApi extends Construct {
             logGroup: resolverLogGroup,
             environment: {
                 EVALUATIONS_TABLE: props.evaluatorsTable.tableName,
+                EVALUATOR_RUNS_TABLE: props.evaluatorRunsTable.tableName,
                 EVALUATIONS_BUCKET: evaluationsBucket.bucketName,
                 EVALUATION_QUEUE_URL: evaluationQueue.queueUrl,
                 BY_USER_ID_INDEX: props.byUserIdIndex,
+                BY_RUN_ID_INDEX: props.byRunIdIndex,
                 ACCOUNT_ID: stack.account,
             },
             layers: props.shared.powerToolsLayer ? [props.shared.powerToolsLayer] : [],
@@ -172,6 +181,7 @@ export class EvaluationApi extends Construct {
             environment: {
                 ...props.shared.defaultEnvironmentVariables,
                 EVALUATIONS_TABLE: props.evaluatorsTable.tableName,
+                EVALUATOR_RUNS_TABLE: props.evaluatorRunsTable.tableName,
                 EVALUATIONS_BUCKET: evaluationsBucket.bucketName,
                 ACCOUNT_ID: stack.account,
                 APPSYNC_API_ENDPOINT: props.api.graphqlUrl,
@@ -181,12 +191,16 @@ export class EvaluationApi extends Construct {
             tracing: lambda.Tracing.ACTIVE,
         });
 
-        // Add SQS event source to EvaluationExecutor with concurrency control
+        // Add SQS event source to EvaluationExecutor with concurrency control.
+        // maxConcurrency is intentionally low: each unit opens its own AgentCore
+        // runtime session, and runtimes have concurrent-session limits. A high
+        // value (e.g. 50) stampedes a single runtime and causes invocations to
+        // hang waiting for capacity. Pace units instead.
         // TODO: Consider making batchSize and maxConcurrency configurable via SystemConfig
         evaluationExecutor.addEventSource(
             new SqsEventSource(evaluationQueue, {
                 batchSize: 1, // Process one test case at a time
-                maxConcurrency: 50, // Throttling limit (prevents overwhelming Bedrock/AgentCore)
+                maxConcurrency: 4, // Pace against AgentCore session limits
                 reportBatchItemFailures: true, // Enable partial batch responses
             }),
         );
@@ -194,6 +208,8 @@ export class EvaluationApi extends Construct {
         // Grant DynamoDB permissions
         props.evaluatorsTable.grantReadWriteData(evaluationResolver);
         props.evaluatorsTable.grantReadWriteData(evaluationExecutor);
+        props.evaluatorRunsTable.grantReadWriteData(evaluationResolver);
+        props.evaluatorRunsTable.grantReadWriteData(evaluationExecutor);
 
         // Grant S3 permissions
         evaluationsBucket.grantReadWrite(evaluationResolver);
@@ -271,9 +287,29 @@ export class EvaluationApi extends Construct {
                 resolverId: "GetEvaluatorResolver",
             },
             {
+                type: "Query",
+                field: "listEvaluatorRuns",
+                resolverId: "ListEvaluatorRunsResolver",
+            },
+            {
+                type: "Query",
+                field: "getEvaluatorRun",
+                resolverId: "GetEvaluatorRunResolver",
+            },
+            {
+                type: "Query",
+                field: "getEvaluatorTestCases",
+                resolverId: "GetEvaluatorTestCasesResolver",
+            },
+            {
                 type: "Mutation",
                 field: "createEvaluator",
                 resolverId: "CreateEvaluatorResolver",
+            },
+            {
+                type: "Mutation",
+                field: "updateEvaluator",
+                resolverId: "UpdateEvaluatorResolver",
             },
             {
                 type: "Mutation",
@@ -282,8 +318,13 @@ export class EvaluationApi extends Construct {
             },
             {
                 type: "Mutation",
-                field: "runEvaluation",
-                resolverId: "RunEvaluationResolver",
+                field: "startEvaluatorRun",
+                resolverId: "StartEvaluatorRunResolver",
+            },
+            {
+                type: "Mutation",
+                field: "deleteEvaluatorRun",
+                resolverId: "DeleteEvaluatorRunResolver",
             },
         ].forEach((op) => {
             evaluationDataSource.createResolver(op.resolverId, {
