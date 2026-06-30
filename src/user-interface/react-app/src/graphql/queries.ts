@@ -329,28 +329,16 @@ export const listEvaluators = /* GraphQL */ `query ListEvaluators {
     qualifier
     modelId
     passThreshold
+    repeatCount
     testCasesS3Path
     testCasesCount
-    resultsS3Path
-    status
-    passedCases
-    failedCases
-    totalTimeMs
-    results {
-      caseName
-      input
-      expectedOutput
-      actualOutput
-      score
-      passed
-      reason
-      latencyMs
-      __typename
-    }
-    errorMessage
     createdAt
-    startedAt
-    completedAt
+    updatedAt
+    lastRunId
+    lastRunStatus
+    lastRunPassedCases
+    lastRunFailedCases
+    lastRunAt
     __typename
   }
 }
@@ -369,12 +357,43 @@ export const getEvaluator = /* GraphQL */ `query GetEvaluator($evaluatorId: ID!)
     qualifier
     modelId
     passThreshold
+    repeatCount
+    testCasesS3Path
+    testCasesCount
+    createdAt
+    updatedAt
+    lastRunId
+    lastRunStatus
+    lastRunPassedCases
+    lastRunFailedCases
+    lastRunAt
+    __typename
+  }
+}
+` as GeneratedQuery<
+  APITypes.GetEvaluatorQueryVariables,
+  APITypes.GetEvaluatorQuery
+>;
+export const listEvaluatorRuns = /* GraphQL */ `query ListEvaluatorRuns($evaluatorId: ID!) {
+  listEvaluatorRuns(evaluatorId: $evaluatorId) {
+    runId
+    evaluatorId
+    evaluatorName
+    evaluatorType
+    customRubric
+    agentRuntimeName
+    qualifier
+    modelId
+    passThreshold
+    repeatCount
     testCasesS3Path
     testCasesCount
     resultsS3Path
     status
+    totalCases
     passedCases
     failedCases
+    skippedCases
     totalTimeMs
     results {
       caseName
@@ -383,8 +402,20 @@ export const getEvaluator = /* GraphQL */ `query GetEvaluator($evaluatorId: ID!)
       actualOutput
       score
       passed
+      status
       reason
       latencyMs
+      repeatCount
+      repetitions {
+        repeatIndex
+        actualOutput
+        score
+        passed
+        status
+        reason
+        latencyMs
+        __typename
+      }
       __typename
     }
     errorMessage
@@ -395,8 +426,70 @@ export const getEvaluator = /* GraphQL */ `query GetEvaluator($evaluatorId: ID!)
   }
 }
 ` as GeneratedQuery<
-  APITypes.GetEvaluatorQueryVariables,
-  APITypes.GetEvaluatorQuery
+  APITypes.ListEvaluatorRunsQueryVariables,
+  APITypes.ListEvaluatorRunsQuery
+>;
+export const getEvaluatorRun = /* GraphQL */ `query GetEvaluatorRun($evaluatorId: ID!, $runId: ID!) {
+  getEvaluatorRun(evaluatorId: $evaluatorId, runId: $runId) {
+    runId
+    evaluatorId
+    evaluatorName
+    evaluatorType
+    customRubric
+    agentRuntimeName
+    qualifier
+    modelId
+    passThreshold
+    repeatCount
+    testCasesS3Path
+    testCasesCount
+    resultsS3Path
+    status
+    totalCases
+    passedCases
+    failedCases
+    skippedCases
+    totalTimeMs
+    results {
+      caseName
+      input
+      expectedOutput
+      actualOutput
+      score
+      passed
+      status
+      reason
+      latencyMs
+      repeatCount
+      repetitions {
+        repeatIndex
+        actualOutput
+        score
+        passed
+        status
+        reason
+        latencyMs
+        __typename
+      }
+      __typename
+    }
+    errorMessage
+    createdAt
+    startedAt
+    completedAt
+    __typename
+  }
+}
+` as GeneratedQuery<
+  APITypes.GetEvaluatorRunQueryVariables,
+  APITypes.GetEvaluatorRunQuery
+>;
+export const getEvaluatorTestCases = /* GraphQL */ `query GetEvaluatorTestCases($evaluatorId: ID!) {
+  getEvaluatorTestCases(evaluatorId: $evaluatorId)
+}
+` as GeneratedQuery<
+  APITypes.GetEvaluatorTestCasesQueryVariables,
+  APITypes.GetEvaluatorTestCasesQuery
 >;
 export const listExperiments = /* GraphQL */ `query ListExperiments {
   listExperiments {

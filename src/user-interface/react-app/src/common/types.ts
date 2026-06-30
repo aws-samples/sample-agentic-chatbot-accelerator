@@ -56,13 +56,44 @@ export interface Evaluator {
     customRubric?: string;
     agentRuntimeName?: string;
     qualifier?: string;
+    modelId?: string;
+    passThreshold?: number;
+    repeatCount?: number;
     testCasesS3Path?: string;
     testCasesCount?: number;
-    // Status: Created, Running, Completed, Failed
+    createdAt: string;
+    updatedAt?: string;
+    // Denormalized pointer to the most recent run (for the list view)
+    lastRunId?: string;
+    lastRunStatus?: string;
+    lastRunPassedCases?: number;
+    lastRunFailedCases?: number;
+    lastRunAt?: string;
+}
+
+// One execution of an evaluator. Snapshots the config it ran with.
+export interface EvaluatorRun {
+    runId: string;
+    evaluatorId: string;
+    evaluatorName?: string;
+    evaluatorType?: string;
+    customRubric?: string;
+    agentRuntimeName?: string;
+    qualifier?: string;
+    modelId?: string;
+    passThreshold?: number;
+    repeatCount?: number;
+    testCasesS3Path?: string;
+    testCasesCount?: number;
+    resultsS3Path?: string;
+    // Status: Queued, Running, Completed, Failed
     status: string;
+    totalCases?: number;
     passedCases?: number;
     failedCases?: number;
+    skippedCases?: number;
     totalTimeMs?: number;
+    results?: EvaluationResult[];
     errorMessage?: string;
     createdAt: string;
     startedAt?: string;
@@ -86,7 +117,22 @@ export interface EvaluationResult {
     actualOutput?: string;
     score: number;
     passed: boolean;
+    // Per-case status: scored | skipped | error
+    status?: string;
     reason: string;
+    latencyMs?: number;
+    // When repeatCount > 1, score is the MEAN and these are the individual runs.
+    repeatCount?: number;
+    repetitions?: EvaluationRepetition[];
+}
+
+export interface EvaluationRepetition {
+    repeatIndex: number;
+    actualOutput?: string;
+    score: number;
+    passed: boolean;
+    status?: string;
+    reason?: string;
     latencyMs?: number;
 }
 
@@ -95,6 +141,7 @@ export interface EvaluationSummary {
     evaluatorId: string;
     totalCases: number;
     passedCases: number;
+    skippedCases?: number;
     totalTimeMs: number;
     status: string;
     completedAt?: string;

@@ -10,13 +10,15 @@ import {
     Button,
     ColumnLayout,
     Container,
+    ExpandableSection,
     Header,
     Modal,
     SpaceBetween,
     StatusIndicator,
     Table,
 } from "@cloudscape-design/components";
-import { Evaluator, EvaluationSummary } from "../../../common/types";
+import { useState } from "react";
+import { Evaluator, EvaluationResult, EvaluationSummary } from "../../../common/types";
 
 interface ViewResultsModalProps {
     visible: boolean;
@@ -31,9 +33,21 @@ export default function ViewResultsModal({
     evaluator,
     results,
 }: ViewResultsModalProps) {
+    const [expandedItems, setExpandedItems] = useState<EvaluationResult[]>([]);
+
     const passRate = results.totalCases > 0
         ? (results.passedCases / results.totalCases) * 100
         : 0;
+
+    // Cases the evaluator(s) could not score because none applied to this agent.
+    const skippedCount =
+        results.skippedCases ??
+        results.results.filter((r) => r.status === "skipped").length;
+    // Failed = total minus passed minus skipped (skipped is not a failure).
+    const failedCount = Math.max(
+        results.totalCases - results.passedCases - skippedCount,
+        0,
+    );
 
     const formatDuration = (ms: number): string => {
         if (ms < 1000) return `${ms}ms`;
@@ -99,8 +113,14 @@ export default function ViewResultsModal({
                             </div>
                             <div>
                                 <Box variant="awsui-key-label">Failed</Box>
-                                <Box color="text-status-error">{results.totalCases - results.passedCases}</Box>
+                                <Box color="text-status-error">{failedCount}</Box>
                             </div>
+                            {skippedCount > 0 && (
+                                <div>
+                                    <Box variant="awsui-key-label">Skipped (not applicable)</Box>
+                                    <Box color="text-status-inactive">{skippedCount}</Box>
+                                </div>
+                            )}
                         </SpaceBetween>
                     </ColumnLayout>
                 </Container>
@@ -109,39 +129,67 @@ export default function ViewResultsModal({
                 <Container header={<Header variant="h3">Test Case Results</Header>}>
                     <Table
                         items={results.results}
+                        trackBy="caseName"
+                        expandableRows={{
+                            getItemChildren: () => [],
+                            isItemExpandable: () => true,
+                            expandedItems: expandedItems,
+                            onExpandableItemToggle: ({ detail }) => {
+                                setExpandedItems((prev) =>
+                                    detail.expanded
+                                        ? [...prev, detail.item]
+                                        : prev.filter((i) => i.caseName !== detail.item.caseName),
+                                );
+                            },
+                        }}
                         columnDefinitions={[
                             {
                                 id: "caseName",
                                 header: "Case Name",
                                 cell: (item) => item.caseName,
-                                width: 150,
+                                width: 200,
                             },
                             {
                                 id: "score",
                                 header: "Score",
                                 cell: (item) => (
-                                    <StatusIndicator
-                                        type={item.score >= 80 ? "success" : item.score >= 50 ? "warning" : "error"}
-                                    >
-                                        {item.score}%
-                                    </StatusIndicator>
+                                    item.status === "skipped" ? (
+                                        <StatusIndicator type="info">N/A</StatusIndicator>
+                                    ) : (
+                                        <StatusIndicator
+                                            type={item.score >= 80 ? "success" : item.score >= 50 ? "warning" : "error"}
+                                        >
+                                            {item.score}%
+                                        </StatusIndicator>
+                                    )
                                 ),
                                 width: 100,
                             },
                             {
                                 id: "passed",
-                                header: "Pass/Fail",
+                                header: "Result",
                                 cell: (item) => (
-                                    <StatusIndicator type={item.passed ? "success" : "error"}>
-                                        {item.passed ? "Passed" : "Failed"}
-                                    </StatusIndicator>
+                                    item.status === "skipped" ? (
+                                        <StatusIndicator type="info">Skipped</StatusIndicator>
+                                    ) : (
+                                        <StatusIndicator type={item.passed ? "success" : "error"}>
+                                            {item.passed ? "Passed" : "Failed"}
+                                        </StatusIndicator>
+                                    )
                                 ),
                                 width: 100,
                             },
                             {
-                                id: "reason",
-                                header: "Evaluator Feedback",
-                                cell: (item) => <ReasonCell reason={item.reason} />,
+                                id: "detail",
+                                header: "Details",
+                                cell: (item) =>
+                                    expandedItems.some((i) => i.caseName === item.caseName) ? (
+                                        <CaseDetail item={item} />
+                                    ) : (
+                                        <Box color="text-status-inactive" fontSize="body-s">
+                                            Expand to see input, expected & actual output and feedback
+                                        </Box>
+                                    ),
                             },
                             {
                                 id: "latency",
@@ -158,6 +206,106 @@ export default function ViewResultsModal({
                 </Container>
             </SpaceBetween>
         </Modal>
+    );
+}
+
+/**
+ * Per-case detail panel: shows the input, expected output, the actual agent
+ * output that was evaluated, and the evaluator feedback.
+ */
+function CaseDetail({ item }: { item: EvaluationResult }) {
+    const reps = item.repetitions || [];
+    const isRepeated = (item.repeatCount ?? 1) > 1 && reps.length > 1;
+
+    return (
+        <SpaceBetween direction="vertical" size="s">
+            <ColumnLayout columns={1} variant="text-grid">
+                <div>
+                    <Box variant="awsui-key-label">Input</Box>
+                    <OutputBlock text={item.input} />
+                </div>
+                <div>
+                    <Box variant="awsui-key-label">Expected Output</Box>
+                    <OutputBlock text={item.expectedOutput} />
+                </div>
+                {!isRepeated && (
+                    <div>
+                        <Box variant="awsui-key-label">Actual Output (evaluated)</Box>
+                        <OutputBlock text={item.actualOutput} />
+                    </div>
+                )}
+            </ColumnLayout>
+
+            {isRepeated ? (
+                <ExpandableSection
+                    headerText={`Individual runs (${reps.length}) — score shown is the mean`}
+                    defaultExpanded
+                >
+                    <Table
+                        items={reps}
+                        variant="embedded"
+                        wrapLines
+                        columnDefinitions={[
+                            {
+                                id: "run",
+                                header: "Run",
+                                cell: (r) => `#${(r.repeatIndex ?? 0) + 1}`,
+                                width: 70,
+                            },
+                            {
+                                id: "score",
+                                header: "Score",
+                                cell: (r) =>
+                                    r.status === "skipped" ? (
+                                        <StatusIndicator type="info">N/A</StatusIndicator>
+                                    ) : (
+                                        <StatusIndicator
+                                            type={r.score >= 80 ? "success" : r.score >= 50 ? "warning" : "error"}
+                                        >
+                                            {r.score}%
+                                        </StatusIndicator>
+                                    ),
+                                width: 90,
+                            },
+                            {
+                                id: "actualOutput",
+                                header: "Actual Output",
+                                cell: (r) => <OutputBlock text={r.actualOutput} />,
+                            },
+                            {
+                                id: "reason",
+                                header: "Feedback",
+                                cell: (r) => <ReasonCell reason={r.reason || ""} />,
+                            },
+                        ]}
+                    />
+                </ExpandableSection>
+            ) : (
+                <ExpandableSection headerText="Evaluator Feedback" defaultExpanded>
+                    <ReasonCell reason={item.reason} />
+                </ExpandableSection>
+            )}
+        </SpaceBetween>
+    );
+}
+
+/** Renders a possibly-long text value in a wrapped block. */
+function OutputBlock({ text }: { text?: string }) {
+    if (!text) return <Box color="text-status-inactive">-</Box>;
+    return (
+        <Box fontSize="body-s">
+            <pre
+                style={{
+                    margin: 0,
+                    whiteSpace: "pre-wrap",
+                    wordBreak: "break-word",
+                    fontFamily: "inherit",
+                    fontSize: "12px",
+                }}
+            >
+                {text}
+            </pre>
+        </Box>
     );
 }
 

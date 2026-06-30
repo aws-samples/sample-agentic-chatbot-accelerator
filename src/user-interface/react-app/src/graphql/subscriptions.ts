@@ -33,6 +33,7 @@ export const receiveUpdateNotification = /* GraphQL */ `subscription ReceiveUpda
 export const receiveEvaluationUpdate = /* GraphQL */ `subscription ReceiveEvaluationUpdate($evaluatorId: String!) {
   receiveEvaluationUpdate(evaluatorId: $evaluatorId) {
     evaluatorId
+    runId
     status
     __typename
   }
