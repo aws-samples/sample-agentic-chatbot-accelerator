@@ -14,7 +14,10 @@ projects:
         apiId: null
         frontend: javascript
         framework: react
-        maxDepth: 2
+        # Depth 3 is required so generated queries include nested sub-selections
+        # like EvaluatorRun.results.repetitions { ... }. At depth 2 codegen
+        # silently drops them, breaking the per-repetition run view.
+        maxDepth: 3
 extensions:
   amplify:
     version: 3

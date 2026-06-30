@@ -8,6 +8,7 @@ Evaluation Executor Lambda.
 
 Processes individual test cases from SQS queue.
 """
+
 from __future__ import annotations
 
 import codecs
@@ -71,7 +72,9 @@ class SQSMessagePayload(BaseModel):
     """SQS message payload model for test case execution."""
 
     evaluatorId: str
+    runId: str
     testCaseIndex: int
+    repeatIndex: int = 0
     testCase: TestCase
     evaluatorConfig: EvaluatorConfig
 
@@ -85,12 +88,16 @@ logger = Logger(service="evaluation-executor")
 
 # -------------------- Env Variables ----------------------- #
 EVALUATIONS_TABLE_NAME = os.environ.get("EVALUATIONS_TABLE", "")
+EVALUATOR_RUNS_TABLE_NAME = os.environ.get("EVALUATOR_RUNS_TABLE", "")
 EVALUATIONS_BUCKET = os.environ.get("EVALUATIONS_BUCKET", "")
 # ---------------------------------------------------------- #
 
 # --------------- Boto3 Clients/Resource ------------------- #
 DYNAMODB = boto3.resource("dynamodb")
 EVALUATIONS_TABLE = DYNAMODB.Table(EVALUATIONS_TABLE_NAME) if EVALUATIONS_TABLE_NAME else None  # type: ignore
+EVALUATOR_RUNS_TABLE = (
+    DYNAMODB.Table(EVALUATOR_RUNS_TABLE_NAME) if EVALUATOR_RUNS_TABLE_NAME else None  # type: ignore
+)
 S3_CLIENT = boto3.client("s3")
 
 # Configure extended timeout for agent runtime invocations
@@ -121,6 +128,13 @@ class DecimalEncoder(json.JSONEncoder):
 # ---------------------------------------------------------- #
 
 
+# Must match the DLQ maxReceiveCount on the SQS event source (evaluation-api.ts).
+# On the final allowed receive we record the unit as failed and advance progress
+# instead of re-raising, so a permanently-failing unit cannot wedge the run in
+# "Running" forever (finalize triggers only when CompletedUnits == TotalUnits).
+_MAX_RECEIVE_COUNT = 3
+
+
 @tracer.capture_method
 def process_record(record: SQSRecord):
     """Process a single test case from SQS.
@@ -132,15 +146,19 @@ def process_record(record: SQSRecord):
     payload: SQSMessagePayload = parse(event=record.body, model=SQSMessagePayload)  # type: ignore
 
     evaluator_id = payload.evaluatorId
+    run_id = payload.runId
     test_case_index = payload.testCaseIndex
+    repeat_index = payload.repeatIndex
     test_case = payload.testCase
     evaluator_config = payload.evaluatorConfig
 
     logger.info(
-        f"Processing test case {test_case_index} for evaluator {evaluator_id}",
+        f"Processing test case {test_case_index} rep {repeat_index} for run {run_id}",
         extra={
             "evaluatorId": evaluator_id,
+            "runId": run_id,
             "testCaseIndex": test_case_index,
+            "repeatIndex": repeat_index,
             "testCaseName": test_case.name,
         },
     )
@@ -175,17 +193,19 @@ def process_record(record: SQSRecord):
         # Add latency
         evaluation["latencyMs"] = int((time.time() - start_time) * 1000)
 
-        # Step 3: Save individual test case result to S3
+        # Step 3: Save individual test case repetition result to S3
         _save_test_case_result(
             evaluator_id=evaluator_id,
+            run_id=run_id,
             test_case_index=test_case_index,
+            repeat_index=repeat_index,
             evaluation=evaluation,
         )
 
-        # Step 4: Update progress counters atomically
+        # Step 4: Update unit progress counter; finalize on the last unit
         _update_progress(
             evaluator_id=evaluator_id,
-            passed=evaluation.get("passed", False),
+            run_id=run_id,
         )
 
         logger.info(
@@ -200,14 +220,47 @@ def process_record(record: SQSRecord):
     except Exception as e:
         logger.exception(f"Failed to process test case {test_case_index}: {e}")
 
-        # Update progress with failure
-        _update_progress(
-            evaluator_id=evaluator_id,
-            passed=False,
-        )
+        # How many times has SQS delivered this message? On earlier attempts we
+        # re-raise to let SQS retry (transient AgentCore hangs often succeed on
+        # retry). On the FINAL allowed attempt, record the unit as a failed
+        # result and advance the counter so the run can still finalize instead
+        # of getting stuck below TotalUnits when the message would otherwise be
+        # silently dropped to the DLQ.
+        receive_count = int(record.attributes.approximate_receive_count or "1")
+        if receive_count < _MAX_RECEIVE_COUNT:
+            raise  # let SQS retry
 
-        # Re-raise to trigger SQS retry
-        raise
+        logger.warning(
+            f"Unit case={test_case_index} rep={repeat_index} failed on final "
+            f"attempt ({receive_count}/{_MAX_RECEIVE_COUNT}); recording as error "
+            f"so the run can finalize",
+            extra={"evaluatorId": evaluator_id, "runId": run_id},
+        )
+        try:
+            _save_test_case_result(
+                evaluator_id=evaluator_id,
+                run_id=run_id,
+                test_case_index=test_case_index,
+                repeat_index=repeat_index,
+                evaluation={
+                    "caseName": test_case.name,
+                    "input": test_case.input,
+                    "expectedOutput": test_case.expectedOutput or "",
+                    "actualOutput": "",
+                    "score": 0,
+                    "passed": False,
+                    "status": "error",
+                    "reason": f"Execution failed after {receive_count} attempts: {e}",
+                    "latencyMs": 0,
+                },
+            )
+            _update_progress(evaluator_id=evaluator_id, run_id=run_id)
+        except Exception as inner:
+            # If we can't even record the failure, fall back to re-raising so
+            # the message isn't lost without a trace.
+            logger.exception(f"Failed to record terminal unit failure: {inner}")
+            raise
+        # Swallowed: the unit is accounted for, so do not re-raise.
 
     finally:
         # Step 5: Always destroy runtime session if created
@@ -511,6 +564,7 @@ def _evaluate_result(
     )
 
     for eval_type in evaluator_types:
+        display_name = eval_type.replace("Evaluator", "")
         try:
             result = runner.evaluate(
                 evaluator_type=eval_type,
@@ -524,61 +578,87 @@ def _evaluate_result(
 
             score = result.score
             passed = result.passed
-            reason = result.reason
+            reason = str(result.reason)
+            # The runner sets status explicitly ("scored" | "skipped" | "error").
+            # No inference from message text required.
+            status = result.status
 
             all_results.append(
                 {
                     "type": eval_type,
                     "score": score,
                     "passed": passed,
-                    "reason": str(reason),
+                    "status": status,
+                    "reason": reason,
                 }
             )
 
-            # Format: [EvaluatorName - Score%] reason
-            # Remove "Evaluator" suffix for cleaner display
-            display_name = eval_type.replace("Evaluator", "")
             score_pct = int(score * 100)
-            all_reasons.append(f"[{display_name} - {score_pct}%]\n{reason}")
+            if status == "skipped":
+                all_reasons.append(f"[{display_name} - SKIPPED]\n{reason}")
+            elif status == "error":
+                all_reasons.append(f"[{display_name} - ERROR]\n{reason}")
+            else:
+                all_reasons.append(f"[{display_name} - {score_pct}%]\n{reason}")
 
             logger.info(
-                f"Evaluator {eval_type}: score={score:.2f}, passed={passed}",
-                extra={"evaluatorType": eval_type, "score": score, "passed": passed},
+                f"Evaluator {eval_type}: score={score:.2f}, passed={passed}, status={status}",
+                extra={"evaluatorType": eval_type, "score": score, "status": status},
             )
 
         except Exception as e:
+            # Defensive: the runner catches its own errors, but if one escapes
+            # treat it as a genuine error (not a skip).
             logger.exception(f"Evaluator {eval_type} failed: {e}")
             all_results.append(
                 {
                     "type": eval_type,
                     "score": 0.0,
                     "passed": False,
+                    "status": "error",
                     "reason": f"Error: {str(e)}",
                 }
             )
-            display_name = eval_type.replace("Evaluator", "")
-            all_reasons.append(f"[{display_name} - 0%]\n{str(e)}")
+            all_reasons.append(f"[{display_name} - ERROR]\n{str(e)}")
 
-    # Calculate aggregated score (average of all evaluators)
-    if all_results:
-        avg_score = sum(r["score"] for r in all_results) / len(all_results)
-        final_score = int(avg_score * 100)  # Convert to percentage
-    else:
-        final_score = 0
+    # Only evaluators that actually produced a score count toward the result.
+    # Skipped (inapplicable) evaluators are excluded so they don't drag the
+    # average down — e.g. one OutputEvaluator at 100% should score 100%, not
+    # 11% just because eight trajectory/tool evaluators couldn't run.
+    scored_results = [r for r in all_results if r["status"] == "scored"]
+    skipped_count = sum(1 for r in all_results if r["status"] == "skipped")
+    error_count = sum(1 for r in all_results if r["status"] == "error")
+
+    if scored_results:
+        avg_score = sum(r["score"] for r in scored_results) / len(scored_results)
+        final_score = int(avg_score * 100)
+        final_passed = avg_score >= pass_threshold
+        case_status = "scored"
+    elif skipped_count and not error_count:
+        # Every evaluator was inapplicable to this agent. The case did not
+        # really fail — it could not be scored. Flag it distinctly so the UI
+        # can explain it rather than showing a misleading 0%.
         avg_score = 0.0
+        final_score = 0
+        final_passed = False
+        case_status = "skipped"
+    else:
+        avg_score = 0.0
+        final_score = 0
+        final_passed = False
+        case_status = "error"
 
-    # Determine passed based on average score using threshold from payload
-    final_passed = avg_score >= pass_threshold
-
-    # Combine reasons
     combined_reason = "\n".join(all_reasons)
 
     logger.info(
-        f"Evaluation complete: score={final_score}, passed={final_passed}",
+        f"Evaluation complete: score={final_score}, passed={final_passed}, "
+        f"status={case_status} (scored={len(scored_results)}, "
+        f"skipped={skipped_count}, error={error_count})",
         extra={
             "evaluatorTypes": evaluator_types,
             "score": final_score,
             "passed": final_passed,
+            "caseStatus": case_status,
             "individualResults": all_results,
         },
     )
@@ -590,6 +670,7 @@ def _evaluate_result(
         "actualOutput": actual_output,
         "score": final_score,
         "passed": final_passed,
+        "status": case_status,  # "scored" | "skipped" | "error"
         "reason": combined_reason,
         "evaluatorResults": all_results,  # Include individual results for detailed view
     }
@@ -641,28 +722,30 @@ def _stop_runtime_session(
 @tracer.capture_method
 def _save_test_case_result(
     evaluator_id: str,
+    run_id: str,
     test_case_index: int,
+    repeat_index: int,
     evaluation: dict,
 ) -> None:
-    """Save individual test case result to S3.
+    """Save an individual (case, repetition) unit result to S3.
 
-    Results are saved incrementally as they complete, allowing users to see
-    partial results before the entire evaluation finishes.
-
-    Args:
-        evaluator_id: Evaluator ID
-        test_case_index: Index of the test case
-        evaluation: Evaluation result
+    Each repetition is stored separately so finalize can aggregate them into a
+    per-case mean. Saved incrementally as units complete.
     """
     if not EVALUATIONS_BUCKET:
         logger.warning("EVALUATIONS_BUCKET not configured, skipping S3 save")
         return
 
-    s3_key = f"evaluations/results/{evaluator_id}/test_case_{test_case_index:04d}.json"
+    s3_key = (
+        f"evaluations/results/{evaluator_id}/{run_id}/"
+        f"case_{test_case_index:04d}_rep_{repeat_index:04d}.json"
+    )
 
     result_data = {
         "evaluatorId": evaluator_id,
+        "runId": run_id,
         "testCaseIndex": test_case_index,
+        "repeatIndex": repeat_index,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "evaluation": evaluation,
     }
@@ -674,64 +757,47 @@ def _save_test_case_result(
             Body=json.dumps(result_data, indent=2, cls=DecimalEncoder),
             ContentType="application/json",
         )
-        logger.info(f"Saved test case result to s3://{EVALUATIONS_BUCKET}/{s3_key}")
+        logger.info(f"Saved unit result to s3://{EVALUATIONS_BUCKET}/{s3_key}")
     except ClientError as e:
-        logger.error(f"Failed to save test case result to S3: {e}")
+        logger.error(f"Failed to save unit result to S3: {e}")
 
 
 @tracer.capture_method
 def _update_progress(
     evaluator_id: str,
-    passed: bool,
+    run_id: str,
 ) -> None:
-    """Atomically update evaluation progress counters and check for completion.
+    """Atomically advance the completed-unit counter; finalize on the last unit.
 
-    Args:
-        evaluator_id: Evaluator ID
-        passed: Whether the test case passed
+    Per-case pass/fail/skip counts are computed at finalize time (after all
+    repetitions of every case are in), so here we only track raw unit progress.
     """
-    if not EVALUATIONS_TABLE:
-        logger.error("EVALUATIONS_TABLE not configured")
+    if not EVALUATOR_RUNS_TABLE:
+        logger.error("EVALUATOR_RUNS_TABLE not configured")
         return
 
     try:
-        response = EVALUATIONS_TABLE.update_item(
-            Key={"EvaluatorName": evaluator_id},
-            UpdateExpression="""
-                SET CompletedCases = if_not_exists(CompletedCases, :zero) + :inc,
-                    PassedCases = if_not_exists(PassedCases, :zero) + :passed,
-                    FailedCases = if_not_exists(FailedCases, :zero) + :failed
-            """,
-            ExpressionAttributeValues={
-                ":zero": 0,
-                ":inc": 1,
-                ":passed": 1 if passed else 0,
-                ":failed": 0 if passed else 1,
-            },
+        response = EVALUATOR_RUNS_TABLE.update_item(
+            Key={"EvaluatorId": evaluator_id, "RunId": run_id},
+            UpdateExpression=(
+                "SET CompletedUnits = if_not_exists(CompletedUnits, :zero) + :inc"
+            ),
+            ExpressionAttributeValues={":zero": 0, ":inc": 1},
             ReturnValues="ALL_NEW",
         )
 
         item = response.get("Attributes", {})
-        completed = item.get("CompletedCases", 0)
-        total = item.get("TotalCases", 0)
-        passed_count = item.get("PassedCases", 0)
-        failed_count = item.get("FailedCases", 0)
+        completed = int(item.get("CompletedUnits", 0))
+        total = int(item.get("TotalUnits", 0))
 
         logger.info(
-            f"Progress update: {completed}/{total} completed",
-            extra={
-                "evaluatorId": evaluator_id,
-                "completed": completed,
-                "total": total,
-                "passed": passed_count,
-                "failed": failed_count,
-            },
+            f"Unit progress: {completed}/{total}",
+            extra={"evaluatorId": evaluator_id, "runId": run_id},
         )
 
-        # Check if evaluation is complete
         if completed >= total > 0:
-            logger.info(f"Evaluation {evaluator_id} completed: {completed}/{total}")
-            _finalize_evaluation(evaluator_id, item)
+            logger.info(f"Run {run_id} all units complete: {completed}/{total}")
+            _finalize_run(evaluator_id, run_id, item)
 
     except ClientError as e:
         logger.error(f"Failed to update progress: {e}")
@@ -739,43 +805,60 @@ def _update_progress(
 
 
 @tracer.capture_method
-def _finalize_evaluation(evaluator_id: str, item: dict) -> None:
-    """Finalize evaluation by aggregating results and updating status.
-
-    Args:
-        evaluator_id: Evaluator ID
-        item: Current evaluator item from DynamoDB
-    """
-    logger.info(f"Finalizing evaluation {evaluator_id}")
+def _finalize_run(evaluator_id: str, run_id: str, item: dict) -> None:
+    """Finalize a run: aggregate repetitions per case, then update status."""
+    logger.info(f"Finalizing run {run_id}")
 
     try:
-        # Aggregate all test case results from S3
-        results = _load_all_test_case_results(evaluator_id)
+        units_by_case = _load_all_unit_results(evaluator_id, run_id)
 
-        # Calculate final metrics
-        total_time_ms = sum(r.get("latencyMs", 0) for r in results)
+        # Use the run's configured pass threshold (0.0-1.0) for case-level
+        # pass/fail, falling back to 0.8 if absent.
+        raw_threshold = item.get("PassThreshold")
+        pass_threshold = float(raw_threshold) if raw_threshold is not None else 0.8
 
-        # Save aggregated results to S3
+        results = []
+        passed_count = 0
+        failed_count = 0
+        skipped_count = 0
+        total_time_ms = 0
+
+        for _, units in sorted(units_by_case.items()):
+            case_result = _aggregate_case(units, pass_threshold=pass_threshold)
+            results.append(case_result)
+            total_time_ms += case_result.get("latencyMs", 0)
+
+            if case_result["status"] == "skipped":
+                skipped_count += 1
+            elif case_result["passed"]:
+                passed_count += 1
+            else:
+                failed_count += 1
+
         results_s3_path = _save_aggregated_results(
             evaluator_id=evaluator_id,
+            run_id=run_id,
             results=results,
             metrics={
-                "passedCases": item.get("PassedCases", 0),
-                "failedCases": item.get("FailedCases", 0),
+                "passedCases": passed_count,
+                "failedCases": failed_count,
+                "skippedCases": skipped_count,
                 "totalTimeMs": total_time_ms,
                 "completedAt": datetime.now(timezone.utc).isoformat(),
             },
         )
 
-        # Update status to Completed
         timestamp = datetime.now(timezone.utc).isoformat()
 
-        EVALUATIONS_TABLE.update_item(  # type: ignore
-            Key={"EvaluatorName": evaluator_id},
+        EVALUATOR_RUNS_TABLE.update_item(  # type: ignore
+            Key={"EvaluatorId": evaluator_id, "RunId": run_id},
             UpdateExpression="""
                 SET #s = :status,
                     TotalTimeMs = :time,
                     CompletedAt = :completed,
+                    PassedCases = :passed,
+                    FailedCases = :failed,
+                    SkippedCases = :skipped,
                     ResultsS3Path = :resultsPath
             """,
             ExpressionAttributeNames={"#s": "Status"},
@@ -783,32 +866,110 @@ def _finalize_evaluation(evaluator_id: str, item: dict) -> None:
                 ":status": "Completed",
                 ":time": total_time_ms,
                 ":completed": timestamp,
+                ":passed": passed_count,
+                ":failed": failed_count,
+                ":skipped": skipped_count,
                 ":resultsPath": results_s3_path,
             },
         )
 
-        logger.info(f"Evaluation {evaluator_id} finalized successfully")
+        _update_last_run_pointer(
+            evaluator_id, run_id, "Completed", timestamp, passed_count, failed_count
+        )
+
+        logger.info(
+            f"Run {run_id} finalized: {passed_count} passed, {failed_count} failed, "
+            f"{skipped_count} skipped across {len(results)} cases"
+        )
 
     except Exception as e:
-        logger.exception(f"Failed to finalize evaluation: {e}")
-        _update_evaluator_failed(evaluator_id, str(e))
+        logger.exception(f"Failed to finalize run: {e}")
+        _update_run_failed(evaluator_id, run_id, str(e))
+
+
+def _aggregate_case(units: list[dict], pass_threshold: float = 0.8) -> dict:
+    """Aggregate a case's repetition units into a single case result.
+
+    - Score is the MEAN across non-skipped repetitions.
+    - The case is "skipped" only if every repetition was skipped.
+    - Pass = mean score >= the configured pass threshold (errored reps count
+      as 0; a failed run is a failed result).
+    - Representative input/expected/actual/reason come from the first
+      repetition; every repetition's detail is preserved under "repetitions".
+
+    Args:
+        units: The (case, repetition) unit records for one test case.
+        pass_threshold: Configured threshold on a 0.0-1.0 scale. Unit scores are
+            stored as 0-100 percentages, so the comparison scales it by 100.
+    """
+    # Unit scores are percentages (0-100); the configured threshold is 0-1.
+    threshold_pct = pass_threshold * 100
+
+    units = sorted(units, key=lambda u: u.get("repeatIndex", 0))
+    evaluations = [u.get("evaluation", {}) for u in units]
+    first = evaluations[0] if evaluations else {}
+
+    repetitions = []
+    for u in units:
+        ev = u.get("evaluation", {})
+        repetitions.append(
+            {
+                "repeatIndex": u.get("repeatIndex", 0),
+                "actualOutput": ev.get("actualOutput", ""),
+                "score": ev.get("score", 0),
+                "passed": ev.get("passed", False),
+                "status": ev.get("status", "scored"),
+                "reason": ev.get("reason", ""),
+                "latencyMs": ev.get("latencyMs", 0),
+            }
+        )
+
+    scored = [ev for ev in evaluations if ev.get("status") not in ("skipped", "error")]
+    errored = [ev for ev in evaluations if ev.get("status") == "error"]
+
+    if scored:
+        # At least one repetition produced a real score. Errored reps count as
+        # 0 (a failed run is a failed result), skipped reps are excluded.
+        status = "scored"
+        usable = scored + errored
+        mean_score = sum(ev.get("score", 0) for ev in usable) / len(usable)
+        passed = mean_score >= threshold_pct
+    elif errored:
+        # Every (non-skipped) repetition errored → the case errored.
+        status = "error"
+        mean_score = 0
+        passed = False
+    else:
+        # Every repetition was skipped → the case is skipped.
+        status = "skipped"
+        mean_score = 0
+        passed = False
+
+    total_latency = sum(ev.get("latencyMs", 0) for ev in evaluations)
+
+    return {
+        "caseName": first.get("caseName"),
+        "input": first.get("input"),
+        "expectedOutput": first.get("expectedOutput"),
+        "actualOutput": first.get("actualOutput"),  # representative (rep 0)
+        "score": round(mean_score, 1),
+        "passed": passed,
+        "status": status,
+        "reason": first.get("reason"),  # representative feedback (rep 0)
+        "latencyMs": total_latency,
+        "repeatCount": len(units),
+        "repetitions": repetitions,
+    }
 
 
 @tracer.capture_method
-def _load_all_test_case_results(evaluator_id: str) -> list[dict]:
-    """Load all test case results from S3 for final aggregation.
-
-    Args:
-        evaluator_id: Evaluator ID
-
-    Returns:
-        list: All test case evaluation results
-    """
+def _load_all_unit_results(evaluator_id: str, run_id: str) -> dict:
+    """Load all unit result files from S3, grouped by test-case index."""
+    grouped: dict = {}
     if not EVALUATIONS_BUCKET:
-        return []
+        return grouped
 
-    results = []
-    prefix = f"evaluations/results/{evaluator_id}/"
+    prefix = f"evaluations/results/{evaluator_id}/{run_id}/"
 
     try:
         paginator = S3_CLIENT.get_paginator("list_objects_v2")
@@ -819,48 +980,43 @@ def _load_all_test_case_results(evaluator_id: str) -> list[dict]:
                 key = obj["Key"]
                 if not key.endswith(".json"):
                     continue
+                if key.endswith("aggregated_results.json"):
+                    continue
 
                 response = S3_CLIENT.get_object(Bucket=EVALUATIONS_BUCKET, Key=key)
                 content = response["Body"].read().decode("utf-8")
                 data = json.loads(content)
+                case_index = int(data.get("testCaseIndex", 0))
+                grouped.setdefault(case_index, []).append(data)
 
-                evaluation = data.get("evaluation", {})
-                if evaluation:
-                    results.append(evaluation)
-
-        logger.info(f"Loaded {len(results)} test case results from S3")
-        return results
+        unit_total = sum(len(v) for v in grouped.values())
+        logger.info(
+            f"Loaded {unit_total} unit results across {len(grouped)} cases from S3"
+        )
+        return grouped
 
     except ClientError as e:
-        logger.error(f"Failed to load test case results: {e}")
-        return []
+        logger.error(f"Failed to load unit results: {e}")
+        return grouped
 
 
 @tracer.capture_method
 def _save_aggregated_results(
     evaluator_id: str,
+    run_id: str,
     results: list[dict],
     metrics: dict,
 ) -> str:
-    """Save aggregated evaluation results to S3.
-
-    Args:
-        evaluator_id: Evaluator ID
-        results: All test case results
-        metrics: Summary metrics
-
-    Returns:
-        str: S3 path where results were saved
-    """
+    """Save aggregated run results to S3 (run-scoped)."""
     if not EVALUATIONS_BUCKET:
         logger.warning("EVALUATIONS_BUCKET not configured, skipping S3 save")
         return ""
 
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    s3_key = f"evaluations/results/{evaluator_id}/{timestamp}_aggregated_results.json"
+    s3_key = f"evaluations/results/{evaluator_id}/{run_id}/aggregated_results.json"
 
     results_data = {
         "evaluatorId": evaluator_id,
+        "runId": run_id,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "metrics": metrics,
         "results": results,
@@ -881,16 +1037,46 @@ def _save_aggregated_results(
         return ""
 
 
-def _update_evaluator_failed(evaluator_id: str, error_message: str) -> None:
-    """Update evaluator status to Failed."""
+def _update_last_run_pointer(
+    evaluator_id: str,
+    run_id: str,
+    status: str,
+    timestamp: str,
+    passed: int,
+    failed: int,
+) -> None:
+    """Update the evaluator's denormalized last-run summary for the list view."""
     if not EVALUATIONS_TABLE:
+        return
+    try:
+        EVALUATIONS_TABLE.update_item(
+            Key={"EvaluatorName": evaluator_id},
+            UpdateExpression=(
+                "SET LastRunId = :rid, LastRunStatus = :st, LastRunAt = :ts, "
+                "LastRunPassedCases = :p, LastRunFailedCases = :f"
+            ),
+            ExpressionAttributeValues={
+                ":rid": run_id,
+                ":st": status,
+                ":ts": timestamp,
+                ":p": passed,
+                ":f": failed,
+            },
+        )
+    except ClientError as e:
+        logger.warning(f"Failed to update last-run pointer: {e}")
+
+
+def _update_run_failed(evaluator_id: str, run_id: str, error_message: str) -> None:
+    """Update run status to Failed."""
+    if not EVALUATOR_RUNS_TABLE:
         return
 
     timestamp = datetime.now(timezone.utc).isoformat()
 
     try:
-        EVALUATIONS_TABLE.update_item(
-            Key={"EvaluatorName": evaluator_id},
+        EVALUATOR_RUNS_TABLE.update_item(
+            Key={"EvaluatorId": evaluator_id, "RunId": run_id},
             UpdateExpression="SET #s = :status, ErrorMessage = :error, CompletedAt = :completed",
             ExpressionAttributeNames={"#s": "Status"},
             ExpressionAttributeValues={
@@ -900,7 +1086,8 @@ def _update_evaluator_failed(evaluator_id: str, error_message: str) -> None:
             },
         )
     except ClientError as e:
-        logger.error(f"Failed to update evaluator status: {e}")
+        logger.error(f"Failed to update run status: {e}")
+    _update_last_run_pointer(evaluator_id, run_id, "Failed", timestamp, 0, 0)
 
 
 # ========================= Handler ========================= #

@@ -152,7 +152,9 @@ export class ChatbotApi extends Construct {
             config: props.config,
             api: api,
             evaluatorsTable: chatTables.evaluatorsTable,
+            evaluatorRunsTable: chatTables.evaluatorRunsTable,
             byUserIdIndex: chatTables.byUserIdIndex,
+            byRunIdIndex: chatTables.byRunIdIndex,
             evaluationExecutorBundle: props.evaluationExecutorBundle,
         });
 
