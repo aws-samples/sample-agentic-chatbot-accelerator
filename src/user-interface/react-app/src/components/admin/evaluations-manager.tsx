@@ -25,11 +25,12 @@ import { generateClient } from "aws-amplify/api";
 import { AppContext } from "../../common/app-context";
 import { Evaluator, EvaluationSummary } from "../../common/types";
 import { Utils } from "../../common/utils";
-import { deleteEvaluator as deleteEvaluatorMutation, runEvaluation as runEvaluationMutation } from "../../graphql/mutations";
-import { listEvaluators as listEvaluatorsQuery, getEvaluator as getEvaluatorQuery } from "../../graphql/queries";
+import { deleteEvaluator as deleteEvaluatorMutation, startEvaluatorRun as startEvaluatorRunMutation } from "../../graphql/mutations";
+import { listEvaluators as listEvaluatorsQuery, getEvaluatorRun as getEvaluatorRunQuery } from "../../graphql/queries";
 import DeleteEvaluatorModal from "./evaluations/delete-evaluator-modal";
 import ViewEvaluatorModal from "./evaluations/view-evaluator-modal";
 import ViewResultsModal from "./evaluations/view-results-modal";
+import RunHistoryModal from "./evaluations/run-history-modal";
 
 export interface EvaluationsManagerProps {
     readonly toolsOpen: boolean;
@@ -49,9 +50,11 @@ export default function EvaluationsManager(props: EvaluationsManagerProps) {
     const [isDeleting, setIsDeleting] = useState(false);
     const [showResultsModal, setShowResultsModal] = useState(false);
     const [showViewModal, setShowViewModal] = useState(false);
+    const [showHistoryModal, setShowHistoryModal] = useState(false);
     const [isRunning, setIsRunning] = useState(false);
     const [evaluationResults, setEvaluationResults] = useState<EvaluationSummary | null>(null);
-    const [pollingEvaluatorId, setPollingEvaluatorId] = useState<string | null>(null);
+    // Polling tracks a specific (evaluatorId, runId) pair.
+    const [pollingRun, setPollingRun] = useState<{ evaluatorId: string; runId: string } | null>(null);
 
     const apiClient = generateClient();
 
@@ -71,16 +74,18 @@ export default function EvaluationsManager(props: EvaluationsManagerProps) {
                 customRubric: item.customRubric,
                 agentRuntimeName: item.agentRuntimeName,
                 qualifier: item.qualifier,
+                modelId: item.modelId,
+                passThreshold: item.passThreshold,
+                repeatCount: item.repeatCount,
                 testCasesS3Path: item.testCasesS3Path,
                 testCasesCount: item.testCasesCount,
-                status: item.status,
-                passedCases: item.passedCases,
-                failedCases: item.failedCases,
-                totalTimeMs: item.totalTimeMs,
-                errorMessage: item.errorMessage,
                 createdAt: item.createdAt,
-                startedAt: item.startedAt,
-                completedAt: item.completedAt,
+                updatedAt: item.updatedAt,
+                lastRunId: item.lastRunId,
+                lastRunStatus: item.lastRunStatus,
+                lastRunPassedCases: item.lastRunPassedCases,
+                lastRunFailedCases: item.lastRunFailedCases,
+                lastRunAt: item.lastRunAt,
             })));
         } catch (error) {
             console.log(Utils.getErrorMessage(error));
@@ -93,44 +98,37 @@ export default function EvaluationsManager(props: EvaluationsManagerProps) {
         fetchEvaluators();
     }, [props.toolsOpen]);
 
-    // Poll for status updates when an evaluation is running
+    // Poll for status updates when a run is in progress
     useEffect(() => {
-        if (!pollingEvaluatorId) return;
+        if (!pollingRun) return;
 
         const pollInterval = setInterval(async () => {
             try {
                 const result = await apiClient.graphql({
-                    query: getEvaluatorQuery,
-                    variables: { evaluatorId: pollingEvaluatorId }
+                    query: getEvaluatorRunQuery,
+                    variables: { evaluatorId: pollingRun.evaluatorId, runId: pollingRun.runId }
                 });
 
-                const evalData = result.data?.getEvaluator;
-                if (evalData) {
-                    const updatedEvaluator = {
-                        status: evalData.status,
-                        passedCases: evalData.passedCases ?? undefined,
-                        failedCases: evalData.failedCases ?? undefined,
-                        totalTimeMs: evalData.totalTimeMs ?? undefined,
-                        completedAt: evalData.completedAt ?? undefined,
+                const runData = result.data?.getEvaluatorRun;
+                if (runData) {
+                    const updated = {
+                        lastRunId: runData.runId,
+                        lastRunStatus: runData.status,
+                        lastRunPassedCases: runData.passedCases ?? undefined,
+                        lastRunFailedCases: runData.failedCases ?? undefined,
+                        lastRunAt: runData.completedAt ?? runData.startedAt ?? undefined,
                     };
 
-                    // Update local state with latest data
                     setEvaluators(prev => prev.map(e =>
-                        e.evaluatorId === pollingEvaluatorId
-                            ? { ...e, ...updatedEvaluator }
-                            : e
+                        e.evaluatorId === pollingRun.evaluatorId ? { ...e, ...updated } : e
                     ));
-
-                    // Also update selectedItems if this evaluator is selected
                     setSelectedItems(prev => prev.map(e =>
-                        e.evaluatorId === pollingEvaluatorId
-                            ? { ...e, ...updatedEvaluator }
-                            : e
+                        e.evaluatorId === pollingRun.evaluatorId ? { ...e, ...updated } : e
                     ));
 
-                    // Stop polling when evaluation is no longer running
-                    if (evalData.status !== "Running") {
-                        setPollingEvaluatorId(null);
+                    // Stop polling when the run is no longer in progress
+                    if (runData.status !== "Running" && runData.status !== "Queued") {
+                        setPollingRun(null);
                     }
                 }
             } catch (error) {
@@ -139,7 +137,7 @@ export default function EvaluationsManager(props: EvaluationsManagerProps) {
         }, 2000); // Poll every 2 seconds
 
         return () => clearInterval(pollInterval);
-    }, [pollingEvaluatorId, apiClient]);
+    }, [pollingRun, apiClient]);
 
     const handleRunEvaluation = async () => {
         if (selectedItems.length !== 1) return;
@@ -148,29 +146,35 @@ export default function EvaluationsManager(props: EvaluationsManagerProps) {
         setIsRunning(true);
 
         try {
-            await apiClient.graphql({
-                query: runEvaluationMutation,
+            const result = await apiClient.graphql({
+                query: startEvaluatorRunMutation,
                 variables: { evaluatorId: evaluator.evaluatorId }
             });
 
-            // Update local state to show Running
+            const run = result.data?.startEvaluatorRun;
+            if (!run) {
+                console.error("startEvaluatorRun returned no run");
+                return;
+            }
+
+            const updated = {
+                lastRunId: run.runId,
+                lastRunStatus: run.status,
+                lastRunPassedCases: 0,
+                lastRunFailedCases: 0,
+                lastRunAt: run.startedAt ?? undefined,
+            };
             setEvaluators(prev => prev.map(e =>
-                e.evaluatorId === evaluator.evaluatorId
-                    ? { ...e, status: "Running" }
-                    : e
+                e.evaluatorId === evaluator.evaluatorId ? { ...e, ...updated } : e
             ));
-
-            // Also update selectedItems to keep button disabled
             setSelectedItems(prev => prev.map(e =>
-                e.evaluatorId === evaluator.evaluatorId
-                    ? { ...e, status: "Running" }
-                    : e
+                e.evaluatorId === evaluator.evaluatorId ? { ...e, ...updated } : e
             ));
 
-            // Start polling for status updates
-            setPollingEvaluatorId(evaluator.evaluatorId);
+            // Start polling for this run's status
+            setPollingRun({ evaluatorId: evaluator.evaluatorId, runId: run.runId });
 
-            console.log(`Started evaluation for ${evaluator.name}`);
+            console.log(`Started run ${run.runId} for ${evaluator.name}`);
         } catch (error) {
             console.error("Failed to run evaluation:", error);
         } finally {
@@ -182,29 +186,36 @@ export default function EvaluationsManager(props: EvaluationsManagerProps) {
         if (selectedItems.length !== 1) return;
 
         const evaluator = selectedItems[0];
+        if (!evaluator.lastRunId) return;
 
         try {
             const result = await apiClient.graphql({
-                query: getEvaluatorQuery,
-                variables: { evaluatorId: evaluator.evaluatorId }
+                query: getEvaluatorRunQuery,
+                variables: { evaluatorId: evaluator.evaluatorId, runId: evaluator.lastRunId }
             });
 
-            const evalData = result.data?.getEvaluator;
-            if (evalData) {
+            const runData = result.data?.getEvaluatorRun;
+            if (runData) {
                 const evaluationSummary: EvaluationSummary = {
-                    runId: evalData.evaluatorId,
-                    evaluatorId: evalData.evaluatorId,
-                    totalCases: (evalData.passedCases || 0) + (evalData.failedCases || 0),
-                    passedCases: evalData.passedCases || 0,
-                    totalTimeMs: evalData.totalTimeMs || 0,
-                    status: evalData.status,
-                    completedAt: evalData.completedAt || undefined,
-                    results: (evalData.results || []).map((r: any) => ({
+                    runId: runData.runId,
+                    evaluatorId: runData.evaluatorId,
+                    totalCases: runData.totalCases || (runData.passedCases || 0) + (runData.failedCases || 0),
+                    passedCases: runData.passedCases || 0,
+                    totalTimeMs: runData.totalTimeMs || 0,
+                    status: runData.status,
+                    completedAt: runData.completedAt || undefined,
+                    results: (runData.results || []).map((r: any) => ({
                         caseName: r.caseName,
+                        input: r.input,
+                        expectedOutput: r.expectedOutput,
+                        actualOutput: r.actualOutput,
                         score: r.score,
                         passed: r.passed,
+                        status: r.status,
                         reason: r.reason,
                         latencyMs: r.latencyMs,
+                        repeatCount: r.repeatCount,
+                        repetitions: r.repetitions || [],
                     })),
                 };
                 setEvaluationResults(evaluationSummary);
@@ -275,8 +286,8 @@ export default function EvaluationsManager(props: EvaluationsManagerProps) {
             operators: [":", "!:", "=", "!="],
         },
         {
-            key: "status",
-            propertyLabel: "Status",
+            key: "lastRunStatus",
+            propertyLabel: "Last Run Status",
             groupValuesLabel: "Status values",
             operators: [":", "!:", "=", "!="],
         },
@@ -394,8 +405,8 @@ export default function EvaluationsManager(props: EvaluationsManagerProps) {
                                     <Button
                                         disabled={
                                             selectedItems.length !== 1 ||
-                                            selectedItems[0].status === "Running" ||
-                                            selectedItems[0].status === "Completed"
+                                            selectedItems[0].lastRunStatus === "Running" ||
+                                            selectedItems[0].lastRunStatus === "Queued"
                                         }
                                         iconName="caret-right-filled"
                                         variant="inline-link"
@@ -415,14 +426,38 @@ export default function EvaluationsManager(props: EvaluationsManagerProps) {
                                     <Button
                                         disabled={
                                             selectedItems.length !== 1 ||
-                                            selectedItems[0].status === "Created" ||
-                                            selectedItems[0].status === "Running"
+                                            selectedItems[0].lastRunStatus === "Running" ||
+                                            selectedItems[0].lastRunStatus === "Queued"
+                                        }
+                                        iconName="edit"
+                                        variant="inline-link"
+                                        onClick={() => navigate(`/evaluations/edit/${encodeURIComponent(selectedItems[0].evaluatorId)}`)}
+                                    >
+                                        Edit
+                                    </Button>
+                                    <Button
+                                        disabled={
+                                            selectedItems.length !== 1 ||
+                                            !selectedItems[0].lastRunId ||
+                                            selectedItems[0].lastRunStatus === "Running" ||
+                                            selectedItems[0].lastRunStatus === "Queued"
                                         }
                                         iconName="view-full"
                                         variant="inline-link"
                                         onClick={handleViewResults}
                                     >
-                                        View Results
+                                        View Latest Results
+                                    </Button>
+                                    <Button
+                                        disabled={
+                                            selectedItems.length !== 1 ||
+                                            !selectedItems[0].lastRunId
+                                        }
+                                        iconName="list-view"
+                                        variant="inline-link"
+                                        onClick={() => setShowHistoryModal(true)}
+                                    >
+                                        Run History
                                     </Button>
                                     <Button
                                         iconName="remove"
@@ -478,22 +513,24 @@ export default function EvaluationsManager(props: EvaluationsManagerProps) {
                         },
                         {
                             id: "status",
-                            header: "Status",
+                            header: "Last Run",
                             cell: (item) => (
-                                <StatusIndicator type={getStatusType(item.status)}>
-                                    {item.status}
-                                </StatusIndicator>
+                                item.lastRunStatus ? (
+                                    <StatusIndicator type={getStatusType(item.lastRunStatus)}>
+                                        {item.lastRunStatus}
+                                    </StatusIndicator>
+                                ) : <span>Never run</span>
                             ),
-                            sortingField: "status",
-                            width: 100,
+                            sortingField: "lastRunStatus",
+                            width: 120,
                         },
                         {
                             id: "results",
-                            header: "Results",
+                            header: "Last Results",
                             cell: (item) => (
-                                item.passedCases !== undefined || item.failedCases !== undefined ? (
+                                item.lastRunPassedCases !== undefined || item.lastRunFailedCases !== undefined ? (
                                     <span>
-                                        {item.passedCases || 0}/{(item.passedCases || 0) + (item.failedCases || 0)} passed
+                                        {item.lastRunPassedCases || 0}/{(item.lastRunPassedCases || 0) + (item.lastRunFailedCases || 0)} passed
                                     </span>
                                 ) : "-"
                             ),
@@ -537,6 +574,14 @@ export default function EvaluationsManager(props: EvaluationsManagerProps) {
                     }}
                     evaluator={selectedItems[0]}
                     results={evaluationResults}
+                />
+            )}
+
+            {showHistoryModal && selectedItems.length === 1 && (
+                <RunHistoryModal
+                    visible={showHistoryModal}
+                    onDismiss={() => setShowHistoryModal(false)}
+                    evaluator={selectedItems[0]}
                 />
             )}
         </>

@@ -82,9 +82,9 @@ export default function ViewEvaluatorModal({
                         </SpaceBetween>
                         <SpaceBetween direction="vertical" size="s">
                             <div>
-                                <Box variant="awsui-key-label">Status</Box>
-                                <StatusIndicator type={getStatusType(evaluator.status)}>
-                                    {evaluator.status}
+                                <Box variant="awsui-key-label">Last Run Status</Box>
+                                <StatusIndicator type={getStatusType(evaluator.lastRunStatus)}>
+                                    {evaluator.lastRunStatus || "Never run"}
                                 </StatusIndicator>
                             </div>
                             <div>
@@ -134,7 +134,32 @@ export default function ViewEvaluatorModal({
                     </ColumnLayout>
                 </Container>
 
-                {/* Rubrics (if exists) */}
+                {/* Run Settings */}
+                <Container header={<Header variant="h3">Run Settings</Header>}>
+                    <ColumnLayout columns={2} variant="text-grid">
+                        <SpaceBetween direction="vertical" size="s">
+                            <div>
+                                <Box variant="awsui-key-label">Evaluation Model</Box>
+                                <Box>{evaluator.modelId || "-"}</Box>
+                            </div>
+                            <div>
+                                <Box variant="awsui-key-label">Pass Threshold</Box>
+                                <Box>
+                                    {evaluator.passThreshold != null
+                                        ? `${(evaluator.passThreshold * 100).toFixed(0)}%`
+                                        : "-"}
+                                </Box>
+                            </div>
+                        </SpaceBetween>
+                        <SpaceBetween direction="vertical" size="s">
+                            <div>
+                                <Box variant="awsui-key-label">Repetitions per test case</Box>
+                                <Box>{evaluator.repeatCount ?? 1}</Box>
+                            </div>
+                        </SpaceBetween>
+                    </ColumnLayout>
+                </Container>
+
                 {evaluator.customRubric && (
                     <ExpandableSection headerText="Rubrics" defaultExpanded={false}>
                         <Box
@@ -148,40 +173,33 @@ export default function ViewEvaluatorModal({
                     </ExpandableSection>
                 )}
 
-                {/* Execution Details (if run) */}
-                {(evaluator.startedAt || evaluator.completedAt) && (
-                    <Container header={<Header variant="h3">Execution Details</Header>}>
+                {/* Last Run Summary (if run) */}
+                {evaluator.lastRunAt && (
+                    <Container header={<Header variant="h3">Last Run</Header>}>
                         <ColumnLayout columns={2} variant="text-grid">
                             <SpaceBetween direction="vertical" size="s">
                                 <div>
-                                    <Box variant="awsui-key-label">Started At</Box>
-                                    <Box>{formatDate(evaluator.startedAt)}</Box>
+                                    <Box variant="awsui-key-label">Last Run At</Box>
+                                    <Box>{formatDate(evaluator.lastRunAt)}</Box>
                                 </div>
                                 <div>
-                                    <Box variant="awsui-key-label">Completed At</Box>
-                                    <Box>{formatDate(evaluator.completedAt)}</Box>
+                                    <Box variant="awsui-key-label">Last Run Status</Box>
+                                    <StatusIndicator type={getStatusType(evaluator.lastRunStatus)}>
+                                        {evaluator.lastRunStatus || "-"}
+                                    </StatusIndicator>
                                 </div>
                             </SpaceBetween>
                             <SpaceBetween direction="vertical" size="s">
                                 <div>
                                     <Box variant="awsui-key-label">Passed Cases</Box>
-                                    <Box color="text-status-success">{evaluator.passedCases ?? 0}</Box>
+                                    <Box color="text-status-success">{evaluator.lastRunPassedCases ?? 0}</Box>
                                 </div>
                                 <div>
                                     <Box variant="awsui-key-label">Failed Cases</Box>
-                                    <Box color="text-status-error">{evaluator.failedCases ?? 0}</Box>
+                                    <Box color="text-status-error">{evaluator.lastRunFailedCases ?? 0}</Box>
                                 </div>
                             </SpaceBetween>
                         </ColumnLayout>
-                    </Container>
-                )}
-
-                {/* Error Message (if failed) */}
-                {evaluator.errorMessage && (
-                    <Container header={<Header variant="h3">Error</Header>}>
-                        <Box color="text-status-error">
-                            {evaluator.errorMessage}
-                        </Box>
                     </Container>
                 )}
             </SpaceBetween>

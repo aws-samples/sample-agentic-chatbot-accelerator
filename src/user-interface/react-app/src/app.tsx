@@ -17,6 +17,7 @@ import CreateExperimentPage from "./pages/admin/create-experiment";
 import DocumentManagerPage from "./pages/admin/documents";
 import EvaluationsManagerPage from "./pages/admin/evaluations-manager";
 import EvaluationsWizardPage from "./pages/admin/evaluations-wizard-page";
+import EvaluationsEditPage from "./pages/admin/evaluations-edit-page";
 import ExperimentsManagerPage from "./pages/admin/experiments-manager";
 import KnowledgeBaseManagerPage from "./pages/admin/kb-manager";
 import McpServerManagerPage from "./pages/admin/mcp-server-manager-page";
@@ -41,6 +42,7 @@ function AppRoutes() {
             <Route path="/agent-core/skills" element={<SkillManagerPage />} />
             <Route path="/evaluations" element={<EvaluationsManagerPage />} />
             <Route path="/evaluations/create" element={<EvaluationsWizardPage />} />
+            <Route path="/evaluations/edit/:evaluatorId" element={<EvaluationsEditPage />} />
             {experimentsBatchEnabled && (
                 <>
                     <Route path="/experiments" element={<ExperimentsManagerPage />} />

@@ -59,6 +59,7 @@ export type CreateEvaluatorInput = {
   qualifier: string,
   modelId: string,
   passThreshold: number,
+  repeatCount?: number | null,
   testCases: string,
 };
 
@@ -73,12 +74,51 @@ export type Evaluator = {
   qualifier: string,
   modelId?: string | null,
   passThreshold?: number | null,
+  repeatCount?: number | null,
+  testCasesS3Path?: string | null,
+  testCasesCount?: number | null,
+  createdAt: string,
+  updatedAt?: string | null,
+  lastRunId?: string | null,
+  lastRunStatus?: string | null,
+  lastRunPassedCases?: number | null,
+  lastRunFailedCases?: number | null,
+  lastRunAt?: string | null,
+};
+
+export type UpdateEvaluatorInput = {
+  name?: string | null,
+  description?: string | null,
+  evaluatorType?: string | null,
+  customRubric?: string | null,
+  agentRuntimeName?: string | null,
+  qualifier?: string | null,
+  modelId?: string | null,
+  passThreshold?: number | null,
+  repeatCount?: number | null,
+  testCases?: string | null,
+};
+
+export type EvaluatorRun = {
+  __typename: "EvaluatorRun",
+  runId: string,
+  evaluatorId: string,
+  evaluatorName?: string | null,
+  evaluatorType?: string | null,
+  customRubric?: string | null,
+  agentRuntimeName?: string | null,
+  qualifier?: string | null,
+  modelId?: string | null,
+  passThreshold?: number | null,
+  repeatCount?: number | null,
   testCasesS3Path?: string | null,
   testCasesCount?: number | null,
   resultsS3Path?: string | null,
   status: string,
+  totalCases?: number | null,
   passedCases?: number | null,
   failedCases?: number | null,
+  skippedCases?: number | null,
   totalTimeMs?: number | null,
   results?:  Array<EvaluationResult | null > | null,
   errorMessage?: string | null,
@@ -95,6 +135,20 @@ export type EvaluationResult = {
   actualOutput?: string | null,
   score: number,
   passed: boolean,
+  status?: string | null,
+  reason?: string | null,
+  latencyMs?: number | null,
+  repeatCount?: number | null,
+  repetitions?:  Array<EvaluationRepetition | null > | null,
+};
+
+export type EvaluationRepetition = {
+  __typename: "EvaluationRepetition",
+  repeatIndex: number,
+  actualOutput?: string | null,
+  score: number,
+  passed: boolean,
+  status?: string | null,
   reason?: string | null,
   latencyMs?: number | null,
 };
@@ -102,6 +156,7 @@ export type EvaluationResult = {
 export type EvaluationNotification = {
   __typename: "EvaluationNotification",
   evaluatorId?: string | null,
+  runId?: string | null,
   status?: string | null,
 };
 
@@ -534,28 +589,46 @@ export type CreateEvaluatorMutation = {
     qualifier: string,
     modelId?: string | null,
     passThreshold?: number | null,
+    repeatCount?: number | null,
     testCasesS3Path?: string | null,
     testCasesCount?: number | null,
-    resultsS3Path?: string | null,
-    status: string,
-    passedCases?: number | null,
-    failedCases?: number | null,
-    totalTimeMs?: number | null,
-    results?:  Array< {
-      __typename: "EvaluationResult",
-      caseName: string,
-      input?: string | null,
-      expectedOutput?: string | null,
-      actualOutput?: string | null,
-      score: number,
-      passed: boolean,
-      reason?: string | null,
-      latencyMs?: number | null,
-    } | null > | null,
-    errorMessage?: string | null,
     createdAt: string,
-    startedAt?: string | null,
-    completedAt?: string | null,
+    updatedAt?: string | null,
+    lastRunId?: string | null,
+    lastRunStatus?: string | null,
+    lastRunPassedCases?: number | null,
+    lastRunFailedCases?: number | null,
+    lastRunAt?: string | null,
+  } | null,
+};
+
+export type UpdateEvaluatorMutationVariables = {
+  evaluatorId: string,
+  input: UpdateEvaluatorInput,
+};
+
+export type UpdateEvaluatorMutation = {
+  updateEvaluator?:  {
+    __typename: "Evaluator",
+    evaluatorId: string,
+    name: string,
+    description?: string | null,
+    evaluatorType: string,
+    customRubric?: string | null,
+    agentRuntimeName?: string | null,
+    qualifier: string,
+    modelId?: string | null,
+    passThreshold?: number | null,
+    repeatCount?: number | null,
+    testCasesS3Path?: string | null,
+    testCasesCount?: number | null,
+    createdAt: string,
+    updatedAt?: string | null,
+    lastRunId?: string | null,
+    lastRunStatus?: string | null,
+    lastRunPassedCases?: number | null,
+    lastRunFailedCases?: number | null,
+    lastRunAt?: string | null,
   } | null,
 };
 
@@ -567,28 +640,31 @@ export type DeleteEvaluatorMutation = {
   deleteEvaluator?: boolean | null,
 };
 
-export type RunEvaluationMutationVariables = {
+export type StartEvaluatorRunMutationVariables = {
   evaluatorId: string,
 };
 
-export type RunEvaluationMutation = {
-  runEvaluation?:  {
-    __typename: "Evaluator",
+export type StartEvaluatorRunMutation = {
+  startEvaluatorRun?:  {
+    __typename: "EvaluatorRun",
+    runId: string,
     evaluatorId: string,
-    name: string,
-    description?: string | null,
-    evaluatorType: string,
+    evaluatorName?: string | null,
+    evaluatorType?: string | null,
     customRubric?: string | null,
     agentRuntimeName?: string | null,
-    qualifier: string,
+    qualifier?: string | null,
     modelId?: string | null,
     passThreshold?: number | null,
+    repeatCount?: number | null,
     testCasesS3Path?: string | null,
     testCasesCount?: number | null,
     resultsS3Path?: string | null,
     status: string,
+    totalCases?: number | null,
     passedCases?: number | null,
     failedCases?: number | null,
+    skippedCases?: number | null,
     totalTimeMs?: number | null,
     results?:  Array< {
       __typename: "EvaluationResult",
@@ -598,8 +674,20 @@ export type RunEvaluationMutation = {
       actualOutput?: string | null,
       score: number,
       passed: boolean,
+      status?: string | null,
       reason?: string | null,
       latencyMs?: number | null,
+      repeatCount?: number | null,
+      repetitions?:  Array< {
+        __typename: "EvaluationRepetition",
+        repeatIndex: number,
+        actualOutput?: string | null,
+        score: number,
+        passed: boolean,
+        status?: string | null,
+        reason?: string | null,
+        latencyMs?: number | null,
+      } | null > | null,
     } | null > | null,
     errorMessage?: string | null,
     createdAt: string,
@@ -608,8 +696,18 @@ export type RunEvaluationMutation = {
   } | null,
 };
 
+export type DeleteEvaluatorRunMutationVariables = {
+  evaluatorId: string,
+  runId: string,
+};
+
+export type DeleteEvaluatorRunMutation = {
+  deleteEvaluatorRun?: boolean | null,
+};
+
 export type PublishEvaluationUpdateMutationVariables = {
   evaluatorId: string,
+  runId?: string | null,
   status: string,
 };
 
@@ -617,6 +715,7 @@ export type PublishEvaluationUpdateMutation = {
   publishEvaluationUpdate?:  {
     __typename: "EvaluationNotification",
     evaluatorId?: string | null,
+    runId?: string | null,
     status?: string | null,
   } | null,
 };
@@ -1111,28 +1210,16 @@ export type ListEvaluatorsQuery = {
     qualifier: string,
     modelId?: string | null,
     passThreshold?: number | null,
+    repeatCount?: number | null,
     testCasesS3Path?: string | null,
     testCasesCount?: number | null,
-    resultsS3Path?: string | null,
-    status: string,
-    passedCases?: number | null,
-    failedCases?: number | null,
-    totalTimeMs?: number | null,
-    results?:  Array< {
-      __typename: "EvaluationResult",
-      caseName: string,
-      input?: string | null,
-      expectedOutput?: string | null,
-      actualOutput?: string | null,
-      score: number,
-      passed: boolean,
-      reason?: string | null,
-      latencyMs?: number | null,
-    } | null > | null,
-    errorMessage?: string | null,
     createdAt: string,
-    startedAt?: string | null,
-    completedAt?: string | null,
+    updatedAt?: string | null,
+    lastRunId?: string | null,
+    lastRunStatus?: string | null,
+    lastRunPassedCases?: number | null,
+    lastRunFailedCases?: number | null,
+    lastRunAt?: string | null,
   } > | null,
 };
 
@@ -1152,12 +1239,44 @@ export type GetEvaluatorQuery = {
     qualifier: string,
     modelId?: string | null,
     passThreshold?: number | null,
+    repeatCount?: number | null,
+    testCasesS3Path?: string | null,
+    testCasesCount?: number | null,
+    createdAt: string,
+    updatedAt?: string | null,
+    lastRunId?: string | null,
+    lastRunStatus?: string | null,
+    lastRunPassedCases?: number | null,
+    lastRunFailedCases?: number | null,
+    lastRunAt?: string | null,
+  } | null,
+};
+
+export type ListEvaluatorRunsQueryVariables = {
+  evaluatorId: string,
+};
+
+export type ListEvaluatorRunsQuery = {
+  listEvaluatorRuns?:  Array< {
+    __typename: "EvaluatorRun",
+    runId: string,
+    evaluatorId: string,
+    evaluatorName?: string | null,
+    evaluatorType?: string | null,
+    customRubric?: string | null,
+    agentRuntimeName?: string | null,
+    qualifier?: string | null,
+    modelId?: string | null,
+    passThreshold?: number | null,
+    repeatCount?: number | null,
     testCasesS3Path?: string | null,
     testCasesCount?: number | null,
     resultsS3Path?: string | null,
     status: string,
+    totalCases?: number | null,
     passedCases?: number | null,
     failedCases?: number | null,
+    skippedCases?: number | null,
     totalTimeMs?: number | null,
     results?:  Array< {
       __typename: "EvaluationResult",
@@ -1167,14 +1286,91 @@ export type GetEvaluatorQuery = {
       actualOutput?: string | null,
       score: number,
       passed: boolean,
+      status?: string | null,
       reason?: string | null,
       latencyMs?: number | null,
+      repeatCount?: number | null,
+      repetitions?:  Array< {
+        __typename: "EvaluationRepetition",
+        repeatIndex: number,
+        actualOutput?: string | null,
+        score: number,
+        passed: boolean,
+        status?: string | null,
+        reason?: string | null,
+        latencyMs?: number | null,
+      } | null > | null,
+    } | null > | null,
+    errorMessage?: string | null,
+    createdAt: string,
+    startedAt?: string | null,
+    completedAt?: string | null,
+  } > | null,
+};
+
+export type GetEvaluatorRunQueryVariables = {
+  evaluatorId: string,
+  runId: string,
+};
+
+export type GetEvaluatorRunQuery = {
+  getEvaluatorRun?:  {
+    __typename: "EvaluatorRun",
+    runId: string,
+    evaluatorId: string,
+    evaluatorName?: string | null,
+    evaluatorType?: string | null,
+    customRubric?: string | null,
+    agentRuntimeName?: string | null,
+    qualifier?: string | null,
+    modelId?: string | null,
+    passThreshold?: number | null,
+    repeatCount?: number | null,
+    testCasesS3Path?: string | null,
+    testCasesCount?: number | null,
+    resultsS3Path?: string | null,
+    status: string,
+    totalCases?: number | null,
+    passedCases?: number | null,
+    failedCases?: number | null,
+    skippedCases?: number | null,
+    totalTimeMs?: number | null,
+    results?:  Array< {
+      __typename: "EvaluationResult",
+      caseName: string,
+      input?: string | null,
+      expectedOutput?: string | null,
+      actualOutput?: string | null,
+      score: number,
+      passed: boolean,
+      status?: string | null,
+      reason?: string | null,
+      latencyMs?: number | null,
+      repeatCount?: number | null,
+      repetitions?:  Array< {
+        __typename: "EvaluationRepetition",
+        repeatIndex: number,
+        actualOutput?: string | null,
+        score: number,
+        passed: boolean,
+        status?: string | null,
+        reason?: string | null,
+        latencyMs?: number | null,
+      } | null > | null,
     } | null > | null,
     errorMessage?: string | null,
     createdAt: string,
     startedAt?: string | null,
     completedAt?: string | null,
   } | null,
+};
+
+export type GetEvaluatorTestCasesQueryVariables = {
+  evaluatorId: string,
+};
+
+export type GetEvaluatorTestCasesQuery = {
+  getEvaluatorTestCases?: string | null,
 };
 
 export type ListExperimentsQueryVariables = {
@@ -1268,6 +1464,7 @@ export type ReceiveEvaluationUpdateSubscription = {
   receiveEvaluationUpdate?:  {
     __typename: "EvaluationNotification",
     evaluatorId?: string | null,
+    runId?: string | null,
     status?: string | null,
   } | null,
 };

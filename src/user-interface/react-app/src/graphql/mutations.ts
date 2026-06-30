@@ -300,28 +300,16 @@ export const createEvaluator = /* GraphQL */ `mutation CreateEvaluator($input: C
     qualifier
     modelId
     passThreshold
+    repeatCount
     testCasesS3Path
     testCasesCount
-    resultsS3Path
-    status
-    passedCases
-    failedCases
-    totalTimeMs
-    results {
-      caseName
-      input
-      expectedOutput
-      actualOutput
-      score
-      passed
-      reason
-      latencyMs
-      __typename
-    }
-    errorMessage
     createdAt
-    startedAt
-    completedAt
+    updatedAt
+    lastRunId
+    lastRunStatus
+    lastRunPassedCases
+    lastRunFailedCases
+    lastRunAt
     __typename
   }
 }
@@ -329,15 +317,8 @@ export const createEvaluator = /* GraphQL */ `mutation CreateEvaluator($input: C
   APITypes.CreateEvaluatorMutationVariables,
   APITypes.CreateEvaluatorMutation
 >;
-export const deleteEvaluator = /* GraphQL */ `mutation DeleteEvaluator($evaluatorId: ID!) {
-  deleteEvaluator(evaluatorId: $evaluatorId)
-}
-` as GeneratedMutation<
-  APITypes.DeleteEvaluatorMutationVariables,
-  APITypes.DeleteEvaluatorMutation
->;
-export const runEvaluation = /* GraphQL */ `mutation RunEvaluation($evaluatorId: ID!) {
-  runEvaluation(evaluatorId: $evaluatorId) {
+export const updateEvaluator = /* GraphQL */ `mutation UpdateEvaluator($evaluatorId: ID!, $input: UpdateEvaluatorInput!) {
+  updateEvaluator(evaluatorId: $evaluatorId, input: $input) {
     evaluatorId
     name
     description
@@ -347,12 +328,50 @@ export const runEvaluation = /* GraphQL */ `mutation RunEvaluation($evaluatorId:
     qualifier
     modelId
     passThreshold
+    repeatCount
+    testCasesS3Path
+    testCasesCount
+    createdAt
+    updatedAt
+    lastRunId
+    lastRunStatus
+    lastRunPassedCases
+    lastRunFailedCases
+    lastRunAt
+    __typename
+  }
+}
+` as GeneratedMutation<
+  APITypes.UpdateEvaluatorMutationVariables,
+  APITypes.UpdateEvaluatorMutation
+>;
+export const deleteEvaluator = /* GraphQL */ `mutation DeleteEvaluator($evaluatorId: ID!) {
+  deleteEvaluator(evaluatorId: $evaluatorId)
+}
+` as GeneratedMutation<
+  APITypes.DeleteEvaluatorMutationVariables,
+  APITypes.DeleteEvaluatorMutation
+>;
+export const startEvaluatorRun = /* GraphQL */ `mutation StartEvaluatorRun($evaluatorId: ID!) {
+  startEvaluatorRun(evaluatorId: $evaluatorId) {
+    runId
+    evaluatorId
+    evaluatorName
+    evaluatorType
+    customRubric
+    agentRuntimeName
+    qualifier
+    modelId
+    passThreshold
+    repeatCount
     testCasesS3Path
     testCasesCount
     resultsS3Path
     status
+    totalCases
     passedCases
     failedCases
+    skippedCases
     totalTimeMs
     results {
       caseName
@@ -361,8 +380,20 @@ export const runEvaluation = /* GraphQL */ `mutation RunEvaluation($evaluatorId:
       actualOutput
       score
       passed
+      status
       reason
       latencyMs
+      repeatCount
+      repetitions {
+        repeatIndex
+        actualOutput
+        score
+        passed
+        status
+        reason
+        latencyMs
+        __typename
+      }
       __typename
     }
     errorMessage
@@ -373,12 +404,28 @@ export const runEvaluation = /* GraphQL */ `mutation RunEvaluation($evaluatorId:
   }
 }
 ` as GeneratedMutation<
-  APITypes.RunEvaluationMutationVariables,
-  APITypes.RunEvaluationMutation
+  APITypes.StartEvaluatorRunMutationVariables,
+  APITypes.StartEvaluatorRunMutation
 >;
-export const publishEvaluationUpdate = /* GraphQL */ `mutation PublishEvaluationUpdate($evaluatorId: String!, $status: String!) {
-  publishEvaluationUpdate(evaluatorId: $evaluatorId, status: $status) {
+export const deleteEvaluatorRun = /* GraphQL */ `mutation DeleteEvaluatorRun($evaluatorId: ID!, $runId: ID!) {
+  deleteEvaluatorRun(evaluatorId: $evaluatorId, runId: $runId)
+}
+` as GeneratedMutation<
+  APITypes.DeleteEvaluatorRunMutationVariables,
+  APITypes.DeleteEvaluatorRunMutation
+>;
+export const publishEvaluationUpdate = /* GraphQL */ `mutation PublishEvaluationUpdate(
+  $evaluatorId: String!
+  $runId: String
+  $status: String!
+) {
+  publishEvaluationUpdate(
+    evaluatorId: $evaluatorId
+    runId: $runId
+    status: $status
+  ) {
     evaluatorId
+    runId
     status
     __typename
   }

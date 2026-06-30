@@ -47,6 +47,7 @@ export interface EvaluatorConfiguration {
     qualifier: string;
     modelId: string; // Model to use for evaluation
     passThreshold: number; // Pass rate threshold (0.0-1.0)
+    repeatCount: number; // How many times to run each test case (default 1)
     evaluatorType: EvaluatorType | string; // Legacy - kept for backward compatibility
     customRubric?: string; // Legacy - kept for backward compatibility
     evaluators: EvaluatorConfig[]; // NEW: multiple evaluators
@@ -57,6 +58,9 @@ interface CreateEvaluatorWizardProps {
     onSubmit: (config: EvaluatorConfiguration) => void;
     onCancel: () => void;
     isCreating?: boolean;
+    // When provided, the wizard pre-fills from this config and acts as an editor.
+    initialConfig?: EvaluatorConfiguration;
+    isEditMode?: boolean;
 }
 
 const EVALUATOR_TYPE_OPTIONS = [
@@ -83,6 +87,8 @@ export default function CreateEvaluatorWizard({
     onSubmit,
     onCancel,
     isCreating = false,
+    initialConfig,
+    isEditMode = false,
 }: CreateEvaluatorWizardProps) {
     const appConfig = useContext(AppContext);
     const apiClient = useMemo(() => generateClient(), []);
@@ -126,19 +132,22 @@ export default function CreateEvaluatorWizard({
     const [selectedEvaluatorId, setSelectedEvaluatorId] = useState<string | null>(null);
     const [tempRubric, setTempRubric] = useState<string>("");
 
-    const [config, setConfig] = useState<EvaluatorConfiguration>({
-        name: "",
-        description: "",
-        agentRuntimeId: "",
-        agentRuntimeName: "",
-        qualifier: "",
-        modelId: "",
-        passThreshold: evaluatorAppConfig?.passThreshold || 0,
-        evaluatorType: EvaluatorType.OUTPUT, // Legacy
-        customRubric: "", // Legacy
-        evaluators: [], // NEW
-        testCases: [],
-    });
+    const [config, setConfig] = useState<EvaluatorConfiguration>(
+        initialConfig ?? {
+            name: "",
+            description: "",
+            agentRuntimeId: "",
+            agentRuntimeName: "",
+            qualifier: "",
+            modelId: "",
+            passThreshold: evaluatorAppConfig?.passThreshold || 0,
+            repeatCount: 1,
+            evaluatorType: EvaluatorType.OUTPUT, // Legacy
+            customRubric: "", // Legacy
+            evaluators: [], // NEW
+            testCases: [],
+        }
+    );
 
     // Set default model ID when model options become available
     useEffect(() => {
@@ -164,6 +173,20 @@ export default function CreateEvaluatorWizard({
 
         fetchAgents();
     }, [appConfig, apiClient]);
+
+    // When editing, the stored evaluator only has the agent *name* (the backend
+    // doesn't persist the runtime id). The agent dropdown is keyed on
+    // agentRuntimeId, so resolve the id from the name once agents have loaded.
+    // This also lets the endpoint/qualifier section render with its saved value.
+    useEffect(() => {
+        if (config.agentRuntimeId || !config.agentRuntimeName) return;
+        const match = availableAgents.find(
+            (a) => a.agentName === config.agentRuntimeName,
+        );
+        if (match) {
+            setConfig((prev) => ({ ...prev, agentRuntimeId: match.agentRuntimeId }));
+        }
+    }, [availableAgents, config.agentRuntimeId, config.agentRuntimeName]);
 
     // Fetch endpoints when agent is selected
     useEffect(() => {
@@ -422,6 +445,22 @@ export default function CreateEvaluatorWizard({
                                         }
                                     }}
                                     placeholder="0.8"
+                                />
+                            </FormField>
+                            <FormField
+                                label="Repetitions per test case"
+                                description="Run each test case this many times and report the average score (and per-run detail). Use >1 to smooth out non-deterministic agents/judges. Higher values increase cost and time."
+                            >
+                                <Input
+                                    type="number"
+                                    value={String(config.repeatCount)}
+                                    onChange={({ detail }) => {
+                                        const value = parseInt(detail.value, 10);
+                                        if (!isNaN(value) && value >= 1 && value <= 20) {
+                                            setConfig(prev => ({ ...prev, repeatCount: value }));
+                                        }
+                                    }}
+                                    placeholder="1"
                                 />
                             </FormField>
                         </SpaceBetween>
@@ -767,6 +806,7 @@ export default function CreateEvaluatorWizard({
                                     <Box><strong>Description:</strong> {config.description || "N/A"}</Box>
                                     <Box><strong>Evaluation Model:</strong> {modelOptions.find(opt => opt.value === config.modelId)?.label || config.modelId}</Box>
                                     <Box><strong>Pass Threshold:</strong> {(config.passThreshold * 100).toFixed(0)}%</Box>
+                                    <Box><strong>Repetitions per case:</strong> {config.repeatCount}</Box>
                                 </SpaceBetween>
                             </Container>
 
@@ -810,7 +850,9 @@ export default function CreateEvaluatorWizard({
                     cancelButton: "Cancel",
                     previousButton: "Previous",
                     nextButton: "Next",
-                    submitButton: isCreating ? "Creating..." : "Create Evaluator",
+                    submitButton: isCreating
+                        ? (isEditMode ? "Saving..." : "Creating...")
+                        : (isEditMode ? "Save Changes" : "Create Evaluator"),
                 }}
                 onNavigate={({ detail }) => setActiveStepIndex(detail.requestedStepIndex)}
                 activeStepIndex={activeStepIndex}

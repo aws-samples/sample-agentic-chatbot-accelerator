@@ -49,6 +49,7 @@ export default function EvaluationsWizardPage() {
                         qualifier: config.qualifier || "",
                         modelId: config.modelId || "",
                         passThreshold: config.passThreshold ?? 0.8,
+                        repeatCount: config.repeatCount ?? 1,
                         testCases: JSON.stringify(config.testCases || []),
                     }
                 }
