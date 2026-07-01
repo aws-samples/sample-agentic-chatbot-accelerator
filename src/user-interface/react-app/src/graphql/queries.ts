@@ -339,6 +339,37 @@ export const listEvaluators = /* GraphQL */ `query ListEvaluators {
     lastRunPassedCases
     lastRunFailedCases
     lastRunAt
+    status
+    passedCases
+    failedCases
+    totalTimeMs
+    resultsS3Path
+    results {
+      caseName
+      input
+      expectedOutput
+      actualOutput
+      score
+      passed
+      status
+      reason
+      latencyMs
+      repeatCount
+      repetitions {
+        repeatIndex
+        actualOutput
+        score
+        passed
+        status
+        reason
+        latencyMs
+        __typename
+      }
+      __typename
+    }
+    errorMessage
+    startedAt
+    completedAt
     __typename
   }
 }
@@ -367,6 +398,37 @@ export const getEvaluator = /* GraphQL */ `query GetEvaluator($evaluatorId: ID!)
     lastRunPassedCases
     lastRunFailedCases
     lastRunAt
+    status
+    passedCases
+    failedCases
+    totalTimeMs
+    resultsS3Path
+    results {
+      caseName
+      input
+      expectedOutput
+      actualOutput
+      score
+      passed
+      status
+      reason
+      latencyMs
+      repeatCount
+      repetitions {
+        repeatIndex
+        actualOutput
+        score
+        passed
+        status
+        reason
+        latencyMs
+        __typename
+      }
+      __typename
+    }
+    errorMessage
+    startedAt
+    completedAt
     __typename
   }
 }
