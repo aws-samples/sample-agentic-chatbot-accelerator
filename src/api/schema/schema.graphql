@@ -201,6 +201,28 @@ type Evaluator @aws_cognito_user_pools {
     lastRunPassedCases: Int
     lastRunFailedCases: Int
     lastRunAt: AWSDateTime
+    # ---- Backwards-compatibility fields (deprecated) ----
+    # These mirror the most recent run so pre-split clients that query run
+    # state directly on Evaluator continue to work. Prefer EvaluatorRun via
+    # listEvaluatorRuns / getEvaluatorRun.
+    status: String
+        @deprecated(reason: "Use lastRunStatus, or EvaluatorRun.status via getEvaluatorRun")
+    passedCases: Int
+        @deprecated(reason: "Use lastRunPassedCases, or EvaluatorRun.passedCases")
+    failedCases: Int
+        @deprecated(reason: "Use lastRunFailedCases, or EvaluatorRun.failedCases")
+    totalTimeMs: Int
+        @deprecated(reason: "Use EvaluatorRun.totalTimeMs via getEvaluatorRun")
+    resultsS3Path: String
+        @deprecated(reason: "Use EvaluatorRun.resultsS3Path via getEvaluatorRun")
+    results: [EvaluationResult]
+        @deprecated(reason: "Use EvaluatorRun.results via getEvaluatorRun")
+    errorMessage: String
+        @deprecated(reason: "Use EvaluatorRun.errorMessage via getEvaluatorRun")
+    startedAt: AWSDateTime
+        @deprecated(reason: "Use lastRunAt, or EvaluatorRun.startedAt")
+    completedAt: AWSDateTime
+        @deprecated(reason: "Use lastRunAt, or EvaluatorRun.completedAt")
 }
 
 # An EvaluatorRun is one execution of an evaluator. It snapshots the
@@ -333,6 +355,11 @@ type Mutation {
     # Evaluator runs
     startEvaluatorRun(evaluatorId: ID!): EvaluatorRun @aws_cognito_user_pools
     deleteEvaluatorRun(evaluatorId: ID!, runId: ID!): Boolean @aws_cognito_user_pools
+    # Deprecated alias of startEvaluatorRun. Returns the evaluator (with its
+    # last-run state populated) rather than the run, matching the old shape.
+    runEvaluation(evaluatorId: ID!): Evaluator
+        @aws_cognito_user_pools
+        @deprecated(reason: "Use startEvaluatorRun, which returns the EvaluatorRun")
     publishEvaluationUpdate(evaluatorId: String!, runId: String, status: String!): EvaluationNotification @aws_iam
     # Skills
     createSkill(name: String!, description: String!, content: String!): Skill @aws_cognito_user_pools

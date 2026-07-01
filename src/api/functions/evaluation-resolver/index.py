@@ -129,7 +129,7 @@ def list_evaluators() -> list[dict]:
 def get_evaluator(evaluatorId: str) -> Optional[dict]:
     """Get a single evaluator config by ID."""
     item = _get_evaluator_item(evaluatorId)
-    return _format_evaluator(item) if item else None
+    return _format_evaluator(item, include_run_detail=True) if item else None
 
 
 @app.resolver(type_name="Query", field_name="listEvaluatorRuns")
@@ -484,6 +484,23 @@ def start_evaluator_run(evaluatorId: str) -> Optional[dict]:
     return _format_run(_get_run_item(evaluatorId, run_id))
 
 
+@app.resolver(type_name="Mutation", field_name="runEvaluation")
+def run_evaluation(evaluatorId: str) -> Optional[dict]:
+    """Deprecated alias of startEvaluatorRun.
+
+    Starts a new run (identical behaviour to startEvaluatorRun) but returns the
+    Evaluator shape with its last-run state populated, matching the pre-split
+    API so older clients keep working.
+    """
+    run = start_evaluator_run(evaluatorId)
+    if run is None:
+        return None
+    # Return the evaluator, whose last-run pointer now reflects the run we
+    # just started; the deprecated compat fields on Evaluator surface its state.
+    item = _get_evaluator_item(evaluatorId)
+    return _format_evaluator(item, include_run_detail=True) if item else None
+
+
 # ========================= Internal helpers ========================= #
 
 
@@ -632,11 +649,11 @@ def _load_test_cases(s3_path: str) -> list[dict]:
 # ========================= Formatters ========================= #
 
 
-def _format_evaluator(item: dict) -> dict:
+def _format_evaluator(item: dict, include_run_detail: bool = False) -> dict:
     """Format a DynamoDB evaluator item to the GraphQL Evaluator type."""
     evaluator_name = item.get("EvaluatorName", "")
     threshold = item.get("PassThreshold")
-    return {
+    result = {
         "evaluatorId": evaluator_name,
         "name": evaluator_name,
         "description": item.get("Description"),
@@ -656,7 +673,39 @@ def _format_evaluator(item: dict) -> dict:
         "lastRunPassedCases": _to_int(item.get("LastRunPassedCases")),
         "lastRunFailedCases": _to_int(item.get("LastRunFailedCases")),
         "lastRunAt": item.get("LastRunAt"),
+        # ---- Deprecated backwards-compat fields (mirror the last run) ----
+        # Cheap fields come straight from the denormalized last-run pointer so
+        # list operations stay a single scan. Heavy fields (results, full run
+        # record) are only hydrated for single-evaluator fetches below.
+        "status": item.get("LastRunStatus"),
+        "passedCases": _to_int(item.get("LastRunPassedCases")),
+        "failedCases": _to_int(item.get("LastRunFailedCases")),
+        "completedAt": item.get("LastRunAt"),
+        "startedAt": item.get("LastRunAt"),
+        "totalTimeMs": None,
+        "resultsS3Path": None,
+        "results": [],
+        "errorMessage": None,
     }
+
+    # For single-evaluator fetches, hydrate the heavy deprecated fields from the
+    # most recent run record so pre-split clients that read Evaluator.results
+    # still get data. Skipped for list scans to avoid N extra reads.
+    if include_run_detail and item.get("LastRunId"):
+        last_run = _get_run_item(evaluator_name, item["LastRunId"])
+        if last_run:
+            run_fmt = _format_run(last_run, include_results=True)
+            if run_fmt:
+                result["totalTimeMs"] = run_fmt.get("totalTimeMs")
+                result["resultsS3Path"] = run_fmt.get("resultsS3Path")
+                result["results"] = run_fmt.get("results") or []
+                result["errorMessage"] = run_fmt.get("errorMessage")
+                result["startedAt"] = run_fmt.get("startedAt") or result["startedAt"]
+                result["completedAt"] = (
+                    run_fmt.get("completedAt") or result["completedAt"]
+                )
+
+    return result
 
 
 def _format_run(item: Optional[dict], include_results: bool = False) -> Optional[dict]:

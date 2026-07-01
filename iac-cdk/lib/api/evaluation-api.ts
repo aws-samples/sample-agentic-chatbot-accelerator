@@ -122,6 +122,7 @@ export class EvaluationApi extends Construct {
             "deleteEvaluator",
             "startEvaluatorRun",
             "deleteEvaluatorRun",
+            "runEvaluation",
             "listEvaluatorRuns",
             "getEvaluatorRun",
             "getEvaluatorTestCases",
@@ -320,6 +321,11 @@ export class EvaluationApi extends Construct {
                 type: "Mutation",
                 field: "startEvaluatorRun",
                 resolverId: "StartEvaluatorRunResolver",
+            },
+            {
+                type: "Mutation",
+                field: "runEvaluation",
+                resolverId: "RunEvaluationResolver",
             },
             {
                 type: "Mutation",

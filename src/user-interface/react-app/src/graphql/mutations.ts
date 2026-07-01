@@ -310,6 +310,37 @@ export const createEvaluator = /* GraphQL */ `mutation CreateEvaluator($input: C
     lastRunPassedCases
     lastRunFailedCases
     lastRunAt
+    status
+    passedCases
+    failedCases
+    totalTimeMs
+    resultsS3Path
+    results {
+      caseName
+      input
+      expectedOutput
+      actualOutput
+      score
+      passed
+      status
+      reason
+      latencyMs
+      repeatCount
+      repetitions {
+        repeatIndex
+        actualOutput
+        score
+        passed
+        status
+        reason
+        latencyMs
+        __typename
+      }
+      __typename
+    }
+    errorMessage
+    startedAt
+    completedAt
     __typename
   }
 }
@@ -338,6 +369,37 @@ export const updateEvaluator = /* GraphQL */ `mutation UpdateEvaluator($evaluato
     lastRunPassedCases
     lastRunFailedCases
     lastRunAt
+    status
+    passedCases
+    failedCases
+    totalTimeMs
+    resultsS3Path
+    results {
+      caseName
+      input
+      expectedOutput
+      actualOutput
+      score
+      passed
+      status
+      reason
+      latencyMs
+      repeatCount
+      repetitions {
+        repeatIndex
+        actualOutput
+        score
+        passed
+        status
+        reason
+        latencyMs
+        __typename
+      }
+      __typename
+    }
+    errorMessage
+    startedAt
+    completedAt
     __typename
   }
 }
@@ -413,6 +475,65 @@ export const deleteEvaluatorRun = /* GraphQL */ `mutation DeleteEvaluatorRun($ev
 ` as GeneratedMutation<
   APITypes.DeleteEvaluatorRunMutationVariables,
   APITypes.DeleteEvaluatorRunMutation
+>;
+export const runEvaluation = /* GraphQL */ `mutation RunEvaluation($evaluatorId: ID!) {
+  runEvaluation(evaluatorId: $evaluatorId) {
+    evaluatorId
+    name
+    description
+    evaluatorType
+    customRubric
+    agentRuntimeName
+    qualifier
+    modelId
+    passThreshold
+    repeatCount
+    testCasesS3Path
+    testCasesCount
+    createdAt
+    updatedAt
+    lastRunId
+    lastRunStatus
+    lastRunPassedCases
+    lastRunFailedCases
+    lastRunAt
+    status
+    passedCases
+    failedCases
+    totalTimeMs
+    resultsS3Path
+    results {
+      caseName
+      input
+      expectedOutput
+      actualOutput
+      score
+      passed
+      status
+      reason
+      latencyMs
+      repeatCount
+      repetitions {
+        repeatIndex
+        actualOutput
+        score
+        passed
+        status
+        reason
+        latencyMs
+        __typename
+      }
+      __typename
+    }
+    errorMessage
+    startedAt
+    completedAt
+    __typename
+  }
+}
+` as GeneratedMutation<
+  APITypes.RunEvaluationMutationVariables,
+  APITypes.RunEvaluationMutation
 >;
 export const publishEvaluationUpdate = /* GraphQL */ `mutation PublishEvaluationUpdate(
   $evaluatorId: String!
