@@ -336,6 +336,14 @@ export const createEvaluator = /* GraphQL */ `mutation CreateEvaluator($input: C
         latencyMs
         __typename
       }
+      evaluatorBreakdown {
+        evaluatorType
+        score
+        passed
+        status
+        reason
+        __typename
+      }
       __typename
     }
     errorMessage
@@ -395,6 +403,14 @@ export const updateEvaluator = /* GraphQL */ `mutation UpdateEvaluator($evaluato
         latencyMs
         __typename
       }
+      evaluatorBreakdown {
+        evaluatorType
+        score
+        passed
+        status
+        reason
+        __typename
+      }
       __typename
     }
     errorMessage
@@ -423,6 +439,7 @@ export const startEvaluatorRun = /* GraphQL */ `mutation StartEvaluatorRun($eval
     customRubric
     agentRuntimeName
     qualifier
+    runtimeVersion
     modelId
     passThreshold
     repeatCount
@@ -454,6 +471,14 @@ export const startEvaluatorRun = /* GraphQL */ `mutation StartEvaluatorRun($eval
         status
         reason
         latencyMs
+        __typename
+      }
+      evaluatorBreakdown {
+        evaluatorType
+        score
+        passed
+        status
+        reason
         __typename
       }
       __typename
@@ -521,6 +546,14 @@ export const runEvaluation = /* GraphQL */ `mutation RunEvaluation($evaluatorId:
         status
         reason
         latencyMs
+        __typename
+      }
+      evaluatorBreakdown {
+        evaluatorType
+        score
+        passed
+        status
+        reason
         __typename
       }
       __typename
