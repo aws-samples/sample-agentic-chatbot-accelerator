@@ -19,6 +19,7 @@ import {
     Popover,
     Select,
     SpaceBetween,
+    StatusIndicator,
     Table,
     Tabs,
     Textarea,
@@ -26,6 +27,7 @@ import {
 } from "@cloudscape-design/components";
 import { RuntimeSummary } from "../../API";
 import { AppContext } from "../../common/app-context";
+import { resolveRuntimeVersion } from "../../common/utils";
 import { EvaluatorType, TestCase, EvaluatorConfigType } from "../../common/types";
 import {
     listAgentEndpoints as listAgentEndpointsQuery,
@@ -367,6 +369,19 @@ export default function CreateEvaluatorWizard({
         value: endpoint,
     }));
 
+    // Resolve the concrete agent version for the currently selected endpoint
+    // (qualifier). Derived on each render from the selected agent's
+    // qualifierToVersion map and config.qualifier, so it recomputes
+    // automatically when the qualifier or agent changes. Returns "" when the
+    // map is missing/unparseable or the qualifier has no entry.
+    const selectedAgent = availableAgents.find(
+        agent => agent.agentRuntimeId === config.agentRuntimeId,
+    );
+    const resolvedVersion = resolveRuntimeVersion(
+        selectedAgent?.qualifierToVersion,
+        config.qualifier,
+    );
+
     // Get evaluator label
     const getEvaluatorLabel = (type: string) => {
         return EVALUATOR_TYPE_OPTIONS.find(opt => opt.value === type)?.label || type;
@@ -526,6 +541,20 @@ export default function CreateEvaluatorWizard({
                                         disabled={endpointOptions.length === 0}
                                         empty="No endpoints available"
                                     />
+                                    {config.qualifier && (
+                                        <Box margin={{ top: "xs" }}>
+                                            <Box variant="awsui-key-label">Agent version</Box>
+                                            {resolvedVersion ? (
+                                                <StatusIndicator type="info">
+                                                    Version {resolvedVersion}
+                                                </StatusIndicator>
+                                            ) : (
+                                                <StatusIndicator type="warning">
+                                                    Unknown version
+                                                </StatusIndicator>
+                                            )}
+                                        </Box>
+                                    )}
                                 </FormField>
                             )}
                         </SpaceBetween>

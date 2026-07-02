@@ -18,7 +18,8 @@ import { useVoiceAgent, VoiceConversationTurn } from "../../common/hooks/useVoic
 import { getDefaultRuntimeConfiguration as getDefaultRuntimeConfigurationQuery } from "../../graphql/queries";
 import { ConnectOptions } from "../../websocket-presigned";
 import { AgentOption, EndpointOption } from "./types";
-import { maskSensitiveInfo, resolveRuntimeVersion } from "./utils";
+import { maskSensitiveInfo } from "./utils";
+import { resolveRuntimeVersion } from "../../common/utils";
 import MarkdownContent from "./side-view/markdown-content";
 
 export interface VoiceConversationViewProps {

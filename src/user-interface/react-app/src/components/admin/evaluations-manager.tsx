@@ -23,13 +23,12 @@ import { useNavigate } from "react-router-dom";
 
 import { generateClient } from "aws-amplify/api";
 import { AppContext } from "../../common/app-context";
-import { Evaluator, EvaluationSummary } from "../../common/types";
+import { Evaluator } from "../../common/types";
 import { Utils } from "../../common/utils";
 import { deleteEvaluator as deleteEvaluatorMutation, startEvaluatorRun as startEvaluatorRunMutation } from "../../graphql/mutations";
 import { listEvaluators as listEvaluatorsQuery, getEvaluatorRun as getEvaluatorRunQuery } from "../../graphql/queries";
 import DeleteEvaluatorModal from "./evaluations/delete-evaluator-modal";
 import ViewEvaluatorModal from "./evaluations/view-evaluator-modal";
-import ViewResultsModal from "./evaluations/view-results-modal";
 import RunHistoryModal from "./evaluations/run-history-modal";
 
 export interface EvaluationsManagerProps {
@@ -48,11 +47,9 @@ export default function EvaluationsManager(props: EvaluationsManagerProps) {
     const [isLoading, setIsLoading] = useState<boolean>(false);
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
-    const [showResultsModal, setShowResultsModal] = useState(false);
     const [showViewModal, setShowViewModal] = useState(false);
     const [showHistoryModal, setShowHistoryModal] = useState(false);
     const [isRunning, setIsRunning] = useState(false);
-    const [evaluationResults, setEvaluationResults] = useState<EvaluationSummary | null>(null);
     // Polling tracks a specific (evaluatorId, runId) pair.
     const [pollingRun, setPollingRun] = useState<{ evaluatorId: string; runId: string } | null>(null);
 
@@ -182,48 +179,17 @@ export default function EvaluationsManager(props: EvaluationsManagerProps) {
         }
     };
 
-    const handleViewResults = async () => {
+    const handleViewResults = () => {
         if (selectedItems.length !== 1) return;
 
         const evaluator = selectedItems[0];
         if (!evaluator.lastRunId) return;
 
-        try {
-            const result = await apiClient.graphql({
-                query: getEvaluatorRunQuery,
-                variables: { evaluatorId: evaluator.evaluatorId, runId: evaluator.lastRunId }
-            });
-
-            const runData = result.data?.getEvaluatorRun;
-            if (runData) {
-                const evaluationSummary: EvaluationSummary = {
-                    runId: runData.runId,
-                    evaluatorId: runData.evaluatorId,
-                    totalCases: runData.totalCases || (runData.passedCases || 0) + (runData.failedCases || 0),
-                    passedCases: runData.passedCases || 0,
-                    totalTimeMs: runData.totalTimeMs || 0,
-                    status: runData.status,
-                    completedAt: runData.completedAt || undefined,
-                    results: (runData.results || []).map((r: any) => ({
-                        caseName: r.caseName,
-                        input: r.input,
-                        expectedOutput: r.expectedOutput,
-                        actualOutput: r.actualOutput,
-                        score: r.score,
-                        passed: r.passed,
-                        status: r.status,
-                        reason: r.reason,
-                        latencyMs: r.latencyMs,
-                        repeatCount: r.repeatCount,
-                        repetitions: r.repetitions || [],
-                    })),
-                };
-                setEvaluationResults(evaluationSummary);
-                setShowResultsModal(true);
-            }
-        } catch (error) {
-            console.error("Failed to fetch results:", error);
-        }
+        navigate(
+            `/evaluations/${encodeURIComponent(
+                evaluator.evaluatorId,
+            )}/runs/${encodeURIComponent(evaluator.lastRunId)}`,
+        );
     };
 
     const handleDelete = async () => {
@@ -562,18 +528,6 @@ export default function EvaluationsManager(props: EvaluationsManagerProps) {
                     visible={showViewModal}
                     onDismiss={() => setShowViewModal(false)}
                     evaluator={selectedItems[0]}
-                />
-            )}
-
-            {showResultsModal && evaluationResults && (
-                <ViewResultsModal
-                    visible={showResultsModal}
-                    onDismiss={() => {
-                        setShowResultsModal(false);
-                        setEvaluationResults(null);
-                    }}
-                    evaluator={selectedItems[0]}
-                    results={evaluationResults}
                 />
             )}
 
