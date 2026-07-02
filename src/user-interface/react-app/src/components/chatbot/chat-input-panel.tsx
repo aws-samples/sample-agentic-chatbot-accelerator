@@ -30,7 +30,8 @@ import {
     LLMToken,
     ToolActionItem,
 } from "./types";
-import { appendToolAction, markToolComplete, resolveRuntimeVersion, updateMessageHistoryRef } from "./utils";
+import { appendToolAction, markToolComplete, updateMessageHistoryRef } from "./utils";
+import { resolveRuntimeVersion } from "../../common/utils";
 
 export interface ChatInputPanelProps {
     running: boolean;

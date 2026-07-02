@@ -220,6 +220,24 @@ export class EvaluationApi extends Construct {
         evaluationQueue.grantSendMessages(evaluationResolver);
         evaluationQueue.grantConsumeMessages(evaluationExecutor);
 
+        // Grant EvaluationResolver read-only AgentCore permissions.
+        // When a run starts, the resolver resolves the concrete runtime version
+        // for the snapshotted (agent runtime, qualifier) pair and stamps it on
+        // the run record for historical provenance. That requires listing
+        // runtimes and reading the endpoint's current version.
+        evaluationResolver.addToRolePolicy(
+            new iam.PolicyStatement({
+                effect: iam.Effect.ALLOW,
+                actions: [
+                    "bedrock-agentcore:ListAgentRuntimes",
+                    "bedrock-agentcore:GetAgentRuntimeEndpoint",
+                    "bedrock-agentcore-control:ListAgentRuntimes",
+                    "bedrock-agentcore-control:GetAgentRuntimeEndpoint",
+                ],
+                resources: ["*"],
+            }),
+        );
+
         // Grant EvaluationExecutor Bedrock AgentCore permissions
         evaluationExecutor.addToRolePolicy(
             new iam.PolicyStatement({

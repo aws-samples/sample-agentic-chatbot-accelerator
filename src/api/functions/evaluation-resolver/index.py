@@ -52,12 +52,18 @@ EVALUATION_QUEUE_URL = os.environ.get("EVALUATION_QUEUE_URL", "")
 
 # --------------- Boto3 Clients/Resource ------------------- #
 DYNAMODB = boto3.resource("dynamodb")
-EVALUATIONS_TABLE = DYNAMODB.Table(EVALUATIONS_TABLE_NAME) if EVALUATIONS_TABLE_NAME else None  # type: ignore
+EVALUATIONS_TABLE = (
+    DYNAMODB.Table(EVALUATIONS_TABLE_NAME) if EVALUATIONS_TABLE_NAME else None
+)  # type: ignore
 EVALUATOR_RUNS_TABLE = (
     DYNAMODB.Table(EVALUATOR_RUNS_TABLE_NAME) if EVALUATOR_RUNS_TABLE_NAME else None  # type: ignore
 )
 S3_CLIENT = boto3.client("s3")
 SQS_CLIENT = boto3.client("sqs")
+# Control-plane client used to resolve the concrete AgentCore runtime version
+# for a (runtime name, qualifier) pair when a run starts. Version resolution is
+# best-effort: failures never block run creation.
+AGENTCORE_CONTROL_CLIENT = boto3.client("bedrock-agentcore-control")
 # ---------------------------------------------------------- #
 
 # Crockford base32 alphabet for ULID encoding.
@@ -392,6 +398,13 @@ def start_evaluator_run(evaluatorId: str) -> Optional[dict]:
     repeat_count = int(evaluator.get("RepeatCount") or 1)
     total_units = len(test_cases) * repeat_count
 
+    agent_runtime_name = evaluator.get("AgentRuntimeName", "")
+    qualifier = evaluator.get("Qualifier")
+    # Resolve and snapshot the concrete AgentCore version this run targets so
+    # run history stays historically accurate even if the qualifier is later
+    # re-tagged to a different version. Best-effort: None when unresolvable.
+    runtime_version = _resolve_runtime_version(agent_runtime_name, qualifier)
+
     # Snapshot the evaluator config into the run so history stays accurate
     # even if the evaluator is later edited or deleted.
     run_item = {
@@ -400,8 +413,8 @@ def start_evaluator_run(evaluatorId: str) -> Optional[dict]:
         "EvaluatorName": evaluator.get("EvaluatorName"),
         "EvaluatorType": evaluator.get("EvaluatorType"),
         "CustomRubric": evaluator.get("CustomRubric", ""),
-        "AgentRuntimeName": evaluator.get("AgentRuntimeName", ""),
-        "Qualifier": evaluator.get("Qualifier"),
+        "AgentRuntimeName": agent_runtime_name,
+        "Qualifier": qualifier,
         "ModelId": evaluator.get("ModelId"),
         "PassThreshold": evaluator.get("PassThreshold"),
         "RepeatCount": repeat_count,
@@ -419,6 +432,12 @@ def start_evaluator_run(evaluatorId: str) -> Optional[dict]:
         "CreatedAt": timestamp,
         "StartedAt": timestamp,
     }
+
+    # Only persist the version when it resolved; leaving it absent keeps the
+    # attribute optional and avoids storing an empty value for older/unresolved
+    # runtimes (DynamoDB cannot store None).
+    if runtime_version:
+        run_item["RuntimeVersion"] = runtime_version
 
     try:
         EVALUATOR_RUNS_TABLE.put_item(Item=run_item)
@@ -526,6 +545,87 @@ def _get_run_item(evaluator_id: str, run_id: str) -> Optional[dict]:
     except ClientError as err:
         logger.error("Failed to get run", extra={"rawErrorMessage": str(err)})
         return None
+
+
+def _resolve_runtime_version(
+    agent_runtime_name: str, qualifier: Optional[str]
+) -> Optional[str]:
+    """Resolve the concrete AgentCore version for a (runtime name, qualifier).
+
+    Mirrors the executor's resolution path: list runtimes to map the runtime
+    name to its id, then read the endpoint (qualifier) to get the concrete
+    version it currently points at.
+
+    Best-effort by design: any failure (missing config, unknown runtime/
+    qualifier, missing IAM permission, or unexpected API shape) returns None so
+    a run can still start. The version is provenance metadata, not a
+    precondition for running.
+
+    Args:
+        agent_runtime_name: The agent runtime name snapshotted on the run.
+        qualifier: The endpoint/qualifier (e.g. "DEFAULT"). Defaults to
+            "DEFAULT" when absent.
+
+    Returns:
+        The concrete version string (e.g. "7") or None if it cannot be
+        resolved.
+    """
+    if not agent_runtime_name:
+        return None
+
+    endpoint_name = qualifier or "DEFAULT"
+
+    try:
+        runtime_id = _find_agent_runtime_id(agent_runtime_name)
+        if not runtime_id:
+            logger.warning(
+                "Could not resolve runtime id for version lookup",
+                extra={"agentRuntimeName": agent_runtime_name},
+            )
+            return None
+
+        response = AGENTCORE_CONTROL_CLIENT.get_agent_runtime_endpoint(
+            agentRuntimeId=runtime_id, endpointName=endpoint_name
+        )
+        # The endpoint reports the version it currently serves. Prefer the live
+        # version, falling back to the target version when a deployment is in
+        # progress.
+        version = response.get("liveVersion") or response.get("targetVersion")
+        if version is None:
+            return None
+        return str(version)
+    except (ClientError, KeyError) as err:
+        logger.warning(
+            "Failed to resolve runtime version; leaving it unset",
+            extra={
+                "agentRuntimeName": agent_runtime_name,
+                "qualifier": endpoint_name,
+                "rawErrorMessage": str(err),
+            },
+        )
+        return None
+
+
+def _find_agent_runtime_id(agent_runtime_name: str) -> Optional[str]:
+    """Map an agent runtime name to its runtime id via the control plane.
+
+    Paginates ListAgentRuntimes and returns the id of the first runtime whose
+    name matches. Returns None when no match is found.
+    """
+    next_token = None
+    while True:
+        api_arguments: dict = {"maxResults": 10}
+        if next_token:
+            api_arguments["nextToken"] = next_token
+
+        response = AGENTCORE_CONTROL_CLIENT.list_agent_runtimes(**api_arguments)
+        for elem in response.get("agentRuntimes", []):
+            if elem.get("agentRuntimeName") == agent_runtime_name:
+                return elem.get("agentRuntimeId")
+
+        next_token = response.get("nextToken")
+        if not next_token:
+            return None
 
 
 def _test_cases_key(evaluator_name: str) -> str:
@@ -727,6 +827,7 @@ def _format_run(item: Optional[dict], include_results: bool = False) -> Optional
         "customRubric": item.get("CustomRubric"),
         "agentRuntimeName": item.get("AgentRuntimeName"),
         "qualifier": item.get("Qualifier"),
+        "runtimeVersion": item.get("RuntimeVersion"),
         "modelId": item.get("ModelId"),
         "passThreshold": float(threshold) if threshold is not None else None,
         "repeatCount": _to_int(item.get("RepeatCount")) or 1,
@@ -789,6 +890,19 @@ def _format_evaluation_result(result: dict) -> dict:
         "latencyMs": result.get("latencyMs") or result.get("latency_ms"),
         "repeatCount": _to_int(result.get("repeatCount")) or 1,
         "repetitions": repetitions,
+        # Structured per-evaluator breakdown. Older runs lack this key and map
+        # to [] (backwards compatible). Accept both the current "evaluatorType"
+        # key and the legacy "type" key defensively.
+        "evaluatorBreakdown": [
+            {
+                "evaluatorType": b.get("evaluatorType") or b.get("type"),
+                "score": b.get("score"),
+                "passed": b.get("passed"),
+                "status": b.get("status"),
+                "reason": b.get("reason"),
+            }
+            for b in (result.get("evaluatorBreakdown") or [])
+        ],
     }
 
 

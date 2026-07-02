@@ -237,6 +237,10 @@ type EvaluatorRun @aws_cognito_user_pools {
     customRubric: String
     agentRuntimeName: String
     qualifier: String
+    # Concrete AgentCore runtime version resolved at run time. Snapshotted for
+    # historical provenance so re-tagging the qualifier later does not change
+    # what this run reports. Optional: absent on runs created before this field.
+    runtimeVersion: String
     modelId: String
     passThreshold: Float
     repeatCount: Int
@@ -273,6 +277,23 @@ type EvaluationResult @aws_cognito_user_pools {
     # the individual runs are listed here. Empty/absent when repeatCount == 1.
     repeatCount: Int
     repetitions: [EvaluationRepetition]
+    # Structured per-evaluator breakdown for this case. Optional/additive: older
+    # runs (and the combined `reason` string) remain the fallback. Kept on the
+    # case (depth 3) and intentionally NOT on repetitions to stay within
+    # .graphqlconfig maxDepth: 3.
+    evaluatorBreakdown: [EvaluatorScore]
+}
+
+# Per-evaluator score/justification within a single test case. When multiple
+# evaluators run against a case, each contributes one entry so the UI can show
+# a score per evaluator rather than only the aggregated case score.
+type EvaluatorScore @aws_cognito_user_pools {
+    evaluatorType: String!
+    score: Float
+    passed: Boolean
+    # Per-evaluator status: scored | skipped | error.
+    status: String
+    reason: String
 }
 
 # A single repetition of a test case (one agent invocation + evaluation).

@@ -94,7 +94,9 @@ EVALUATIONS_BUCKET = os.environ.get("EVALUATIONS_BUCKET", "")
 
 # --------------- Boto3 Clients/Resource ------------------- #
 DYNAMODB = boto3.resource("dynamodb")
-EVALUATIONS_TABLE = DYNAMODB.Table(EVALUATIONS_TABLE_NAME) if EVALUATIONS_TABLE_NAME else None  # type: ignore
+EVALUATIONS_TABLE = (
+    DYNAMODB.Table(EVALUATIONS_TABLE_NAME) if EVALUATIONS_TABLE_NAME else None
+)  # type: ignore
 EVALUATOR_RUNS_TABLE = (
     DYNAMODB.Table(EVALUATOR_RUNS_TABLE_NAME) if EVALUATOR_RUNS_TABLE_NAME else None  # type: ignore
 )
@@ -947,6 +949,30 @@ def _aggregate_case(units: list[dict], pass_threshold: float = 0.8) -> dict:
 
     total_latency = sum(ev.get("latencyMs", 0) for ev in evaluations)
 
+    # Structured per-evaluator breakdown, taken from the representative
+    # repetition (rep 0) consistent with reason/actualOutput above. Per-evaluator
+    # scores are stored on a 0.0-1.0 scale in evaluatorResults; convert scored
+    # entries to the same 0-100 percentage scale used for the case/overall score.
+    # Skipped/error entries have no meaningful score, so they carry None.
+    evaluator_breakdown = []
+    for r in first.get("evaluatorResults") or []:
+        r_status = r.get("status")
+        r_score = r.get("score")
+        breakdown_score = (
+            round(float(r_score) * 100, 1)
+            if r_status == "scored" and isinstance(r_score, (int, float))
+            else None
+        )
+        evaluator_breakdown.append(
+            {
+                "evaluatorType": r.get("type"),
+                "score": breakdown_score,
+                "passed": r.get("passed"),
+                "status": r_status,
+                "reason": r.get("reason"),
+            }
+        )
+
     return {
         "caseName": first.get("caseName"),
         "input": first.get("input"),
@@ -959,6 +985,9 @@ def _aggregate_case(units: list[dict], pass_threshold: float = 0.8) -> dict:
         "latencyMs": total_latency,
         "repeatCount": len(units),
         "repetitions": repetitions,
+        # Structured per-evaluator scores/justifications for this case. The
+        # combined `reason` string above is retained as the back-compat fallback.
+        "evaluatorBreakdown": evaluator_breakdown,
     }
 
 

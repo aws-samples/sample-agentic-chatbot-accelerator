@@ -86,6 +86,9 @@ export interface EvaluatorRun {
     testCasesS3Path?: string;
     testCasesCount?: number;
     resultsS3Path?: string;
+    // Concrete AgentCore runtime version resolved and snapshotted at run time.
+    // Absent on runs created before this field existed.
+    runtimeVersion?: string;
     // Status: Queued, Running, Completed, Failed
     status: string;
     totalCases?: number;
@@ -124,6 +127,19 @@ export interface EvaluationResult {
     // When repeatCount > 1, score is the MEAN and these are the individual runs.
     repeatCount?: number;
     repetitions?: EvaluationRepetition[];
+    // Structured per-evaluator scores/justifications for this case. Absent on
+    // older runs; the combined `reason` string is the fallback.
+    evaluatorBreakdown?: EvaluatorScore[];
+}
+
+// Per-evaluator score/justification within a single test case.
+export interface EvaluatorScore {
+    evaluatorType: string;
+    score?: number | null;
+    passed?: boolean | null;
+    // Per-evaluator status: scored | skipped | error
+    status?: string | null;
+    reason?: string | null;
 }
 
 export interface EvaluationRepetition {
