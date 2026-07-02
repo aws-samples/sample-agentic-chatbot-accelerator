@@ -6,8 +6,7 @@ Evaluation Module - AppSync Resolvers
 
 Creates:
 - Lambda data source for the evaluation resolver
-- Resolvers for 5 evaluation GraphQL operations
-- None data source + resolvers for evaluation update pub/sub
+- Resolvers for 11 evaluation GraphQL operations
 */
 
 # -----------------------------------------------------------------------------
@@ -93,5 +92,47 @@ resource "aws_appsync_resolver" "run_evaluation" {
   api_id      = var.appsync_api_id
   type        = "Mutation"
   field       = "runEvaluation"
+  data_source = aws_appsync_datasource.evaluation.name
+}
+
+resource "aws_appsync_resolver" "update_evaluator" {
+  api_id      = var.appsync_api_id
+  type        = "Mutation"
+  field       = "updateEvaluator"
+  data_source = aws_appsync_datasource.evaluation.name
+}
+
+resource "aws_appsync_resolver" "start_evaluator_run" {
+  api_id      = var.appsync_api_id
+  type        = "Mutation"
+  field       = "startEvaluatorRun"
+  data_source = aws_appsync_datasource.evaluation.name
+}
+
+resource "aws_appsync_resolver" "delete_evaluator_run" {
+  api_id      = var.appsync_api_id
+  type        = "Mutation"
+  field       = "deleteEvaluatorRun"
+  data_source = aws_appsync_datasource.evaluation.name
+}
+
+resource "aws_appsync_resolver" "list_evaluator_runs" {
+  api_id      = var.appsync_api_id
+  type        = "Query"
+  field       = "listEvaluatorRuns"
+  data_source = aws_appsync_datasource.evaluation.name
+}
+
+resource "aws_appsync_resolver" "get_evaluator_run" {
+  api_id      = var.appsync_api_id
+  type        = "Query"
+  field       = "getEvaluatorRun"
+  data_source = aws_appsync_datasource.evaluation.name
+}
+
+resource "aws_appsync_resolver" "get_evaluator_test_cases" {
+  api_id      = var.appsync_api_id
+  type        = "Query"
+  field       = "getEvaluatorTestCases"
   data_source = aws_appsync_datasource.evaluation.name
 }

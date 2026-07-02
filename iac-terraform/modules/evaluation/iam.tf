@@ -56,7 +56,9 @@ resource "aws_iam_role_policy" "evaluation_resolver" {
         ]
         Resource = [
           var.evaluators_table_arn,
-          "${var.evaluators_table_arn}/index/*"
+          "${var.evaluators_table_arn}/index/*",
+          var.evaluator_runs_table_arn,
+          "${var.evaluator_runs_table_arn}/index/*"
         ]
       },
       {
@@ -78,6 +80,21 @@ resource "aws_iam_role_policy" "evaluation_resolver" {
         Effect   = "Allow"
         Action   = ["sqs:SendMessage", "sqs:GetQueueAttributes"]
         Resource = [aws_sqs_queue.evaluation.arn]
+      },
+      {
+        # When a run starts, the resolver resolves the concrete runtime version
+        # for the snapshotted (agent runtime, qualifier) pair and stamps it on
+        # the run record for historical provenance. That requires listing
+        # runtimes and reading the endpoint's current version.
+        Sid    = "BedrockAgentCoreAccess"
+        Effect = "Allow"
+        Action = [
+          "bedrock-agentcore:ListAgentRuntimes",
+          "bedrock-agentcore:GetAgentRuntimeEndpoint",
+          "bedrock-agentcore-control:ListAgentRuntimes",
+          "bedrock-agentcore-control:GetAgentRuntimeEndpoint"
+        ]
+        Resource = ["*"]
       },
       {
         Sid    = "KMSAccess"
@@ -132,7 +149,9 @@ resource "aws_iam_role_policy" "evaluation_executor" {
         ]
         Resource = [
           var.evaluators_table_arn,
-          "${var.evaluators_table_arn}/index/*"
+          "${var.evaluators_table_arn}/index/*",
+          var.evaluator_runs_table_arn,
+          "${var.evaluator_runs_table_arn}/index/*"
         ]
       },
       {

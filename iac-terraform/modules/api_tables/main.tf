@@ -122,6 +122,54 @@ resource "aws_dynamodb_table" "evaluators" {
 }
 
 # -----------------------------------------------------------------------------
+# Evaluator Runs Table
+# One item per execution of an evaluator.
+# PK EvaluatorId + SK RunId gives per-evaluator run history; the byRunId GSI
+# allows direct lookup of a run without its evaluator.
+# -----------------------------------------------------------------------------
+
+resource "aws_dynamodb_table" "evaluator_runs" {
+  name         = "${local.name_prefix}-evaluatorRunsTable"
+  billing_mode = "PAY_PER_REQUEST"
+
+  hash_key  = "EvaluatorId"
+  range_key = "RunId"
+
+  attribute {
+    name = "EvaluatorId"
+    type = "S"
+  }
+
+  attribute {
+    name = "RunId"
+    type = "S"
+  }
+
+  # Global Secondary Index for direct lookup of a run by its RunId
+  global_secondary_index {
+    name = "byRunId"
+    key_schema {
+      attribute_name = "RunId"
+      key_type       = "HASH"
+    }
+    projection_type = "ALL"
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = var.kms_key_arn
+  }
+
+  tags = merge(var.tags, {
+    Name = "${local.name_prefix}-evaluatorRunsTable"
+  })
+}
+
+# -----------------------------------------------------------------------------
 # Experiments Table
 # Stores experiment configurations and generated test cases
 # -----------------------------------------------------------------------------

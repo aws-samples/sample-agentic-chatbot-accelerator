@@ -58,9 +58,11 @@ resource "aws_lambda_function" "evaluation_resolver" {
       POWERTOOLS_SERVICE_NAME = "evaluation-resolver"
       POWERTOOLS_LOG_LEVEL    = "INFO"
       EVALUATIONS_TABLE       = var.evaluators_table_name
+      EVALUATOR_RUNS_TABLE    = var.evaluator_runs_table_name
       EVALUATIONS_BUCKET      = aws_s3_bucket.evaluations.id
       EVALUATION_QUEUE_URL    = aws_sqs_queue.evaluation.url
       BY_USER_ID_INDEX        = var.by_user_id_index
+      BY_RUN_ID_INDEX         = var.by_run_id_index
       ACCOUNT_ID              = data.aws_caller_identity.current.account_id
     }
   }
@@ -130,6 +132,7 @@ resource "aws_lambda_function" "evaluation_executor" {
       POWERTOOLS_LOG_LEVEL    = "INFO"
       REGION_NAME             = data.aws_region.current.id
       EVALUATIONS_TABLE       = var.evaluators_table_name
+      EVALUATOR_RUNS_TABLE    = var.evaluator_runs_table_name
       EVALUATIONS_BUCKET      = aws_s3_bucket.evaluations.id
       ACCOUNT_ID              = data.aws_caller_identity.current.account_id
       APPSYNC_API_ENDPOINT    = var.graphql_url
@@ -162,7 +165,10 @@ resource "aws_lambda_event_source_mapping" "evaluation_executor" {
   enabled          = true
 
   scaling_config {
-    maximum_concurrency = 50 # Throttling limit (prevents overwhelming Bedrock/AgentCore)
+    # Intentionally low: each unit opens its own AgentCore runtime session, and
+    # runtimes have concurrent-session limits. A high value stampedes a single
+    # runtime and causes invocations to hang. Pace units against session limits.
+    maximum_concurrency = 4
   }
 
   function_response_types = ["ReportBatchItemFailures"]

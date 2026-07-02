@@ -53,6 +53,25 @@ output "evaluators_table_arn" {
 }
 
 # -----------------------------------------------------------------------------
+# Evaluator Runs Table Outputs
+# -----------------------------------------------------------------------------
+
+output "evaluator_runs_table_name" {
+  description = "Name of the evaluator runs DynamoDB table"
+  value       = aws_dynamodb_table.evaluator_runs.name
+}
+
+output "evaluator_runs_table_arn" {
+  description = "ARN of the evaluator runs DynamoDB table"
+  value       = aws_dynamodb_table.evaluator_runs.arn
+}
+
+output "by_run_id_index" {
+  description = "Name of the byRunId GSI on the evaluator runs table"
+  value       = "byRunId"
+}
+
+# -----------------------------------------------------------------------------
 # Experiments Table Outputs
 # -----------------------------------------------------------------------------
 
