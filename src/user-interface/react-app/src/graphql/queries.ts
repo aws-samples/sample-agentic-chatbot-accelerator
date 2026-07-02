@@ -365,6 +365,14 @@ export const listEvaluators = /* GraphQL */ `query ListEvaluators {
         latencyMs
         __typename
       }
+      evaluatorBreakdown {
+        evaluatorType
+        score
+        passed
+        status
+        reason
+        __typename
+      }
       __typename
     }
     errorMessage
@@ -424,6 +432,14 @@ export const getEvaluator = /* GraphQL */ `query GetEvaluator($evaluatorId: ID!)
         latencyMs
         __typename
       }
+      evaluatorBreakdown {
+        evaluatorType
+        score
+        passed
+        status
+        reason
+        __typename
+      }
       __typename
     }
     errorMessage
@@ -445,6 +461,7 @@ export const listEvaluatorRuns = /* GraphQL */ `query ListEvaluatorRuns($evaluat
     customRubric
     agentRuntimeName
     qualifier
+    runtimeVersion
     modelId
     passThreshold
     repeatCount
@@ -478,6 +495,14 @@ export const listEvaluatorRuns = /* GraphQL */ `query ListEvaluatorRuns($evaluat
         latencyMs
         __typename
       }
+      evaluatorBreakdown {
+        evaluatorType
+        score
+        passed
+        status
+        reason
+        __typename
+      }
       __typename
     }
     errorMessage
@@ -500,6 +525,7 @@ export const getEvaluatorRun = /* GraphQL */ `query GetEvaluatorRun($evaluatorId
     customRubric
     agentRuntimeName
     qualifier
+    runtimeVersion
     modelId
     passThreshold
     repeatCount
@@ -531,6 +557,14 @@ export const getEvaluatorRun = /* GraphQL */ `query GetEvaluatorRun($evaluatorId
         status
         reason
         latencyMs
+        __typename
+      }
+      evaluatorBreakdown {
+        evaluatorType
+        score
+        passed
+        status
+        reason
         __typename
       }
       __typename
