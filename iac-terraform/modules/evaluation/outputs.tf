@@ -11,8 +11,14 @@ output "operations" {
     "listEvaluators",
     "getEvaluator",
     "createEvaluator",
+    "updateEvaluator",
     "deleteEvaluator",
+    "startEvaluatorRun",
+    "deleteEvaluatorRun",
     "runEvaluation",
+    "listEvaluatorRuns",
+    "getEvaluatorRun",
+    "getEvaluatorTestCases",
   ]
 }
 

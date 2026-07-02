@@ -60,6 +60,21 @@ variable "by_user_id_index" {
   type        = string
 }
 
+variable "evaluator_runs_table_name" {
+  description = "Name of the evaluator runs DynamoDB table"
+  type        = string
+}
+
+variable "evaluator_runs_table_arn" {
+  description = "ARN of the evaluator runs DynamoDB table"
+  type        = string
+}
+
+variable "by_run_id_index" {
+  description = "Name of the byRunId GSI on the evaluator runs table"
+  type        = string
+}
+
 # -----------------------------------------------------------------------------
 # AppSync
 # -----------------------------------------------------------------------------

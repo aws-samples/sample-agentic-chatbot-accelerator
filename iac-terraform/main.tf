@@ -616,9 +616,12 @@ module "evaluation" {
   lambda_architecture  = module.shared.lambda_architecture
 
   # DynamoDB Tables
-  evaluators_table_name = module.api_tables.evaluators_table_name
-  evaluators_table_arn  = module.api_tables.evaluators_table_arn
-  by_user_id_index      = module.api_tables.sessions_table_by_user_index
+  evaluators_table_name     = module.api_tables.evaluators_table_name
+  evaluators_table_arn      = module.api_tables.evaluators_table_arn
+  by_user_id_index          = module.api_tables.sessions_table_by_user_index
+  evaluator_runs_table_name = module.api_tables.evaluator_runs_table_name
+  evaluator_runs_table_arn  = module.api_tables.evaluator_runs_table_arn
+  by_run_id_index           = module.api_tables.by_run_id_index
 
   # AppSync
   appsync_api_id = module.appsync.api_id
