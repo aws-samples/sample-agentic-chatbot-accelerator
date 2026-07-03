@@ -11,6 +11,7 @@ import {
     Container,
     ExpandableSection,
     Header,
+    HelpPanel,
     SpaceBetween,
     Spinner,
     StatusIndicator,
@@ -114,6 +115,7 @@ export default function EvaluationRunResultsPage() {
     return (
         <BaseAppLayout
             contentType="table"
+            info={<RunResultsInfo />}
             breadcrumbs={
                 <BreadcrumbGroup
                     onFollow={onFollow}
@@ -135,6 +137,60 @@ export default function EvaluationRunResultsPage() {
                 )
             }
         />
+    );
+}
+
+/**
+ * Content for the AppLayout info ("i") drawer. Without this the drawer opens
+ * empty, so it explains how to read the run-results page.
+ */
+function RunResultsInfo() {
+    return (
+        <HelpPanel header={<Header variant="h2">Evaluation run results</Header>}>
+            <SpaceBetween direction="vertical" size="m">
+                <Box variant="p">
+                    This page shows the outcome of a single evaluator run. The
+                    summary reports overall pass rate, timing, and which agent
+                    runtime, endpoint, and version were evaluated.
+                </Box>
+                <div>
+                    <Box variant="h4">Test case results</Box>
+                    <Box variant="p">
+                        Select a case in the table to see its full detail below,
+                        including the input, expected and actual output, the
+                        per-evaluator scores, and each evaluator's feedback.
+                    </Box>
+                </div>
+                <div>
+                    <Box variant="h4">Statuses</Box>
+                    <ul>
+                        <li>
+                            <b>Scored</b> — the evaluator produced a score
+                            (0–100%); the case passes when the score meets the
+                            configured pass threshold.
+                        </li>
+                        <li>
+                            <b>Not applicable</b> — the evaluator did not apply to
+                            this agent (for example, a trajectory evaluator run
+                            against an agent that produced no tool calls). This is
+                            not a failure.
+                        </li>
+                        <li>
+                            <b>Error</b> — the evaluation could not complete (for
+                            example, the agent or judge model failed).
+                        </li>
+                    </ul>
+                </div>
+                <div>
+                    <Box variant="h4">Repetitions</Box>
+                    <Box variant="p">
+                        When a case was run more than once, the score shown is the
+                        mean across repetitions; the individual runs are listed in
+                        the case detail.
+                    </Box>
+                </div>
+            </SpaceBetween>
+        </HelpPanel>
     );
 }
 
@@ -226,7 +282,15 @@ function RunResultsContent({
     run: EvaluatorRun;
     results: EvaluationSummary;
 }) {
-    const [expandedItems, setExpandedItems] = useState<EvaluationResult[]>([]);
+    // Master-detail: the table lists cases; the selected case's full detail
+    // (long outputs, per-evaluator breakdown, and the individual-runs table)
+    // renders in a full-width Container below. Detail must NOT live inside a
+    // table cell — a nested multi-column table crushed into a ~180px "Details"
+    // column collapses to unreadable one-character-per-line text.
+    const [selectedItems, setSelectedItems] = useState<EvaluationResult[]>(
+        results.results.length > 0 ? [results.results[0]] : [],
+    );
+    const selectedCase = selectedItems[0];
 
     const passRate =
         results.totalCases > 0
@@ -334,38 +398,31 @@ function RunResultsContent({
                 </ColumnLayout>
             </Container>
 
-            {/* Results Table */}
+            {/* Results Table — select a case to see its full detail below. */}
             <Container header={<Header variant="h3">Test Case Results</Header>}>
                 <Table
                     items={results.results}
                     trackBy="caseName"
-                    expandableRows={{
-                        getItemChildren: () => [],
-                        isItemExpandable: () => true,
-                        expandedItems: expandedItems,
-                        onExpandableItemToggle: ({ detail }) => {
-                            setExpandedItems((prev) =>
-                                detail.expanded
-                                    ? [...prev, detail.item]
-                                    : prev.filter(
-                                          (i) =>
-                                              i.caseName !== detail.item.caseName,
-                                      ),
-                            );
-                        },
+                    selectionType="single"
+                    selectedItems={selectedItems}
+                    onSelectionChange={({ detail }) =>
+                        setSelectedItems(detail.selectedItems)
+                    }
+                    ariaLabels={{
+                        selectionGroupLabel: "Test case selection",
+                        itemSelectionLabel: (_data, item) => item.caseName,
                     }}
                     columnDefinitions={[
                         {
                             id: "caseName",
                             header: "Case Name",
                             cell: (item) => item.caseName,
-                            width: 180,
+                            width: 200,
                         },
                         {
                             id: "input",
                             header: "Input",
                             cell: (item) => <ClampedText text={item.input} />,
-                            width: 240,
                         },
                         {
                             id: "expectedOutput",
@@ -373,7 +430,6 @@ function RunResultsContent({
                             cell: (item) => (
                                 <ClampedText text={item.expectedOutput} />
                             ),
-                            width: 240,
                         },
                         {
                             id: "score",
@@ -384,7 +440,7 @@ function RunResultsContent({
                                     score={item.score}
                                 />
                             ),
-                            width: 100,
+                            width: 110,
                         },
                         {
                             id: "passed",
@@ -395,32 +451,14 @@ function RunResultsContent({
                                     passed={item.passed}
                                 />
                             ),
-                            width: 130,
+                            width: 140,
                         },
                         {
                             id: "latency",
                             header: "Latency",
                             cell: (item) =>
                                 item.latencyMs ? `${item.latencyMs}ms` : "-",
-                            width: 100,
-                        },
-                        {
-                            id: "detail",
-                            header: "Details",
-                            cell: (item) =>
-                                expandedItems.some(
-                                    (i) => i.caseName === item.caseName,
-                                ) ? (
-                                    <CaseDetail item={item} />
-                                ) : (
-                                    <Box
-                                        color="text-status-inactive"
-                                        fontSize="body-s"
-                                    >
-                                        Expand to see per-evaluator scores,
-                                        actual output & feedback
-                                    </Box>
-                                ),
+                            width: 110,
                         },
                     ]}
                     variant="embedded"
@@ -429,6 +467,24 @@ function RunResultsContent({
                     wrapLines
                 />
             </Container>
+
+            {/* Full-width detail for the selected case. Rendering here (not in a
+                table cell) gives the per-evaluator breakdown and the
+                individual-runs table the entire page width. */}
+            {selectedCase && (
+                <Container
+                    header={
+                        <Header
+                            variant="h3"
+                            description="Input, expected/actual output, per-evaluator scores and feedback"
+                        >
+                            {`Case detail: ${selectedCase.caseName}`}
+                        </Header>
+                    }
+                >
+                    <CaseDetail item={selectedCase} />
+                </Container>
+            )}
         </SpaceBetween>
     );
 }
@@ -488,12 +544,13 @@ function CaseDetail({ item }: { item: EvaluationResult }) {
                         items={reps}
                         variant="embedded"
                         wrapLines
+                        resizableColumns
                         columnDefinitions={[
                             {
                                 id: "run",
                                 header: "Run",
                                 cell: (r) => `#${(r.repeatIndex ?? 0) + 1}`,
-                                width: 70,
+                                width: 80,
                             },
                             {
                                 id: "score",
@@ -504,17 +561,19 @@ function CaseDetail({ item }: { item: EvaluationResult }) {
                                         score={r.score}
                                     />
                                 ),
-                                width: 90,
+                                width: 110,
                             },
                             {
                                 id: "actualOutput",
                                 header: "Actual Output",
                                 cell: (r) => <OutputBlock text={r.actualOutput} />,
+                                width: 400,
                             },
                             {
                                 id: "reason",
                                 header: "Feedback",
                                 cell: (r) => <ReasonCell reason={r.reason || ""} />,
+                                minWidth: 300,
                             },
                         ]}
                     />
@@ -564,18 +623,23 @@ function EvaluatorBreakdown({ breakdown }: { breakdown: EvaluatorScore[] }) {
 }
 
 /**
- * Compact inline cell for long text (Input / Expected Output). Wraps and clamps
- * with a max-height scroll box so long values stay readable inline without
- * blowing out row height. Full text remains available in the expandable detail.
+ * Compact inline cell for long text (Input / Expected Output). Clamps to a few
+ * lines with a trailing ellipsis so long values stay scannable without cutting
+ * text mid-line or introducing a scrollbar inside the cell. The full,
+ * untruncated text is always shown in the selected-case detail panel below.
  */
 function ClampedText({ text }: { text?: string }) {
     if (!text) return <Box color="text-status-inactive">-</Box>;
     return (
         <Box fontSize="body-s">
             <div
+                title={text}
                 style={{
-                    maxHeight: "6em",
-                    overflowY: "auto",
+                    display: "-webkit-box",
+                    WebkitLineClamp: 4,
+                    WebkitBoxOrient: "vertical",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
                     whiteSpace: "pre-wrap",
                     wordBreak: "break-word",
                 }}
