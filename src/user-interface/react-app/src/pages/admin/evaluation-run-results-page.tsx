@@ -9,13 +9,13 @@ import {
     BreadcrumbGroup,
     ColumnLayout,
     Container,
-    ExpandableSection,
     Header,
     HelpPanel,
     SpaceBetween,
     Spinner,
     StatusIndicator,
     Table,
+    Tabs,
 } from "@cloudscape-design/components";
 import { generateClient } from "aws-amplify/api";
 import { useEffect, useMemo, useState } from "react";
@@ -24,6 +24,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { CHATBOT_NAME } from "../../common/constants";
 import useOnFollow from "../../common/hooks/use-on-follow";
 import {
+    EvaluationRepetition,
     EvaluationResult,
     EvaluationSummary,
     EvaluatorRun,
@@ -500,8 +501,13 @@ function CaseDetail({ item }: { item: EvaluationResult }) {
     const breakdown = item.evaluatorBreakdown || [];
     const hasBreakdown = breakdown.length > 0;
 
+    // Order repetitions by run index so the tabs read Run 1, Run 2, ...
+    const orderedReps = [...reps].sort(
+        (a, b) => (a.repeatIndex ?? 0) - (b.repeatIndex ?? 0),
+    );
+
     return (
-        <SpaceBetween direction="vertical" size="s">
+        <SpaceBetween direction="vertical" size="l">
             <ColumnLayout columns={1} variant="text-grid">
                 <div>
                     <Box variant="awsui-key-label">Input</Box>
@@ -511,74 +517,83 @@ function CaseDetail({ item }: { item: EvaluationResult }) {
                     <Box variant="awsui-key-label">Expected Output</Box>
                     <OutputBlock text={item.expectedOutput} />
                 </div>
-                {!isRepeated && (
+            </ColumnLayout>
+
+            {isRepeated ? (
+                // Multiple runs: one tab per run so each run's own actual output
+                // and per-evaluator feedback are readable. Replaces the cramped
+                // "Individual runs" table. The case score is the mean across runs.
+                <div>
+                    <Box variant="awsui-key-label">
+                        {`Runs — case score ${item.score}% is the mean across ${orderedReps.length} runs`}
+                    </Box>
+                    <Tabs
+                        tabs={orderedReps.map((r) => ({
+                            id: `run-${r.repeatIndex ?? 0}`,
+                            label: `Run ${(r.repeatIndex ?? 0) + 1} · ${runScoreLabel(r.status, r.score)}`,
+                            content: <RunTabContent rep={r} />,
+                        }))}
+                    />
+                </div>
+            ) : (
+                // Single run: show the evaluated output and the structured
+                // per-evaluator breakdown (falling back to the combined reason
+                // string for older runs that lack the structured field).
+                <>
                     <div>
                         <Box variant="awsui-key-label">Actual Output (evaluated)</Box>
                         <OutputBlock text={item.actualOutput} />
                     </div>
-                )}
-            </ColumnLayout>
-
-            {/* Per-evaluator scores + structured justifications (R4 AC-3, AC-8).
-                Prefer the structured breakdown; fall back to the combined
-                reason-string parse for older runs that lack it. */}
-            {hasBreakdown ? (
-                <ExpandableSection
-                    headerText={`Per-evaluator breakdown (${breakdown.length})`}
-                    defaultExpanded
-                >
-                    <EvaluatorBreakdown breakdown={breakdown} />
-                </ExpandableSection>
-            ) : (
-                <ExpandableSection headerText="Evaluator Feedback" defaultExpanded>
-                    <ReasonCell reason={item.reason} />
-                </ExpandableSection>
+                    <div>
+                        <Box variant="awsui-key-label">
+                            {hasBreakdown
+                                ? "Per-evaluator breakdown"
+                                : "Evaluator feedback"}
+                        </Box>
+                        {hasBreakdown ? (
+                            <EvaluatorBreakdown breakdown={breakdown} />
+                        ) : (
+                            <ReasonCell reason={item.reason} />
+                        )}
+                    </div>
+                </>
             )}
+        </SpaceBetween>
+    );
+}
 
-            {isRepeated && (
-                <ExpandableSection
-                    headerText={`Individual runs (${reps.length}) — score shown is the mean`}
-                    defaultExpanded
-                >
-                    <Table
-                        items={reps}
-                        variant="embedded"
-                        wrapLines
-                        resizableColumns
-                        columnDefinitions={[
-                            {
-                                id: "run",
-                                header: "Run",
-                                cell: (r) => `#${(r.repeatIndex ?? 0) + 1}`,
-                                width: 80,
-                            },
-                            {
-                                id: "score",
-                                header: "Score",
-                                cell: (r) => (
-                                    <ScoreIndicator
-                                        status={r.status}
-                                        score={r.score}
-                                    />
-                                ),
-                                width: 110,
-                            },
-                            {
-                                id: "actualOutput",
-                                header: "Actual Output",
-                                cell: (r) => <OutputBlock text={r.actualOutput} />,
-                                width: 400,
-                            },
-                            {
-                                id: "reason",
-                                header: "Feedback",
-                                cell: (r) => <ReasonCell reason={r.reason || ""} />,
-                                minWidth: 300,
-                            },
-                        ]}
-                    />
-                </ExpandableSection>
-            )}
+/** Short label for a run's tab: the score, or N/A / Error by status. */
+const runScoreLabel = (
+    status?: string | null,
+    score?: number | null,
+): string => {
+    if (status === "skipped") return "N/A";
+    if (status === "error") return "Error";
+    if (score === undefined || score === null) return "N/A";
+    return `${score}%`;
+};
+
+/**
+ * Content of a single run's tab: that run's score/result, the actual output it
+ * produced, and its per-evaluator feedback parsed from the run's own reason
+ * string (each run carries its own justifications).
+ */
+function RunTabContent({ rep }: { rep: EvaluationRepetition }) {
+    return (
+        <SpaceBetween direction="vertical" size="m">
+            <SpaceBetween direction="horizontal" size="xs">
+                <Box variant="awsui-key-label">Score</Box>
+                <ScoreIndicator status={rep.status} score={rep.score} />
+                <ResultIndicator status={rep.status} passed={rep.passed} />
+            </SpaceBetween>
+            <div>
+                <Box variant="awsui-key-label">Actual Output</Box>
+                <OutputBlock text={rep.actualOutput} />
+            </div>
+            <div>
+                <Box variant="awsui-key-label">Evaluator feedback</Box>
+                <ReasonCell reason={rep.reason || ""} />
+            </div>
         </SpaceBetween>
     );
 }
