@@ -66,8 +66,9 @@ SQS_CLIENT = boto3.client("sqs")
 AGENTCORE_CONTROL_CLIENT = boto3.client("bedrock-agentcore-control")
 # ---------------------------------------------------------- #
 
-# Crockford base32 alphabet for ULID encoding.
-_CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+# Crockford base32 alphabet for ULID encoding (not a secret; detect-secrets
+# flags the high-entropy constant as a false positive).
+_CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"  # pragma: allowlist secret
 
 
 # ===================== JSON Encoder ====================== #
