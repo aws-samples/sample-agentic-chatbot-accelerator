@@ -152,6 +152,60 @@
             "Assign": {
                 "createdAt": "{% $floor($millis() / 1000) %}"
             },
+            "Next": "Get Existing Bundle Info"
+        },
+        "Get Existing Bundle Info": {
+            "Type": "Task",
+            "Comment": "Read the summary row to decide whether Put Config Bundle creates a new bundle or versions an existing one. The row was created by 'Set Status to Creating'; BundleId is absent on first create.",
+            "Resource": "arn:aws:states:::dynamodb:getItem",
+            "Arguments": {
+                "TableName": "${summaryTableArn}",
+                "Key": {
+                    "AgentName": {
+                        "S": "{% $agentName %}"
+                    }
+                }
+            },
+            "Assign": {
+                "existingBundleId": "{% $exists($states.result.Item.BundleId) ? $states.result.Item.BundleId.S : null %}",
+                "existingBundleVersion": "{% $exists($states.result.Item.QualifierToVersion.M.DEFAULT) ? $states.result.Item.QualifierToVersion.M.DEFAULT.S : null %}"
+            },
+            "Catch": [
+                {
+                    "ErrorEquals": [
+                        "States.ALL"
+                    ],
+                    "Next": "Set Status to Failed"
+                }
+            ],
+            "Next": "Put Config Bundle"
+        },
+        "Put Config Bundle": {
+            "Type": "Task",
+            "Comment": "Create (no bundleId) or version (bundleId + parentVersionId) the agent's configuration bundle BEFORE runtime creation, so BUNDLE_ID/BUNDLE_VERSION can be injected as container env (ADR-0002).",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Arguments": {
+                "FunctionName": "${putConfigBundleFuncArn}",
+                "Payload": {
+                    "agentName": "{% $agentName %}",
+                    "configurationValue": "{% $string($agentCfg) %}",
+                    "bundleId": "{% $existingBundleId %}",
+                    "parentVersionId": "{% $existingBundleVersion %}"
+                }
+            },
+            "Assign": {
+                "bundleId": "{% $states.result.Payload.bundleId %}",
+                "bundleArn": "{% $states.result.Payload.bundleArn %}",
+                "bundleVersionId": "{% $states.result.Payload.versionId %}"
+            },
+            "Catch": [
+                {
+                    "ErrorEquals": [
+                        "States.ALL"
+                    ],
+                    "Next": "Set Status to Failed"
+                }
+            ],
             "Next": "Create Runtimes"
         },
         "Create Runtimes": {
@@ -172,7 +226,9 @@
                                     "memoryId": "{% $memoryId %}",
                                     "architectureType": "{% $architectureType %}",
                                     "protocol": "HTTP",
-                                    "createdAt": "{% $createdAt %}"
+                                    "createdAt": "{% $createdAt %}",
+                                    "bundleId": "{% $bundleId %}",
+                                    "versionId": "{% $bundleVersionId %}"
                                 }
                             },
                             "Assign": {
@@ -264,7 +320,9 @@
                                     "memoryId": "{% $memoryId %}",
                                     "architectureType": "{% $architectureType %}",
                                     "protocol": "A2A",
-                                    "createdAt": "{% $createdAt %}"
+                                    "createdAt": "{% $createdAt %}",
+                                    "bundleId": "{% $bundleId %}",
+                                    "versionId": "{% $bundleVersionId %}"
                                 }
                             },
                             "Assign": {
@@ -381,7 +439,7 @@
                         "S": "{% $agentName %}"
                     }
                 },
-                "UpdateExpression": "SET #status = :status, #id = :id, #arn = :arn, #arnA2A = :arnA2A, #nb = :nb, #qtv = :qtv, #at = :at",
+                "UpdateExpression": "SET #status = :status, #id = :id, #arn = :arn, #arnA2A = :arnA2A, #nb = :nb, #qtv = :qtv, #at = :at, #bid = :bid, #barn = :barn",
                 "ExpressionAttributeNames": {
                     "#status": "Status",
                     "#id": "AgentRuntimeId",
@@ -389,7 +447,9 @@
                     "#arnA2A": "AgentRuntimeArnA2A",
                     "#nb": "NumberOfVersions",
                     "#qtv": "QualifierToVersion",
-                    "#at": "ArchitectureType"
+                    "#at": "ArchitectureType",
+                    "#bid": "BundleId",
+                    "#barn": "BundleArn"
                 },
                 "ExpressionAttributeValues": {
                     ":id": {
@@ -410,16 +470,22 @@
                     ":qtv": {
                         "M": {
                             "DEFAULT": {
-                                "N": "1"
+                                "S": "{% $bundleVersionId %}"
                             }
                         }
                     },
                     ":at": {
                         "S": "{% $architectureType %}"
+                    },
+                    ":bid": {
+                        "S": "{% $bundleId %}"
+                    },
+                    ":barn": {
+                        "S": "{% $bundleArn %}"
                     }
                 }
             },
-            "Next": "Save Configuration"
+            "Next": "Wait Before Notify"
         },
         "Get Current Runtime Summary": {
             "Type": "Task",
@@ -447,17 +513,20 @@
                         "S": "{% $agentName %}"
                     }
                 },
-                "UpdateExpression": "SET #status = :status, QualifierToVersion.#default = :version, #nb = :count, #at = :at, #arnA2A = :arnA2A",
+                "UpdateExpression": "SET #status = :status, QualifierToVersion.#default = :version, #nb = :count, #at = :at, #arnA2A = :arnA2A, #arn = :arn, #bid = :bid, #barn = :barn",
                 "ExpressionAttributeNames": {
                     "#status": "Status",
                     "#default": "DEFAULT",
                     "#nb": "NumberOfVersions",
                     "#at": "ArchitectureType",
-                    "#arnA2A": "AgentRuntimeArnA2A"
+                    "#arnA2A": "AgentRuntimeArnA2A",
+                    "#arn": "AgentRuntimeArn",
+                    "#bid": "BundleId",
+                    "#barn": "BundleArn"
                 },
                 "ExpressionAttributeValues": {
                     ":version": {
-                        "S": "{% $agentRuntimeVersion %}"
+                        "S": "{% $bundleVersionId %}"
                     },
                     ":count": {
                         "N": "{% $string($currentNumberOfVersions + 1) %}"
@@ -470,34 +539,15 @@
                     },
                     ":arnA2A": {
                         "S": "{% $agentRuntimeArnA2A ? $agentRuntimeArnA2A : '' %}"
-                    }
-                }
-            },
-            "Next": "Save Configuration"
-        },
-        "Save Configuration": {
-            "Type": "Task",
-            "Resource": "arn:aws:states:::dynamodb:putItem",
-            "Arguments": {
-                "TableName": "${agentVersionTableArn}",
-                "Item": {
-                    "AgentName": {
-                        "S": "{% $agentName %}"
                     },
-                    "CreatedAt": {
-                        "N": "{% $string($createdAt) %}"
-                    },
-                    "AgentRuntimeArn": {
+                    ":arn": {
                         "S": "{% $agentRuntimeArn %}"
                     },
-                    "AgentRuntimeId": {
-                        "S": "{% $agentRuntimeId %}"
+                    ":bid": {
+                        "S": "{% $bundleId %}"
                     },
-                    "AgentRuntimeVersion": {
-                        "S": "{% $agentRuntimeVersion %}"
-                    },
-                    "ConfigurationValue": {
-                        "S": "{% $string($agentCfg) %}"
+                    ":barn": {
+                        "S": "{% $bundleArn %}"
                     }
                 }
             },
