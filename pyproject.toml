@@ -13,6 +13,7 @@ dev = [
     "pre-commit>=4.2.0",
     "ruff>=0.12.5",
     "aws-lambda-powertools>=3.4.1",
+    "aws-xray-sdk>=2.14.0",
     "boto3>=1.40.55",
     "ipykernel>=6.29.5",
     "opensearch-py>=2.8.0",

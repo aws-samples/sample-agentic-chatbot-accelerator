@@ -20,6 +20,7 @@ source = { virtual = "." }
 [package.dev-dependencies]
 dev = [
     { name = "aws-lambda-powertools" },
+    { name = "aws-xray-sdk" },
     { name = "bedrock-agentcore" },
     { name = "black" },
     { name = "boto3" },
@@ -45,6 +46,7 @@ dev = [
 [package.metadata.requires-dev]
 dev = [
     { name = "aws-lambda-powertools", specifier = ">=3.4.1" },
+    { name = "aws-xray-sdk", specifier = ">=2.14.0" },
     { name = "bedrock-agentcore", specifier = ">=1.6.1" },
     { name = "black", specifier = ">=24.10.0" },
     { name = "boto3", specifier = ">=1.40.55" },
@@ -295,6 +297,19 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/48/62/30685f9a096ad834409771a567065cd25094d3a5124874e1d7e373f17dd7/aws_sdk_signers-0.3.0.tar.gz", hash = "sha256:6fd654ea3dafe3ae3cf172fb3bd1e81877fe6e18156e0b638ccefb045ffb420c", size = 18590, upload-time = "2026-05-05T18:04:09.914Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/30/91/25405e647de8dea8419812e85bcb341323500905f4f55fc23cf488b7a2a4/aws_sdk_signers-0.3.0-py3-none-any.whl", hash = "sha256:098c7784064931d2da968400fc0466e092a7c271a79fac9d55daa4a7c35fd6f1", size = 21999, upload-time = "2026-05-05T18:04:08.971Z" },
+]
+
+[[package]]
+name = "aws-xray-sdk"
+version = "2.15.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "botocore" },
+    { name = "wrapt" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/14/25/0cbd7a440080def5e6f063720c3b190a25f8aa2938c1e34415dc18241596/aws_xray_sdk-2.15.0.tar.gz", hash = "sha256:794381b96e835314345068ae1dd3b9120bd8b4e21295066c37e8814dbb341365", size = 76315, upload-time = "2025-10-29T20:59:45Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ef/c3/f30a7a63e664acc7c2545ca0491b6ce8264536e0e5cad3965f1d1b91e960/aws_xray_sdk-2.15.0-py2.py3-none-any.whl", hash = "sha256:422d62ad7d52e373eebb90b642eb1bb24657afe03b22a8df4a8b2e5108e278a3", size = 103228, upload-time = "2025-10-29T21:00:24.12Z" },
 ]
 
 [[package]]
