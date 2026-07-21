@@ -144,19 +144,21 @@ class SwarmConfigurationLoader(BaseConfigurationLoader):
         return agent_def
 
     def parse_configuration(self) -> SwarmConfiguration:
-        """Parse swarm configuration from DynamoDB.
+        """Parse swarm configuration sourced from the config bundle.
 
-        If the configuration uses agentReferences, this method will load
-        each referenced agent's configuration and populate the agents list.
+        Fetches the top-level swarm ConfigurationValue via _fetch_config_from_bundle
+        (control plane). If the configuration uses agentReferences, this method
+        still resolves each referenced agent via the summary/agents tables and
+        populates the agents list (unchanged).
 
         Returns:
             SwarmConfiguration: Parsed swarm configuration with agents populated
 
         Raises:
-            ClientError: If DynamoDB read fails
+            ClientError: If the control-plane fetch or DynamoDB read fails
             ValueError: If configuration not found or invalid
         """
-        configuration_str = self._fetch_item_from_dynamodb(entity_type="swarm")
+        configuration_str = self._fetch_config_from_bundle(entity_type="swarm")
 
         parsed_cfg: SwarmConfiguration = deserialize(
             configuration_str, SwarmConfiguration
@@ -193,7 +195,7 @@ class SwarmConfigurationLoader(BaseConfigurationLoader):
 
 
 def parse_configuration(logger: Logger) -> SwarmConfiguration:
-    """Parse swarm configuration from DynamoDB.
+    """Parse swarm configuration from the config bundle.
 
     If the configuration uses agentReferences, this function will load
     each referenced agent's configuration and populate the agents list.
@@ -205,7 +207,7 @@ def parse_configuration(logger: Logger) -> SwarmConfiguration:
         SwarmConfiguration: Parsed swarm configuration with agents populated
 
     Raises:
-        ClientError: If DynamoDB read fails
+        ClientError: If the control-plane fetch or DynamoDB read fails
         ValueError: If configuration not found or invalid
     """
     loader = SwarmConfigurationLoader(logger)
