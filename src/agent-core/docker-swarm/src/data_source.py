@@ -8,7 +8,6 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
-from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 from shared.base_data_source import BaseConfigurationLoader
 from shared.utils import deserialize
@@ -39,22 +38,19 @@ class SwarmConfigurationLoader(BaseConfigurationLoader):
             logger (Logger): Logger instance for recording operations
         """
         super().__init__(logger)
-        self._agents_table = None
         self._summary_table = None
-
-    def _get_agents_table(self):
-        """Get the DynamoDB agents table with lazy initialization."""
-        return self._get_lazy_table("agentsTableName", "_agents_table")
 
     def _get_summary_table(self):
         """Get the DynamoDB summary table with lazy initialization."""
         return self._get_lazy_table("agentsSummaryTableName", "_summary_table")
 
     def _load_agent_config(self, ref: AgentReference) -> SwarmAgentDefinition:
-        """Load an agent configuration from DynamoDB by endpoint name.
+        """Load a referenced sub-agent's configuration from its bundle.
 
-        Resolves the endpoint name to a version via the summary table's
-        QualifierToVersion mapping, then fetches the config for that version.
+        Resolves the endpoint name to a bundle versionId via the summary table's
+        QualifierToVersion mapping, then fetches that sub-agent's config from its
+        own configuration bundle via the control plane (ADR-0001). The component
+        is keyed by the sub-agent's stable agent id (ADR-0002).
 
         Args:
             ref (AgentReference): Reference containing agentName and endpointName
@@ -63,11 +59,10 @@ class SwarmConfigurationLoader(BaseConfigurationLoader):
             SwarmAgentDefinition: The agent definition for use in the swarm
 
         Raises:
-            ValueError: If agent/endpoint not found or has no configuration
-            ClientError: If DynamoDB query fails
+            ValueError: If agent/endpoint/bundle not found or has no configuration
+            ClientError: If DynamoDB query or the control-plane fetch fails
         """
         summary_table = self._get_summary_table()
-        agents_table = self._get_agents_table()
 
         try:
             response = summary_table.query(
@@ -85,43 +80,35 @@ class SwarmConfigurationLoader(BaseConfigurationLoader):
         if not items:
             raise ValueError(f"Agent '{ref.agentName}' not found in summary table")
 
-        qualifier_to_version = items[0].get("QualifierToVersion", {})
+        row = items[0]
+        qualifier_to_version = row.get("QualifierToVersion", {})
         if ref.endpointName not in qualifier_to_version:
             raise ValueError(
                 f"Agent '{ref.agentName}' has no endpoint '{ref.endpointName}'. "
                 f"Available endpoints: {list(qualifier_to_version.keys())}"
             )
 
-        version = str(qualifier_to_version[ref.endpointName])
+        # QualifierToVersion now stores the bundle versionId for each endpoint.
+        version_id = str(qualifier_to_version[ref.endpointName])
+        bundle_id = row.get("BundleId")
+        if not bundle_id:
+            raise ValueError(
+                f"Agent '{ref.agentName}' has no BundleId in the summary table"
+            )
 
         self._logger.info(
             f"Loading config for agent '{ref.agentName}' "
-            f"endpoint '{ref.endpointName}' (version {version})",
+            f"endpoint '{ref.endpointName}' (bundle {bundle_id} version {version_id})",
         )
 
-        try:
-            response = agents_table.query(
-                IndexName="byAgentNameAndVersion",
-                KeyConditionExpression=Key("AgentName").eq(ref.agentName)
-                & Key("AgentRuntimeVersion").eq(version),
-            )
-        except ClientError as err:
-            self._logger.error(
-                f"Error querying agent '{ref.agentName}' from DynamoDB",
-                extra={"rawErrorMessage": str(err)},
-            )
-            raise
-
-        items = response.get("Items", [])
-        if not items:
-            raise ValueError(
-                f"Agent '{ref.agentName}' endpoint '{ref.endpointName}' "
-                f"(version {version}) not found in agents table"
-            )
-
-        config_str = items[0].get("ConfigurationValue")
-        if config_str is None:
-            raise ValueError(f"Agent '{ref.agentName}' has no configuration")
+        # Fetch the sub-agent's ConfigurationValue from its own bundle; the
+        # component is keyed by the sub-agent's stable agent id (ADR-0002).
+        config_str = self._fetch_config_from_bundle(
+            bundle_id=bundle_id,
+            bundle_version=version_id,
+            component_key=ref.agentName,
+            entity_type="sub-agent",
+        )
 
         config_data = json.loads(config_str)
 

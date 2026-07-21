@@ -39,7 +39,6 @@ export interface ChatbotApiProps {
     readonly swarmAgentCoreContainer: CodeBuildDockerImage;
     readonly graphAgentCoreContainer: CodeBuildDockerImage;
     readonly agentsAsToolsAgentCoreContainer: CodeBuildDockerImage;
-    readonly agentCoreRuntimeTable: dynamodb.Table;
     readonly toolRegistryTable: dynamodb.Table;
     readonly stateClassRegistryTable: dynamodb.Table;
     readonly deterministicNodeRegistryTable: dynamodb.Table;
