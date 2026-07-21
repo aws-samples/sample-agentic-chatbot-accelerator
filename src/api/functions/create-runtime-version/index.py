@@ -62,11 +62,17 @@ class InputModel(BaseModel):
     protocol: str = SERVER_PROTOCOL_HTTP
     # Caller-supplied creation timestamp. The SFN mints this once before the
     # parallel HTTP/A2A branch and passes it into both Lambda invocations so
-    # both containers inject the same `createdAt` env var — matching the
-    # partition key under which the agent config row is saved. Without this,
-    # each branch called `int(time.time())` independently and drifted by a
-    # few seconds, leaving the A2A twin unable to load its config at startup.
+    # both twins share a single version timestamp; it is still returned in the
+    # response Body (summary bookkeeping) but is no longer injected as a
+    # container env var — config is now keyed by the bundle, not by createdAt.
     createdAt: Optional[int] = None
+    # Configuration-bundle pointers (ADR-0002). The SFN creates/versions the
+    # bundle before runtime creation and passes these so the container reads
+    # its config via get_configuration_bundle_version(BUNDLE_ID, BUNDLE_VERSION).
+    # Both the HTTP runtime and the A2A twin get the same values — they read
+    # the same component.
+    bundleId: str
+    versionId: str
 
 
 class Body(BaseModel):
@@ -248,9 +254,14 @@ def handler(event: InputModel, _) -> dict:
             "mcpServerRegistry": MCP_SERVER_REGISTRY_TABLE,
             # `agentName` keeps the user-facing name even on the A2A twin so
             # observability (logs / SNS tool events) attributes work to the
-            # logical agent rather than the synthetic twin name.
+            # logical agent rather than the synthetic twin name. It is also the
+            # bundle component key (ADR-0002), so the container reads the same
+            # component on both the HTTP runtime and the A2A twin.
             "agentName": event.agentName,
-            "createdAt": str(created_at),
+            # Read-path pointers: the container fetches its config via
+            # get_configuration_bundle_version(BUNDLE_ID, BUNDLE_VERSION).
+            "BUNDLE_ID": event.bundleId,
+            "BUNDLE_VERSION": event.versionId,
             "accountId": ACCOUNT_ID,
             "sessionsTableName": os.environ.get("SESSIONS_TABLE_NAME", ""),
             "agentcoreServerProtocol": event.protocol,
