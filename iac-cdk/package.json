@@ -48,7 +48,7 @@
     "overrides": {
         "glob": "^10.4.6",
         "inflight": "^2.0.0",
-        "brace-expansion": "^2.0.3",
+        "brace-expansion": "^2.1.2",
         "minimatch": "^10.2.3",
         "fast-xml-parser": ">=5.5.11",
         "ajv": ">=8.17.2",
