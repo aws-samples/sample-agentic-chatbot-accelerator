@@ -24,7 +24,8 @@
                 }
             },
             "Assign": {
-                "agentRuntimeIdA2A": "{% ($arn := $exists($states.result.Item.AgentRuntimeArnA2A.S) ? $states.result.Item.AgentRuntimeArnA2A.S : ''; $arn != '' ? $substringAfter($arn, 'runtime/') : '') %}"
+                "agentRuntimeIdA2A": "{% ($arn := $exists($states.result.Item.AgentRuntimeArnA2A.S) ? $states.result.Item.AgentRuntimeArnA2A.S : ''; $arn != '' ? $substringAfter($arn, 'runtime/') : '') %}",
+                "bundleId": "{% $exists($states.result.Item.BundleId.S) ? $states.result.Item.BundleId.S : '' %}"
             },
             "Next": "Set Status to Deleting"
         },
@@ -317,7 +318,8 @@
                             "Arguments": {
                                 "FunctionName": "${removeRuntimeVersionsFunctionArn}",
                                 "Payload": {
-                                    "agentName": "{% $agentName %}"
+                                    "agentName": "{% $agentName %}",
+                                    "bundleId": "{% $bundleId %}"
                                 }
                             },
                             "Catch": [
