@@ -13,7 +13,6 @@ import boto3
 from aws_lambda_powertools import Logger, Tracer
 from aws_lambda_powertools.event_handler import AppSyncResolver
 from aws_lambda_powertools.logging import correlation_paths
-from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 from genai_core.api_helper.types import (
     AgentConfiguration,
@@ -40,7 +39,6 @@ CONTAINER_URI = os.environ["CONTAINER_URI"]
 AGENT_CORE_RUNTIME_ROLE_ARN = os.environ["AGENT_CORE_RUNTIME_ROLE_ARN"]
 ENVIRONMENT_TAG = os.environ.get("ENVIRONMENT_TAG")
 STACK_TAG = os.environ.get("STACK_TAG", "aca")
-AGENT_CORE_RUNTIME_TABLE = os.environ["AGENT_CORE_RUNTIME_TABLE"]
 AGENT_CORE_SUMMARY_TABLE = os.environ["AGENT_CORE_SUMMARY_TABLE"]
 TOOL_REGISTRY_TABLE = os.environ["TOOL_REGISTRY_TABLE"]
 MCP_SERVER_REGISTRY_TABLE = os.environ["MCP_SERVER_REGISTRY_TABLE"]
@@ -51,7 +49,6 @@ EVENT_EXPIRE_DAYS = int(os.environ.get("EVENT_EXPIRE_DAYS", "90"))
 # --------------- Boto3 Clients/Resource ------------------- #
 BAC_CLIENT = boto3.client("bedrock-agentcore-control")
 SFN_CLIENT = boto3.client("stepfunctions")
-TABLE = boto3.resource("dynamodb").Table(AGENT_CORE_RUNTIME_TABLE)  # type: ignore
 SUMMARY_TABLE = boto3.resource("dynamodb").Table(AGENT_CORE_SUMMARY_TABLE)  # type: ignore
 # ---------------------------------------------------------- #
 
@@ -247,30 +244,78 @@ def list_runtime_agents() -> list[dict]:
     ]
 
 
+def _fetch_config_from_bundle(agent_name: str, bundle_id: str, version_id: str) -> str:
+    """Fetch a component's ConfigurationValue JSON from a configuration bundle version.
+
+    Reads via the control plane (ADR-0001):
+    `get_configuration_bundle_version(bundleId, versionId)`, then returns
+    `components[<agentName>].configuration.ConfigurationValue` — the component is
+    keyed by the stable agent id (ADR-0002). Mirrors the container-side loader
+    (`src/agent-core/shared/base_data_source.py::_fetch_config_from_bundle`).
+
+    Returns "" (not an error) when the bundle/component/value is missing, so the
+    GraphQL config-read queries degrade gracefully in the UI.
+    """
+    try:
+        response = BAC_CLIENT.get_configuration_bundle_version(
+            bundleId=bundle_id, versionId=version_id
+        )
+    except ClientError as err:
+        logger.error(
+            "Failed to read configuration bundle version",
+            extra={"rawErrorMessage": str(err), "bundleId": bundle_id},
+        )
+        return ""
+    component = (response.get("components") or {}).get(agent_name) or {}
+    return component.get("configuration", {}).get("ConfigurationValue", "") or ""
+
+
 @app.resolver(type_name="Query", field_name="getRuntimeConfigurationByVersion")
 def get_runtime_cfg_by_version(agentName: str, agentVersion: str) -> str:
     """Retrieves agent runtime configuration for a specific version.
 
+    Config now lives in AgentCore configuration bundles (the runtime config table
+    was removed in the bundles migration). Only the version currently mapped by a
+    qualifier in the summary row is resolvable — the summary's QualifierToVersion
+    stores bundle versionIds, so we serve `agentVersion` only if it matches a
+    mapped versionId. Historical (pre-bundle) versions are not available and
+    return "".
+
     Args:
         agentName (str): Name of the agent
-        agentVersion (str): Version of the agent runtime
+        agentVersion (str): Bundle versionId of the configuration
 
     Returns:
-        str: JSON configuration string for the specified agent version, empty string if not found
+        str: JSON configuration string, or "" if not found/available.
     """
     try:
-        response = TABLE.query(
-            IndexName="byAgentNameAndVersion",
-            KeyConditionExpression=Key("AgentName").eq(agentName)
-            & Key("AgentRuntimeVersion").eq(agentVersion),
+        response = SUMMARY_TABLE.query(
+            KeyConditionExpression="AgentName = :agent",
+            ExpressionAttributeValues={":agent": agentName},
         )
-        items = response.get("Items", [])
-        return items[0].get("ConfigurationValue", "") if items else ""
     except ClientError as err:
         logger.error(
-            "Failed to query runtime configuration", extra={"rawErrorMessage": str(err)}
+            "Failed to query summary table", extra={"rawErrorMessage": str(err)}
         )
         return ""
+    items = response.get("Items", [])
+    if not items:
+        logger.error(f"Agent {agentName} not found")
+        return ""
+    row = items[0]
+    bundle_id = row.get("BundleId")
+    if not bundle_id:
+        logger.error(f"Agent {agentName} has no BundleId")
+        return ""
+    # Serve only if the requested version is a known bundle version for this agent
+    # (the mapped DEFAULT/qualifier versionIds). Guards against arbitrary lookups.
+    known_versions = set((row.get("QualifierToVersion") or {}).values())
+    if agentVersion not in known_versions:
+        logger.error(
+            f"Version {agentVersion} is not a mapped bundle version for {agentName}"
+        )
+        return ""
+    return _fetch_config_from_bundle(agentName, bundle_id, agentVersion)
 
 
 @app.resolver(type_name="Query", field_name="getRuntimeConfigurationByQualifier")
@@ -531,7 +576,8 @@ def _get_runtime_cfg_by_qualifier_impl(agentName: str, qualifier: str) -> str:
         if not items:
             logger.error(f"Agent {agentName} not found")
             return ""
-        qualifier_to_version = items[0].get("QualifierToVersion", {})
+        row = items[0]
+        qualifier_to_version = row.get("QualifierToVersion", {})
 
         logger.info(
             "Retrieved object that map qualifiers to versions",
@@ -542,13 +588,15 @@ def _get_runtime_cfg_by_qualifier_impl(agentName: str, qualifier: str) -> str:
             logger.error(f"Agent {agentName} has no qualifier {qualifier}")
             return ""
 
-        response = TABLE.query(
-            IndexName="byAgentNameAndVersion",
-            KeyConditionExpression=Key("AgentName").eq(agentName)
-            & Key("AgentRuntimeVersion").eq(str(qualifier_to_version[qualifier])),
-        )
-        items = response.get("Items", [])
-        return items[0].get("ConfigurationValue", "") if items else ""
+        bundle_id = row.get("BundleId")
+        if not bundle_id:
+            logger.error(f"Agent {agentName} has no BundleId")
+            return ""
+
+        # QualifierToVersion now stores the bundle versionId for each qualifier;
+        # fetch that version's config from the bundle (control plane, ADR-0001).
+        version_id = str(qualifier_to_version[qualifier])
+        return _fetch_config_from_bundle(agentName, bundle_id, version_id)
     except ClientError as err:
         logger.error(
             "Failed to query runtime configuration", extra={"rawErrorMessage": str(err)}

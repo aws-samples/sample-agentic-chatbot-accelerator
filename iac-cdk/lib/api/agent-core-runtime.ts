@@ -32,7 +32,6 @@ export interface AgentCoreApisProps {
     readonly swarmAgentCoreContainer: CodeBuildDockerImage;
     readonly graphAgentCoreContainer: CodeBuildDockerImage;
     readonly agentsAsToolsAgentCoreContainer: CodeBuildDockerImage;
-    readonly agentCoreRuntimeTable: dynamodb.Table;
     readonly agentCoreSummaryTable: dynamodb.Table;
     readonly toolRegistryTable: dynamodb.Table;
     readonly mcpServerRegistryTable: dynamodb.Table;
@@ -82,7 +81,6 @@ export class AgentCoreApis extends Construct {
                 GRAPH_CONTAINER_URI: props.graphAgentCoreContainer.imageUri,
                 AGENTS_AS_TOOLS_CONTAINER_URI: props.agentsAsToolsAgentCoreContainer.imageUri,
                 AGENT_CORE_RUNTIME_ROLE_ARN: props.agentCoreExecutionRole.roleArn,
-                AGENT_CORE_RUNTIME_TABLE: props.agentCoreRuntimeTable.tableName,
                 AGENT_CORE_SUMMARY_TABLE: props.agentCoreSummaryTable.tableName,
                 TOOL_REGISTRY_TABLE: props.toolRegistryTable.tableName,
                 MCP_SERVER_REGISTRY_TABLE: props.mcpServerRegistryTable.tableName,
@@ -95,8 +93,20 @@ export class AgentCoreApis extends Construct {
             tracing: lambda.Tracing.ACTIVE,
         });
         // Permissions
-        props.agentCoreRuntimeTable.grantReadWriteData(agentCoreRuntimeCreationResolver);
         props.agentCoreSummaryTable.grantReadWriteData(agentCoreRuntimeCreationResolver);
+        // Config-read GraphQL queries (getDefaultRuntimeConfiguration, etc.) now
+        // read agent config from configuration bundle versions via the control
+        // plane (the runtime config table was removed) — see ADR-0001.
+        agentCoreRuntimeCreationResolver.addToRolePolicy(
+            new iam.PolicyStatement({
+                sid: "ReadConfigurationBundle",
+                effect: iam.Effect.ALLOW,
+                actions: ["bedrock-agentcore:GetConfigurationBundleVersion"],
+                resources: [
+                    `arn:aws:bedrock-agentcore:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:configuration-bundle/*`,
+                ],
+            }),
+        );
 
         // Bedrock AgentCore — least-privilege: only the API actions this resolver Lambda invokes
         agentCoreRuntimeCreationResolver.addToRolePolicy(
@@ -507,10 +517,20 @@ export class AgentCoreApis extends Construct {
             dir: path.join(__dirname, "../../../src/api"),
             envs: {
                 ...props.shared.defaultEnvironmentVariables,
-                VERSIONS_TABLE_NAME: props.agentCoreRuntimeTable.tableName,
             },
         });
-        props.agentCoreRuntimeTable.grantReadWriteData(removeRuntimeVersions);
+        // T12: on agent delete, remove the agent's configuration bundle (by the
+        // bundleId passed from the summary row) instead of purging version rows.
+        removeRuntimeVersions.addToRolePolicy(
+            new iam.PolicyStatement({
+                sid: "DeleteConfigurationBundle",
+                effect: iam.Effect.ALLOW,
+                actions: ["bedrock-agentcore:DeleteConfigurationBundle"],
+                resources: [
+                    `arn:aws:bedrock-agentcore:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:configuration-bundle/*`,
+                ],
+            }),
+        );
 
         const substitutionsDeleteRuntime = {
             listRuntimeEndpointFunctionArn: listEndpointsFunc.functionArn,
@@ -622,14 +642,12 @@ export class AgentCoreApis extends Construct {
                 GRAPH_CONTAINER_URI: props.graphAgentCoreContainer.imageUri,
                 AGENTS_AS_TOOLS_CONTAINER_URI: props.agentsAsToolsAgentCoreContainer.imageUri,
                 AGENT_CORE_RUNTIME_ROLE_ARN: props.agentCoreExecutionRole.roleArn,
-                AGENT_CORE_RUNTIME_TABLE: props.agentCoreRuntimeTable.tableName,
                 TOOL_REGISTRY_TABLE: props.toolRegistryTable.tableName,
                 MCP_SERVER_REGISTRY_TABLE: props.mcpServerRegistryTable.tableName,
                 ACCOUNT_ID: cdk.Aws.ACCOUNT_ID,
                 ENVIRONMENT_TAG: transformedTags.Environment,
                 STACK_TAG: transformedTags.Stack,
                 SESSIONS_TABLE_NAME: `${prefix}-sessionsTable`,
-                AGENTS_TABLE_NAME: props.agentCoreRuntimeTable.tableName,
                 AGENTS_SUMMARY_TABLE_NAME: props.agentCoreSummaryTable.tableName,
                 ...(props.config.bedrockAccessRoleArn && {
                     BEDROCK_ACCESS_ROLE_ARN: props.config.bedrockAccessRoleArn,
@@ -695,6 +713,35 @@ export class AgentCoreApis extends Construct {
             }),
         );
 
+        // T4/T5: writes the agent config into an AgentCore configuration bundle
+        // (create or new version) before the runtime is created, so the create
+        // SFN can inject BUNDLE_ID/BUNDLE_VERSION into the container env.
+        const putConfigBundleFunc = createLambda(this, {
+            name: `${prefix}-putConfigBundle`,
+            asset: "put-config-bundle",
+            handler: "index.handler",
+            timeout: 1,
+            memorySize: 128,
+            shared: props.shared,
+            dir: path.join(__dirname, "../../../src/api"),
+            envs: {
+                ...props.shared.defaultEnvironmentVariables,
+            },
+        });
+        putConfigBundleFunc.addToRolePolicy(
+            new iam.PolicyStatement({
+                sid: "PutConfigurationBundle",
+                effect: iam.Effect.ALLOW,
+                // CreateConfigurationBundle is not resource-scopable (no ARN
+                // exists pre-create); Update is scoped to configuration-bundle/*.
+                actions: [
+                    "bedrock-agentcore:CreateConfigurationBundle",
+                    "bedrock-agentcore:UpdateConfigurationBundle",
+                ],
+                resources: ["*"],
+            }),
+        );
+
         const substitutionsCreateRuntime = {
             startMemoryCreationFuncArn: startMemoryCreationFunc.functionArn,
             checkOnExistingMemoryFunctionArn: checkOnExistingMemory.functionArn,
@@ -703,7 +750,7 @@ export class AgentCoreApis extends Construct {
             checkOnRuntimeCreationFunc: checkOnRuntimeCreationFunc.functionArn,
             notifyRuntimeUpdateFunctionArn: notifyRuntimeUpdate.functionArn,
             summaryTableArn: props.agentCoreSummaryTable.tableArn,
-            agentVersionTableArn: props.agentCoreRuntimeTable.tableArn,
+            putConfigBundleFuncArn: putConfigBundleFunc.functionArn,
         };
 
         const stateMachineCreateRuntime = new sfn.StateMachine(scope, "CreateRuntimeStateMachine", {
@@ -726,9 +773,9 @@ export class AgentCoreApis extends Construct {
         checkOnCreateMemoryFunc.grantInvoke(stateMachineCreateRuntime);
         startRuntimeCreationFunc.grantInvoke(stateMachineCreateRuntime);
         checkOnRuntimeCreationFunc.grantInvoke(stateMachineCreateRuntime);
+        putConfigBundleFunc.grantInvoke(stateMachineCreateRuntime);
         notifyRuntimeUpdate.grantInvoke(stateMachineCreateRuntime);
         props.agentCoreSummaryTable.grantReadWriteData(stateMachineCreateRuntime);
-        props.agentCoreRuntimeTable.grantWriteData(stateMachineCreateRuntime);
 
         stateMachineCreateRuntime.grantStartExecution(agentCoreRuntimeCreationResolver);
         agentCoreRuntimeCreationResolver.addEnvironment(
@@ -756,6 +803,7 @@ export class AgentCoreApis extends Construct {
             checkOnCreateMemoryFunc,
             startRuntimeCreationFunc,
             checkOnRuntimeCreationFunc,
+            putConfigBundleFunc,
             stateMachineCreateRuntime,
         ].forEach((element) => {
             NagSuppressions.addResourceSuppressions(

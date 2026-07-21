@@ -21,7 +21,6 @@ os.environ.setdefault(
 os.environ.setdefault(
     "AGENT_CORE_RUNTIME_ROLE_ARN", "arn:aws:iam::123456789012:role/runtime"
 )
-os.environ.setdefault("AGENT_CORE_RUNTIME_TABLE", "runtime-table")
 os.environ.setdefault("TOOL_REGISTRY_TABLE", "tool-registry")
 os.environ.setdefault("MCP_SERVER_REGISTRY_TABLE", "mcp-registry")
 os.environ.setdefault("ACCOUNT_ID", "123456789012")

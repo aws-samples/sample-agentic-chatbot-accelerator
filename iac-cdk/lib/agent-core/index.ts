@@ -43,7 +43,6 @@ export class AcaAgentCoreContainer extends Construct {
     public readonly graphImageAsset: CodeBuildDockerImage;
     public readonly agentsAsToolsImageAsset: CodeBuildDockerImage;
     public readonly executionRole: Role;
-    public readonly agentCoreRuntimeTable: dynamodb.Table;
     public readonly toolRegistry: dynamodb.Table;
     public readonly stateClassRegistry: dynamodb.Table;
     public readonly deterministicNodeRegistry: dynamodb.Table;
@@ -56,31 +55,12 @@ export class AcaAgentCoreContainer extends Construct {
 
         const prefix = generatePrefix(this);
 
-        // Table where agents' configuration are stored
-        const agentCoreRuntimeTable = new dynamodb.Table(this, "AgentCoreRuntimeCfgTable", {
-            tableName: `${prefix}-agentCoreRuntimeCfgTable`,
-            partitionKey: {
-                name: "AgentName",
-                type: dynamodb.AttributeType.STRING,
-            },
-            sortKey: {
-                name: "CreatedAt",
-                type: dynamodb.AttributeType.NUMBER,
-            },
-            billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-            encryption: dynamodb.TableEncryption.AWS_MANAGED,
-            removalPolicy: cdk.RemovalPolicy.DESTROY,
-            pointInTimeRecoverySpecification: {
-                pointInTimeRecoveryEnabled: true,
-            },
-        });
-        agentCoreRuntimeTable.addLocalSecondaryIndex({
-            indexName: "byAgentNameAndVersion",
-            sortKey: {
-                name: "AgentRuntimeVersion",
-                type: dynamodb.AttributeType.STRING,
-            },
-        });
+        // Per-agent runtime configuration is stored in AgentCore configuration
+        // bundles (control-plane), not DynamoDB — see ADR-0001/ADR-0002 and the
+        // configuration-bundles migration. The former `agentCoreRuntimeCfgTable`
+        // (+ its `byAgentNameAndVersion` LSI) was removed here; the summary table
+        // (below) keeps the bundle identity fields (BundleId/BundleArn) and the
+        // QualifierToVersion → bundle-versionId mapping.
 
         // Table where tools' specifications are defined
         const toolRegistry = new dynamodb.Table(this, "ToolRegistry", {
@@ -656,18 +636,24 @@ export class AcaAgentCoreContainer extends Construct {
                 ],
             }),
             new iam.PolicyStatement({
-                effect: iam.Effect.ALLOW,
-                actions: ["dynamodb:GetItem"],
-                resources: [agentCoreRuntimeTable.tableArn],
-            }),
-            new iam.PolicyStatement({
                 sid: "DynamoDBQueryForSwarmAgentReferences",
                 effect: iam.Effect.ALLOW,
+                // Swarm/graph orchestrators resolve referenced sub-agents via the
+                // summary table (QualifierToVersion → bundle versionId, and the
+                // A2A twin ARN). The former runtime-config table + LSI are gone.
                 actions: ["dynamodb:Query"],
+                resources: [agentCoreSummaryTable.tableArn],
+            }),
+            new iam.PolicyStatement({
+                sid: "AgentCoreReadConfigurationBundle",
+                effect: iam.Effect.ALLOW,
+                // Containers read their own (and referenced sub-agents') config
+                // from configuration bundle versions via the control plane
+                // (ADR-0001). Bundle ids are name-suffixed, not path-scoped, so
+                // configuration-bundle/* is the tightest available resource.
+                actions: ["bedrock-agentcore:GetConfigurationBundleVersion"],
                 resources: [
-                    agentCoreRuntimeTable.tableArn,
-                    `${agentCoreRuntimeTable.tableArn}/index/*`,
-                    agentCoreSummaryTable.tableArn,
+                    `arn:aws:bedrock-agentcore:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:configuration-bundle/*`,
                 ],
             }),
             new iam.PolicyStatement({
@@ -688,172 +674,25 @@ export class AcaAgentCoreContainer extends Construct {
         });
 
         if (props.config.agentRuntimeConfig) {
-            const repository = imageAsset.repository;
-
-            const agentRuntimeArtifact = agentcore.AgentRuntimeArtifact.fromEcrRepository(
-                repository,
-                imageAsset.imageTag,
+            // GUARD (configuration-bundles migration): the deploy-time default
+            // agent still creates the AgentCore Runtime *before* the seeder
+            // creates its config bundle, so BUNDLE_ID/BUNDLE_VERSION cannot be
+            // injected into the container env at create time (ADR-0002 requires
+            // the bundle to exist first). The container would then fail to load
+            // its config. Restructuring the seeder into
+            // create-bundle → create-runtime(with BUNDLE env) → update-summary
+            // is tracked as a follow-up. Fail loudly here rather than deploy a
+            // default agent that cannot start.
+            throw new Error(
+                "config.agentRuntimeConfig (deploy-time default agent) is not yet " +
+                    "supported after the configuration-bundles migration: the seeder " +
+                    "must create the config bundle before the runtime so BUNDLE_ID/" +
+                    "BUNDLE_VERSION can be injected. Create the default agent via the " +
+                    "Agent Factory UI instead, or complete the seeder restructure " +
+                    "(see the configuration-bundles design doc, T8 follow-up).",
             );
-
-            const agentName = `${prefix}-default-agent`.replace(/-/g, "_");
-
-            const agentConfig = props.config.agentRuntimeConfig;
-
-            // Compute hash from user-provided config ONLY
-            // This ensures consistent hashing across CDK synthesis runs
-            const configString = stableStringify(agentConfig);
-            const hash = crypto
-                .createHash("sha256")
-                .update(configString)
-                .update(imageAsset.imageTag)
-                .digest();
-            const createdAt = Number(hash.readBigUInt64BE(0) % BigInt(Number.MAX_SAFE_INTEGER));
-
-            // Enrich tool parameters with runtime values (KB id) AFTER hashing
-            const enrichedToolParameters = { ...agentConfig.toolParameters };
-            for (const toolName of agentConfig.tools) {
-                if (toolName.startsWith("retrieve_from_kb") && props.knowledgeBaseId) {
-                    enrichedToolParameters[toolName] = {
-                        ...enrichedToolParameters[toolName],
-                        kb_id: props.knowledgeBaseId,
-                    };
-                }
-            }
-            const configToSeed = {
-                ...agentConfig,
-                toolParameters: enrichedToolParameters,
-            };
-
-            let memory: agentcore.Memory | undefined = undefined;
-
-            if (agentConfig.memoryCfg) {
-                memory = new agentcore.Memory(this, "DefaultMemory", {
-                    memoryName: `${prefix}-default-memory`.replace(/-/g, "_"),
-                    description: agentConfig.memoryCfg.description,
-                    expirationDuration: cdk.Duration.days(agentConfig.memoryCfg.retentionDays),
-                });
-            }
-
-            const runtime = new agentcore.Runtime(this, "DefaultRuntime", {
-                runtimeName: agentName,
-                description: agentConfig.description,
-                agentRuntimeArtifact: agentRuntimeArtifact,
-                executionRole: executionRole,
-                networkConfiguration: RuntimeNetworkConfiguration.usingPublicNetwork(),
-                environmentVariables: {
-                    accountId: cdk.Aws.ACCOUNT_ID,
-                    agentName: agentName,
-                    createdAt: createdAt.toString(),
-                    tableName: agentCoreRuntimeTable.tableName,
-                    toolRegistry: toolRegistry.tableName,
-                    mcpServerRegistry: mcpServerRegistry.tableName,
-                    // Sessions table name for container-side history persistence
-                    // (follows the same {prefix}-sessionsTable naming convention)
-                    ...(props.sessionsTableName && {
-                        sessionsTableName: props.sessionsTableName,
-                    }),
-                    ...(memory && {
-                        memoryId: memory.memoryId,
-                    }),
-                    ...(props.config.bedrockAccessRoleArn && {
-                        bedrockAccessRoleArn: props.config.bedrockAccessRoleArn,
-                    }),
-                    // Skills bucket for runtime skill loading
-                    ...(props.skillsBucketName && {
-                        skillsBucket: props.skillsBucketName,
-                    }),
-                },
-                tags: {
-                    Owner: "CDK",
-                },
-                ...(agentConfig.lifecycleCfg && {
-                    lifecycleConfiguration: {
-                        idleRuntimeSessionTimeout: cdk.Duration.minutes(
-                            agentConfig.lifecycleCfg.idleRuntimeSessionTimeoutInMinutes,
-                        ),
-                        maxLifetime: cdk.Duration.hours(
-                            agentConfig.lifecycleCfg.maxLifetimeInHours,
-                        ),
-                    },
-                }),
-            });
-
-            // Create seeder Lambda with custom resource for config-change-aware seeding
-            const seederLambda = createLambda(this, {
-                name: `${prefix}-agentcore-seeder`,
-                asset: "seeder",
-                handler: "index.handler",
-                timeout: 1,
-                memorySize: 128,
-                shared: props.shared,
-                dir: path.join(__dirname, "../../../src/agent-core"),
-                envs: {
-                    CFG_TABLE_NAME: agentCoreRuntimeTable.tableName,
-                    DASHBOARD_TABLE_NAME: agentCoreSummaryTable.tableName,
-                },
-            });
-            agentCoreRuntimeTable.grantWriteData(seederLambda);
-            agentCoreSummaryTable.grantReadWriteData(seederLambda);
-
-            const seederProvider = new cr.Provider(this, "SeederProvider", {
-                onEventHandler: seederLambda,
-            });
-
-            const configHash = hash.toString("hex");
-            new cdk.CustomResource(this, "AgentRuntimeSeed", {
-                serviceToken: seederProvider.serviceToken,
-                properties: {
-                    item: JSON.stringify({
-                        AgentName: agentName,
-                        CreatedAt: createdAt,
-                        AgentRuntimeArn: runtime.agentRuntimeArn,
-                        AgentRuntimeId: runtime.agentRuntimeId,
-                        AgentRuntimeVersion: runtime.agentRuntimeVersion,
-                        ConfigurationValue: stableStringify(configToSeed),
-                    }),
-                    configHash: configHash, // Forces update when config changes
-                },
-            });
-
-            NagSuppressions.addResourceSuppressions(
-                seederProvider,
-                [
-                    {
-                        id: "AwsSolutions-IAM4",
-                        reason: "IAM role implicitly created by CDK for Lambda basic execution.",
-                    },
-                    {
-                        id: "AwsSolutions-IAM5",
-                        reason: "IAM role implicitly created by CDK.",
-                    },
-                    {
-                        id: "AwsSolutions-L1",
-                        reason: "Lambda runtime version is managed by CDK custom resource provider framework construct.",
-                    },
-                ],
-                true,
-            );
-            NagSuppressions.addResourceSuppressions(
-                seederLambda,
-                [
-                    {
-                        id: "AwsSolutions-IAM4",
-                        reason: "IAM role implicitly created by CDK for Lambda basic execution.",
-                    },
-                    {
-                        id: "AwsSolutions-IAM5",
-                        reason: "IAM role implicitly created by CDK.",
-                    },
-                ],
-                true,
-            );
-            new CfnOutput(this, "DefaultAgentCoreRuntime", {
-                value: runtime.agentRuntimeId,
-                description: "Identifier of the default AgentCore Runtime",
-            });
         }
 
-        this.agentCoreRuntimeTable = agentCoreRuntimeTable;
         this.toolRegistry = toolRegistry;
         this.stateClassRegistry = stateClassRegistry;
         this.deterministicNodeRegistry = deterministicNodeRegistry;

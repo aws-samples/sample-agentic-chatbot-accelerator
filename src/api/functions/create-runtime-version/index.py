@@ -29,11 +29,9 @@ SWARM_CONTAINER_URI = os.environ.get("SWARM_CONTAINER_URI", "")
 GRAPH_CONTAINER_URI = os.environ.get("GRAPH_CONTAINER_URI", "")
 AGENTS_AS_TOOLS_CONTAINER_URI = os.environ.get("AGENTS_AS_TOOLS_CONTAINER_URI", "")
 AGENT_CORE_RUNTIME_ROLE_ARN = os.environ["AGENT_CORE_RUNTIME_ROLE_ARN"]
-AGENT_CORE_RUNTIME_TABLE = os.environ["AGENT_CORE_RUNTIME_TABLE"]
 TOOL_REGISTRY_TABLE = os.environ["TOOL_REGISTRY_TABLE"]
 MCP_SERVER_REGISTRY_TABLE = os.environ["MCP_SERVER_REGISTRY_TABLE"]
 ACCOUNT_ID = os.environ["ACCOUNT_ID"]
-AGENTS_TABLE_NAME = os.environ.get("AGENTS_TABLE_NAME", "")
 AGENTS_SUMMARY_TABLE_NAME = os.environ.get("AGENTS_SUMMARY_TABLE_NAME", "")
 BEDROCK_ACCESS_ROLE_ARN = os.environ.get("BEDROCK_ACCESS_ROLE_ARN", "")
 SKILLS_BUCKET_NAME = os.environ.get("SKILLS_BUCKET_NAME", "")
@@ -249,7 +247,6 @@ def handler(event: InputModel, _) -> dict:
         "networkConfiguration": {"networkMode": "PUBLIC"},
         "roleArn": AGENT_CORE_RUNTIME_ROLE_ARN,
         "environmentVariables": {
-            "tableName": AGENT_CORE_RUNTIME_TABLE,
             "toolRegistry": TOOL_REGISTRY_TABLE,
             "mcpServerRegistry": MCP_SERVER_REGISTRY_TABLE,
             # `agentName` keeps the user-facing name even on the A2A twin so
@@ -272,12 +269,15 @@ def handler(event: InputModel, _) -> dict:
         api_args["protocolConfiguration"] = {"serverProtocol": SERVER_PROTOCOL_A2A}
 
     if is_swarm or is_graph or is_agents_as_tools:
-        if not AGENTS_TABLE_NAME or not AGENTS_SUMMARY_TABLE_NAME:
+        # Orchestrators resolve referenced sub-agents via the summary table
+        # (QualifierToVersion → bundle versionId + the A2A twin ARN); each
+        # sub-agent's config is then read from its own bundle. The old
+        # per-version config table (agentsTableName) is gone.
+        if not AGENTS_SUMMARY_TABLE_NAME:
             arch_type = event.architectureType
-            err_msg = f"AGENTS_TABLE_NAME and AGENTS_SUMMARY_TABLE_NAME environment variables must be set for {arch_type} architecture"
+            err_msg = f"AGENTS_SUMMARY_TABLE_NAME environment variable must be set for {arch_type} architecture"
             logger.error(err_msg)
             raise ValueError(err_msg)
-        api_args["environmentVariables"]["agentsTableName"] = AGENTS_TABLE_NAME
         api_args["environmentVariables"][
             "agentsSummaryTableName"
         ] = AGENTS_SUMMARY_TABLE_NAME
