@@ -143,6 +143,88 @@ class BaseConfigurationLoader:
 
         return configuration_str
 
+    def _fetch_config_from_bundle(
+        self,
+        bundle_id: str | None = None,
+        bundle_version: str | None = None,
+        component_key: str | None = None,
+        entity_type: str = "agent",
+    ) -> str:
+        """Fetch the ConfigurationValue JSON string from a configuration bundle version.
+
+        Reads via the control plane (no Gateway/baggage — see ADR-0001):
+        `bedrock-agentcore-control.get_configuration_bundle_version(bundleId, versionId)`,
+        then returns `components[component_key]["configuration"]["ConfigurationValue"]`.
+
+        Args:
+            bundle_id (str | None): Bundle id. If None, reads the `BUNDLE_ID` env var.
+            bundle_version (str | None): Immutable version id. If None, reads the
+                `BUNDLE_VERSION` env var.
+            component_key (str | None): Stable component key (agent id). If None, reads
+                the `agentName` env var (ADR-0002).
+            entity_type (str): Type of entity being loaded (for error messages).
+                Defaults to "agent".
+
+        Returns:
+            str: The ConfigurationValue JSON string (same shape as the old DynamoDB field).
+
+        Raises:
+            ClientError: If the control-plane call fails.
+            ValueError: If the component/key is missing or has no ConfigurationValue.
+        """
+        if bundle_id is None:
+            bundle_id = os.environ["BUNDLE_ID"]
+        if bundle_version is None:
+            bundle_version = os.environ["BUNDLE_VERSION"]
+        if component_key is None:
+            component_key = os.environ["agentName"]
+
+        self._logger.info(
+            f"Fetching {entity_type} configuration value from configuration bundle",
+            extra={
+                "bundleId": bundle_id,
+                "bundleVersion": bundle_version,
+                "componentKey": component_key,
+            },
+        )
+
+        client = boto3.client(
+            "bedrock-agentcore-control", region_name=os.environ.get("AWS_REGION")
+        )
+
+        try:
+            response = client.get_configuration_bundle_version(
+                bundleId=bundle_id,
+                versionId=bundle_version,
+            )
+        except ClientError as err:
+            self._logger.error(
+                "Error reading configuration bundle version",
+                extra={"rawErrorMessage": str(err)},
+            )
+            raise
+
+        components = response.get("components") or {}
+        component = components.get(component_key)
+        if component is None:
+            err_message = (
+                f"Configuration bundle {bundle_id} version {bundle_version} has no "
+                f"component for {entity_type} {component_key}"
+            )
+            self._logger.error(err_message)
+            raise ValueError(err_message)
+
+        configuration_str = component.get("configuration", {}).get("ConfigurationValue")
+        if configuration_str is None:
+            err_message = (
+                f"Component {component_key} in bundle {bundle_id} version "
+                f"{bundle_version} has no ConfigurationValue"
+            )
+            self._logger.error(err_message)
+            raise ValueError(err_message)
+
+        return configuration_str
+
     def parse_configuration(self) -> Any:
         """Parse and return the configuration object.
 
