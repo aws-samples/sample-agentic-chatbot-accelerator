@@ -20,7 +20,19 @@ class OrchestratorConfigurationLoader(BaseConfigurationLoader):
     """Loader for orchestrator agent to be used in an `agents as tools` framework"""
 
     def parse_configuration(self) -> OrchestratorConfiguration:
-        configuration_str = self._fetch_item_from_dynamodb(entity_type="orchestrator")
+        """Parse the orchestrator configuration sourced from the config bundle.
+
+        Fetches ConfigurationValue via _fetch_config_from_bundle (control plane)
+        and deserializes to OrchestratorConfiguration.
+
+        Returns:
+            OrchestratorConfiguration: Parsed orchestrator configuration
+
+        Raises:
+            ClientError: If the control-plane fetch fails
+            ValueError: If configuration not found or invalid
+        """
+        configuration_str = self._fetch_config_from_bundle(entity_type="orchestrator")
 
         parsed_cfg = deserialize(configuration_str, OrchestratorConfiguration)
 
@@ -32,7 +44,7 @@ class OrchestratorConfigurationLoader(BaseConfigurationLoader):
 
 
 def parse_configuration(logger: Logger) -> OrchestratorConfiguration:
-    """Parse orchestrator configuration from DynamoDB.
+    """Parse orchestrator configuration from the config bundle.
 
     Args:
         logger (Logger): Logger instance for logging events
@@ -41,7 +53,7 @@ def parse_configuration(logger: Logger) -> OrchestratorConfiguration:
         OrchestratorConfiguration: Parsed orchestrator configuration
 
     Raises:
-        ClientError: If DynamoDB read fails
+        ClientError: If the control-plane fetch fails
         ValueError: If configuration not found or invalid
     """
     loader = OrchestratorConfigurationLoader(logger)

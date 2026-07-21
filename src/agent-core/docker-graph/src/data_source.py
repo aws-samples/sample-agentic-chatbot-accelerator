@@ -38,8 +38,17 @@ class GraphConfigurationLoader(BaseConfigurationLoader):
         return self._get_lazy_table("agentsSummaryTableName", "_summary_table")
 
     def parse_configuration(self) -> GraphConfiguration:
-        """Fetch and deserialize graph configuration from DynamoDB."""
-        configuration_str = self._fetch_item_from_dynamodb(entity_type="graph")
+        """Fetch and deserialize graph configuration from the config bundle.
+
+        Fetches the top-level graph ConfigurationValue via _fetch_config_from_bundle
+        (control plane). Sub-agent nodes are still resolved via the summary/agents
+        tables at execution time (unchanged).
+
+        Raises:
+            ClientError: If the control-plane fetch fails
+            ValueError: If configuration not found or invalid
+        """
+        configuration_str = self._fetch_config_from_bundle(entity_type="graph")
 
         parsed_cfg: GraphConfiguration = deserialize(
             configuration_str, GraphConfiguration
@@ -58,6 +67,6 @@ class GraphConfigurationLoader(BaseConfigurationLoader):
 
 
 def parse_configuration(logger: Logger) -> GraphConfiguration:
-    """Parse graph configuration from DynamoDB."""
+    """Parse graph configuration from the config bundle."""
     loader = GraphConfigurationLoader(logger)
     return loader.parse_configuration()

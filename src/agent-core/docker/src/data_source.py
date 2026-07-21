@@ -17,19 +17,22 @@ if TYPE_CHECKING:
 
 
 class AgentConfigurationLoader(BaseConfigurationLoader):
-    """Loader for agent configurations from DynamoDB."""
+    """Loader for agent configurations from a configuration bundle."""
 
     def parse_configuration(self) -> AgentConfiguration:
-        """Parse and return the agent configuration.
+        """Parse the agent configuration sourced from the config bundle.
+
+        Fetches ConfigurationValue via _fetch_config_from_bundle (control plane)
+        and deserializes to AgentConfiguration.
 
         Returns:
             AgentConfiguration: Parsed agent configuration
 
         Raises:
-            ClientError: If DynamoDB query fails
+            ClientError: If the control-plane fetch fails
             ValueError: If configuration not found or invalid
         """
-        configuration_str = self._fetch_item_from_dynamodb(entity_type="agent")
+        configuration_str = self._fetch_config_from_bundle(entity_type="agent")
 
         parsed_cfg = deserialize(configuration_str, AgentConfiguration)
 
@@ -41,7 +44,7 @@ class AgentConfigurationLoader(BaseConfigurationLoader):
 
 
 def parse_configuration(logger: Logger) -> AgentConfiguration:
-    """Parse agent configuration from DynamoDB.
+    """Parse agent configuration from the config bundle.
 
     Args:
         logger (Logger): Logger instance for logging events
@@ -50,7 +53,7 @@ def parse_configuration(logger: Logger) -> AgentConfiguration:
         AgentConfiguration: Parsed agent configuration
 
     Raises:
-        ClientError: If DynamoDB read fails
+        ClientError: If the control-plane fetch fails
         ValueError: If configuration not found or invalid
     """
     loader = AgentConfigurationLoader(logger)
