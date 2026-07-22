@@ -135,35 +135,11 @@ def sample_graph_configuration(
     )
 
 
-@pytest.fixture
-def mock_dynamodb_table(sample_graph_configuration):
-    """Mock DynamoDB table returning the sample graph configuration."""
-    config_json = sample_graph_configuration.model_dump_json()
-
-    mock_table = MagicMock()
-    mock_table.get_item.return_value = {
-        "Item": {
-            "AgentName": "test-graph-agent",
-            "CreatedAt": 1700000000,
-            "ConfigurationValue": config_json,
-        }
-    }
-
-    mock_dynamodb_resource = MagicMock()
-    mock_dynamodb_resource.Table.return_value = mock_table
-
-    with patch.dict(
-        "os.environ",
-        {
-            "tableName": "test-agents-table",
-            "agentName": "test-graph-agent",
-            "createdAt": "1700000000",
-            "AWS_REGION": "us-east-1",
-            "agentsTableName": "test-agents-summary",
-            "agentsSummaryTableName": "test-agents-summary",
-        },
-    ), patch("boto3.resource", return_value=mock_dynamodb_resource):
-        yield mock_table
+# NOTE: the former `mock_dynamodb_table` fixture (which patched a `tableName`
+# env var and mocked the DynamoDB config read) was removed with the
+# configuration-bundles migration — the container config read path is now the
+# control-plane bundle fetch, exercised via patch.object on
+# `_fetch_config_from_bundle` in test_data_source.py.
 
 
 @pytest.fixture
