@@ -20,8 +20,7 @@ import { generateClient } from "aws-amplify/api";
 import { McpServer, ResponseStatus } from "../../../API";
 import { deleteMcpServer as deleteMcpServerMutation } from "../../../graphql/mutations";
 import {
-    getRuntimeConfigurationByVersion as getRuntimeConfigurationByVersionQuery,
-    listAgentVersions as listAgentVersionsQuery,
+    getDefaultRuntimeConfiguration as getDefaultRuntimeConfigurationQuery,
     listAvailableMcpServers as listAvailableMcpServersQuery,
     listRuntimeAgents as listRuntimeAgentsQuery,
 } from "../../../graphql/queries";
@@ -62,32 +61,23 @@ export default function McpServerManager(_props: McpServerManagerProps) {
                 usageMap[s.name] = [];
             });
 
-            // For each agent, get the latest version's config
+            // For each agent, read the DEFAULT (current) config. Config now lives
+            // in AgentCore configuration bundles keyed by bundle versionId, so we
+            // resolve via getDefaultRuntimeConfiguration rather than fetching a
+            // numeric runtime version — the by-version resolver only serves the
+            // versionIds mapped in QualifierToVersion, which numeric versions are not.
             await Promise.all(
                 agents
                     .filter((a) => a.status?.toLowerCase() === "ready")
                     .map(async (agent) => {
                         try {
-                            const versionsResult = await apiClient.graphql({
-                                query: listAgentVersionsQuery,
-                                variables: { agentRuntimeId: agent.agentRuntimeId },
-                            });
-                            const versions = (versionsResult.data?.listAgentVersions || [])
-                                .filter((v): v is string => v !== null)
-                                .sort((a, b) => parseInt(b) - parseInt(a));
-
-                            if (versions.length === 0) return;
-
                             const configResult = await apiClient.graphql({
-                                query: getRuntimeConfigurationByVersionQuery,
-                                variables: {
-                                    agentName: agent.agentName,
-                                    agentVersion: versions[0],
-                                },
+                                query: getDefaultRuntimeConfigurationQuery,
+                                variables: { agentName: agent.agentName },
                             });
 
                             const config = JSON.parse(
-                                configResult.data?.getRuntimeConfigurationByVersion || "{}",
+                                configResult.data?.getDefaultRuntimeConfiguration || "{}",
                             );
                             const agentMcps: string[] = config.mcpServers || [];
 
