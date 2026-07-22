@@ -141,6 +141,17 @@ type FavoriteRuntime @aws_cognito_user_pools {
     endpointName: String!
 }
 
+# One immutable version of an agent's AgentCore configuration bundle. Config now
+# lives in bundles (not the removed runtime-config table), so a "version" here is
+# a bundle versionId (opaque UUID) rather than a numeric runtime version.
+type BundleVersion @aws_cognito_user_pools {
+    versionId: String!
+    createdAt: String
+    commitMessage: String
+    # Qualifiers (DEFAULT, BACKUP, …) currently pointing at this version, if any.
+    qualifiers: [String!]
+}
+
 type Experiment @aws_cognito_user_pools {
     experimentId: String!
     userId: String!
@@ -441,6 +452,7 @@ type Query {
     getRuntimeConfigurationByQualifier(agentName: String!, qualifier: String!): String! @aws_cognito_user_pools
     getDefaultRuntimeConfiguration(agentName: String!): String! @aws_cognito_user_pools
     listAgentVersions(agentRuntimeId: String!): [String] @aws_cognito_user_pools
+    listAgentBundleVersions(agentName: String!): [BundleVersion!] @aws_cognito_user_pools
     listAgentEndpoints(agentRuntimeId: String!): [String] @aws_cognito_user_pools
     getFavoriteRuntime: FavoriteRuntime @aws_cognito_user_pools
     # Evaluators

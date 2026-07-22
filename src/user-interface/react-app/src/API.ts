@@ -328,6 +328,14 @@ export type RuntimeSummary = {
   architectureType?: ArchitectureType | null,
 };
 
+export type BundleVersion = {
+  __typename: "BundleVersion",
+  versionId: string,
+  createdAt?: string | null,
+  commitMessage?: string | null,
+  qualifiers?: Array< string > | null,
+};
+
 export type FavoriteRuntime = {
   __typename: "FavoriteRuntime",
   agentRuntimeId: string,
@@ -1349,6 +1357,20 @@ export type ListAgentVersionsQueryVariables = {
 
 export type ListAgentVersionsQuery = {
   listAgentVersions?: Array< string | null > | null,
+};
+
+export type ListAgentBundleVersionsQueryVariables = {
+  agentName: string,
+};
+
+export type ListAgentBundleVersionsQuery = {
+  listAgentBundleVersions?:  Array< {
+    __typename: "BundleVersion",
+    versionId: string,
+    createdAt?: string | null,
+    commitMessage?: string | null,
+    qualifiers?: Array< string > | null,
+  } > | null,
 };
 
 export type ListAgentEndpointsQueryVariables = {

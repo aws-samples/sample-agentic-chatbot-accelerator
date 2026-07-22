@@ -300,6 +300,19 @@ export const listAgentVersions = /* GraphQL */ `query ListAgentVersions($agentRu
   APITypes.ListAgentVersionsQueryVariables,
   APITypes.ListAgentVersionsQuery
 >;
+export const listAgentBundleVersions = /* GraphQL */ `query ListAgentBundleVersions($agentName: String!) {
+  listAgentBundleVersions(agentName: $agentName) {
+    versionId
+    createdAt
+    commitMessage
+    qualifiers
+    __typename
+  }
+}
+` as GeneratedQuery<
+  APITypes.ListAgentBundleVersionsQueryVariables,
+  APITypes.ListAgentBundleVersionsQuery
+>;
 export const listAgentEndpoints = /* GraphQL */ `query ListAgentEndpoints($agentRuntimeId: String!) {
   listAgentEndpoints(agentRuntimeId: $agentRuntimeId)
 }
