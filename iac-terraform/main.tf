@@ -316,8 +316,6 @@ module "agent_core_apis" {
   agents_as_tools_container_uri = module.agent_core.agents_as_tools_container_uri
 
   # DynamoDB tables
-  agent_core_runtime_table_name  = module.agent_core.agent_runtime_config_table_name
-  agent_core_runtime_table_arn   = module.agent_core.agent_runtime_config_table_arn
   agent_core_summary_table_name  = module.agent_core.agent_summary_table_name
   agent_core_summary_table_arn   = module.agent_core.agent_summary_table_arn
   tool_registry_table_name       = module.agent_core.tool_registry_table_name

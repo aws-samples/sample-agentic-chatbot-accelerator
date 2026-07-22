@@ -55,7 +55,6 @@ resource "aws_bedrockagentcore_agent_runtime" "default" {
       accountId         = data.aws_caller_identity.current.account_id
       agentName         = local.agent_name
       createdAt         = local.created_at
-      tableName         = aws_dynamodb_table.agent_runtime_config.name
       toolRegistry      = aws_dynamodb_table.tool_registry.name
       mcpServerRegistry = aws_dynamodb_table.mcp_server_registry.name
       memoryId          = var.agent_runtime_config.memory_config != null ? aws_bedrockagentcore_memory.default[0].id : ""
@@ -146,30 +145,12 @@ locals {
   created_at = var.agent_runtime_config != null ? parseint(substr(local.config_hash, 0, 8), 16) : 0
 }
 
-# -----------------------------------------------------------------------------
-# Seed Agent Runtime Configuration to DynamoDB
-# This stores the full agent configuration for runtime access
-# -----------------------------------------------------------------------------
-
-resource "aws_dynamodb_table_item" "agent_runtime_config" {
-  count = var.agent_runtime_config != null ? 1 : 0
-
-  table_name = aws_dynamodb_table.agent_runtime_config.name
-  hash_key   = aws_dynamodb_table.agent_runtime_config.hash_key
-  range_key  = aws_dynamodb_table.agent_runtime_config.range_key
-
-  # Use enriched_config_json which includes kb_id injected into retrieve_from_kb tool parameters
-  item = jsonencode({
-    AgentName           = { S = local.agent_name }
-    CreatedAt           = { N = tostring(local.created_at) }
-    AgentRuntimeArn     = { S = aws_bedrockagentcore_agent_runtime.default[0].agent_runtime_arn }
-    AgentRuntimeId      = { S = aws_bedrockagentcore_agent_runtime.default[0].agent_runtime_id }
-    AgentRuntimeVersion = { S = aws_bedrockagentcore_agent_runtime.default[0].agent_runtime_version }
-    ConfigurationValue  = { S = local.enriched_config_json }
-  })
-
-  depends_on = [aws_bedrockagentcore_agent_runtime.default]
-}
+# NOTE (configuration-bundles migration): the former "Seed Agent Runtime
+# Configuration to DynamoDB" resource (aws_dynamodb_table_item.agent_runtime_config)
+# was removed with the runtime-config table. The deploy-time default agent is
+# guarded off (see the agent_runtime_config validation in variables.tf); when the
+# seeder is restructured to create the config bundle before the runtime, the
+# config will live in an AgentCore configuration bundle, not DynamoDB.
 
 # -----------------------------------------------------------------------------
 # Seed Agent Summary to DynamoDB

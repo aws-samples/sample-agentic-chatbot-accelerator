@@ -85,11 +85,6 @@ output "lambda_architecture" {
 # DynamoDB tables, ECR repository, and AgentCore Runtime resources
 # -----------------------------------------------------------------------------
 
-output "agent_runtime_config_table_name" {
-  description = "Name of the DynamoDB table storing agent runtime configurations"
-  value       = module.agent_core.agent_runtime_config_table_name
-}
-
 output "tool_registry_table_name" {
   description = "Name of the DynamoDB table storing tool registry"
   value       = module.agent_core.tool_registry_table_name

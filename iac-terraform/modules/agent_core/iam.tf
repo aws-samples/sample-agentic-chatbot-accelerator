@@ -211,21 +211,24 @@ data "aws_iam_policy_document" "agentcore_execution" {
     ]
   }
 
-  # DynamoDB Access - Agent Runtime Config Table
+  # DynamoDB Query - For swarm agent references. Swarm/graph orchestrators
+  # resolve referenced sub-agents via the summary table (QualifierToVersion →
+  # bundle versionId, and the A2A twin ARN). The former runtime-config table +
+  # LSI are gone.
   statement {
-    actions   = ["dynamodb:GetItem"]
-    resources = [aws_dynamodb_table.agent_runtime_config.arn]
+    sid       = "DynamoDBQueryForSwarmAgentReferences"
+    actions   = ["dynamodb:Query"]
+    resources = [aws_dynamodb_table.agent_summary.arn]
   }
 
-  # DynamoDB Query - For swarm agent references (query runtime config table + indexes and summary table)
+  # Containers read their own (and referenced sub-agents') config from
+  # configuration bundle versions via the control plane (ADR-0001). Bundle ids
+  # are name-suffixed, not path-scoped, so configuration-bundle/* is the
+  # tightest available resource.
   statement {
-    sid     = "DynamoDBQueryForSwarmAgentReferences"
-    actions = ["dynamodb:Query"]
-    resources = [
-      aws_dynamodb_table.agent_runtime_config.arn,
-      "${aws_dynamodb_table.agent_runtime_config.arn}/index/*",
-      aws_dynamodb_table.agent_summary.arn,
-    ]
+    sid       = "AgentCoreReadConfigurationBundle"
+    actions   = ["bedrock-agentcore:GetConfigurationBundleVersion"]
+    resources = ["arn:aws:bedrock-agentcore:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:configuration-bundle/*"]
   }
 
   # DynamoDB Access - Tool and MCP Server Registries

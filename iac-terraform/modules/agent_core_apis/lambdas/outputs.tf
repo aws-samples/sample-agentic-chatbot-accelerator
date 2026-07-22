@@ -118,6 +118,11 @@ output "remove_references_function_arn" {
   value       = aws_lambda_function.step_function_lambdas["remove_references"].arn
 }
 
+output "put_config_bundle_function_arn" {
+  description = "ARN of the put config bundle Lambda"
+  value       = aws_lambda_function.put_config_bundle.arn
+}
+
 # -----------------------------------------------------------------------------
 # Notify Runtime Update Lambda (Node.js)
 # -----------------------------------------------------------------------------

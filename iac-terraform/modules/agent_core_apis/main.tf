@@ -53,8 +53,6 @@ module "lambdas" {
   agents_as_tools_container_uri = var.agents_as_tools_container_uri
 
   # DynamoDB tables
-  agent_core_runtime_table_name  = var.agent_core_runtime_table_name
-  agent_core_runtime_table_arn   = var.agent_core_runtime_table_arn
   agent_core_summary_table_name  = var.agent_core_summary_table_name
   agent_core_summary_table_arn   = var.agent_core_summary_table_arn
   tool_registry_table_name       = var.tool_registry_table_name
@@ -116,10 +114,10 @@ module "state_machines" {
   check_create_runtime_function_arn   = module.lambdas.check_create_runtime_function_arn
   remove_references_function_arn      = module.lambdas.remove_references_function_arn
   notify_runtime_update_function_arn  = module.lambdas.notify_runtime_update_function_arn
+  put_config_bundle_function_arn      = module.lambdas.put_config_bundle_function_arn
 
   # DynamoDB tables
   agent_core_summary_table_arn = var.agent_core_summary_table_arn
-  agent_core_runtime_table_arn = var.agent_core_runtime_table_arn
 
   # KMS
   kms_key_arn = var.kms_key_arn

@@ -116,6 +116,7 @@ data "aws_iam_policy_document" "step_functions_lambda" {
       var.check_create_runtime_function_arn,
       var.remove_references_function_arn,
       var.notify_runtime_update_function_arn,
+      var.put_config_bundle_function_arn,
     ]
   }
 }
@@ -141,18 +142,6 @@ data "aws_iam_policy_document" "step_functions_dynamodb" {
     resources = [
       var.agent_core_summary_table_arn,
       "${var.agent_core_summary_table_arn}/index/*"
-    ]
-  }
-
-  statement {
-    sid    = "RuntimeTableAccess"
-    effect = "Allow"
-    actions = [
-      "dynamodb:PutItem",
-      "dynamodb:UpdateItem"
-    ]
-    resources = [
-      var.agent_core_runtime_table_arn
     ]
   }
 
@@ -262,7 +251,7 @@ resource "aws_sfn_state_machine" "create_runtime" {
     checkOnRuntimeCreationFunc       = var.check_create_runtime_function_arn
     notifyRuntimeUpdateFunctionArn   = var.notify_runtime_update_function_arn
     summaryTableArn                  = var.agent_core_summary_table_arn
-    agentVersionTableArn             = var.agent_core_runtime_table_arn
+    putConfigBundleFuncArn           = var.put_config_bundle_function_arn
   })
 
   logging_configuration {
