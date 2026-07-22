@@ -101,7 +101,10 @@ export class AgentCoreApis extends Construct {
             new iam.PolicyStatement({
                 sid: "ReadConfigurationBundle",
                 effect: iam.Effect.ALLOW,
-                actions: ["bedrock-agentcore:GetConfigurationBundleVersion"],
+                actions: [
+                    "bedrock-agentcore:GetConfigurationBundleVersion",
+                    "bedrock-agentcore:ListConfigurationBundleVersions",
+                ],
                 resources: [
                     `arn:aws:bedrock-agentcore:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:configuration-bundle/*`,
                 ],
@@ -177,6 +180,10 @@ export class AgentCoreApis extends Construct {
             {
                 type: "Query",
                 field: "listAgentVersions",
+            },
+            {
+                type: "Query",
+                field: "listAgentBundleVersions",
             },
             {
                 type: "Query",

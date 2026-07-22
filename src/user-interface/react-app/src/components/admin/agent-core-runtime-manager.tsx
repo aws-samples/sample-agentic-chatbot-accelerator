@@ -40,13 +40,14 @@ import {
 import {
     getFavoriteRuntime as getFavoriteRuntimeQuery,
     getRuntimeConfigurationByVersion as getRuntimeConfigurationByVersionQuery,
+    listAgentBundleVersions as listAgentBundleVersionsQuery,
     listAgentVersions as listAgentVersionsQuery,
     listRuntimeAgents as listRuntimeAgentsQuery,
 } from "../../graphql/queries";
 import { receiveUpdateNotification } from "../../graphql/subscriptions";
 import DeleteAgentModal from "./agent-core/delete-agent-modal";
 import TagVersionModal from "./agent-core/tag-version-modal";
-import ViewVersionModal from "./agent-core/view-version-modal";
+import ViewVersionModal, { VersionInfo } from "./agent-core/view-version-modal";
 
 export interface AgentManagerProps {
     readonly toolsOpen: boolean;
@@ -66,9 +67,7 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
     const [availableVersions, setAvailableVersions] = useState<string[]>([]);
     const [isTagging, setIsTagging] = useState(false);
     const [showViewModal, setShowViewModal] = useState(false);
-    const [viewVersions, setViewVersions] = useState<{ version: string; qualifiers: string[] }[]>(
-        [],
-    );
+    const [viewVersions, setViewVersions] = useState<VersionInfo[]>([]);
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
     const [showFavoriteModal, setShowFavoriteModal] = useState(false);
@@ -280,35 +279,24 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
                 // Refresh agent data to get latest qualifiers
                 await apiClient.graphql({ query: listRuntimeAgentsQuery });
 
-                // Get the updated agent data
-                const updatedAgent = agents.find((a) => a.agentRuntimeId === agent.agentRuntimeId);
-                if (!updatedAgent) return;
-
-                // Config now lives in AgentCore configuration bundles: the only
-                // versions the resolver can serve are the bundle versionIds mapped
-                // by a qualifier in QualifierToVersion (getRuntimeConfigurationByVersion
-                // rejects anything else). Build the version list from that map — NOT
-                // from listAgentVersions, which returns numeric runtime versions the
-                // bundle read path can't resolve.
-                let qualifierToVersion: Record<string, string> = {};
-                try {
-                    qualifierToVersion = JSON.parse(updatedAgent.qualifierToVersion || "{}");
-                } catch {
-                    qualifierToVersion = {};
-                }
-
-                const versionToQualifiers: Record<string, string[]> = {};
-                Object.entries(qualifierToVersion).forEach(([qualifier, version]) => {
-                    const v = version as string;
-                    if (!versionToQualifiers[v]) {
-                        versionToQualifiers[v] = [];
-                    }
-                    versionToQualifiers[v].push(qualifier);
+                // List the full history of the agent's configuration bundle. Config
+                // lives in bundles now, so a "version" is a bundle versionId; the
+                // resolver annotates each with the qualifiers pointing at it and its
+                // creation time, so the modal can list every historical version with
+                // a meaningful label — not just the qualifier-mapped current ones.
+                const result = await apiClient.graphql({
+                    query: listAgentBundleVersionsQuery,
+                    variables: { agentName: agent.agentName },
                 });
 
-                const versions = Object.entries(versionToQualifiers).map(
-                    ([version, qualifiers]) => ({ version, qualifiers }),
-                );
+                const versions = (result.data.listAgentBundleVersions || [])
+                    .filter((v): v is NonNullable<typeof v> => v !== null)
+                    .map((v) => ({
+                        version: v.versionId,
+                        qualifiers: (v.qualifiers ?? []).filter((q): q is string => q !== null),
+                        createdAt: v.createdAt,
+                        commitMessage: v.commitMessage,
+                    }));
 
                 setViewVersions(versions);
                 setShowViewModal(true);

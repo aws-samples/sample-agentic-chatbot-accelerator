@@ -24,19 +24,31 @@ import { RuntimeSummary } from "../../../API";
 import { AgentCoreRuntimeConfiguration } from "../../wizard/types";
 import AgentConfigView, { AgentReferenceTarget } from "./agent-config-view";
 
-interface VersionInfo {
+export interface VersionInfo {
     version: string;
     qualifiers: string[];
+    createdAt?: string | null;
+    commitMessage?: string | null;
 }
 
-// Versions are AgentCore configuration-bundle versionIds (opaque UUIDs). Prefer
-// the qualifier names for a human-readable label, falling back to a short id
-// prefix so the selector never shows a full UUID.
-function versionLabel(version: string, qualifiers: string[]): string {
-    if (qualifiers.length > 0) {
-        return qualifiers.join(", ");
+// Versions are AgentCore configuration-bundle versionIds (opaque UUIDs). Build a
+// human-readable label: qualifiers first (DEFAULT, BACKUP, …), else the creation
+// date, always falling back to a short id prefix so the full UUID never shows.
+function versionLabel(info: VersionInfo): string {
+    const parts: string[] = [];
+    if (info.qualifiers.length > 0) {
+        parts.push(info.qualifiers.join(", "));
     }
-    return version.slice(0, 8);
+    if (info.createdAt) {
+        const d = new Date(info.createdAt);
+        if (!Number.isNaN(d.getTime())) {
+            parts.push(d.toLocaleString());
+        }
+    }
+    if (parts.length === 0) {
+        parts.push(info.version.slice(0, 8));
+    }
+    return parts.join(" · ");
 }
 
 // One step in the drill-down navigation. stack[0] is the agent the user opened
@@ -298,10 +310,9 @@ export default function ViewVersionModal({
                                               (v) => v.version === selectedVersion,
                                           );
                                           return {
-                                              label: versionLabel(
-                                                  selectedVersion,
-                                                  foundVersion?.qualifiers ?? [],
-                                              ),
+                                              label: foundVersion
+                                                  ? versionLabel(foundVersion)
+                                                  : selectedVersion.slice(0, 8),
                                               value: selectedVersion,
                                           };
                                       })()
@@ -311,7 +322,7 @@ export default function ViewVersionModal({
                                 handleVersionChange(detail.selectedOption?.value || "")
                             }
                             options={(current?.versions ?? []).map((v) => ({
-                                label: versionLabel(v.version, v.qualifiers),
+                                label: versionLabel(v),
                                 value: v.version,
                             }))}
                             placeholder="Select version"

@@ -272,14 +272,13 @@ def _fetch_config_from_bundle(agent_name: str, bundle_id: str, version_id: str) 
 
 @app.resolver(type_name="Query", field_name="getRuntimeConfigurationByVersion")
 def get_runtime_cfg_by_version(agentName: str, agentVersion: str) -> str:
-    """Retrieves agent runtime configuration for a specific version.
+    """Retrieves agent runtime configuration for a specific bundle version.
 
     Config now lives in AgentCore configuration bundles (the runtime config table
-    was removed in the bundles migration). Only the version currently mapped by a
-    qualifier in the summary row is resolvable — the summary's QualifierToVersion
-    stores bundle versionIds, so we serve `agentVersion` only if it matches a
-    mapped versionId. Historical (pre-bundle) versions are not available and
-    return "".
+    was removed in the bundles migration). `agentVersion` is a bundle versionId;
+    any version of the agent's own bundle is resolvable (list them with
+    `listAgentBundleVersions`), so the UI can inspect historical config, not only
+    the qualifier-mapped current version.
 
     Args:
         agentName (str): Name of the agent
@@ -307,14 +306,11 @@ def get_runtime_cfg_by_version(agentName: str, agentVersion: str) -> str:
     if not bundle_id:
         logger.error(f"Agent {agentName} has no BundleId")
         return ""
-    # Serve only if the requested version is a known bundle version for this agent
-    # (the mapped DEFAULT/qualifier versionIds). Guards against arbitrary lookups.
-    known_versions = set((row.get("QualifierToVersion") or {}).values())
-    if agentVersion not in known_versions:
-        logger.error(
-            f"Version {agentVersion} is not a mapped bundle version for {agentName}"
-        )
-        return ""
+    # The bundleId comes from this agent's own summary row, so every version of
+    # that bundle belongs to this agent — serving any of them (not just the
+    # qualifier-mapped ones) lets the UI inspect historical config while staying
+    # scoped to the agent. A wrong/foreign versionId simply 404s at the control
+    # plane and returns "".
     return _fetch_config_from_bundle(agentName, bundle_id, agentVersion)
 
 
@@ -436,6 +432,80 @@ def list_agent_versions(agentRuntimeId: str) -> list[str]:
         BAC_CLIENT.list_agent_runtime_versions,
         root_key="agentRuntimes",
     )
+
+
+@app.resolver(type_name="Query", field_name="listAgentBundleVersions")
+def list_agent_bundle_versions(agentName: str) -> list[dict]:
+    """Lists every version of an agent's configuration bundle, newest first.
+
+    Reads the agent's BundleId + current QualifierToVersion from the summary row,
+    then enumerates the bundle's immutable version history via the control plane
+    (`list_configuration_bundle_versions`). Each entry is annotated with the
+    qualifiers (DEFAULT, BACKUP, …) currently pointing at it, so the UI can label
+    versions meaningfully instead of showing bare UUIDs. Returns [] on any miss.
+
+    Args:
+        agentName (str): Name of the agent.
+
+    Returns:
+        list[dict]: BundleVersion dicts (versionId, createdAt, commitMessage,
+        qualifiers), sorted newest-first.
+    """
+    try:
+        response = SUMMARY_TABLE.query(
+            KeyConditionExpression="AgentName = :agent",
+            ExpressionAttributeValues={":agent": agentName},
+        )
+    except ClientError as err:
+        logger.error(
+            "Failed to query summary table", extra={"rawErrorMessage": str(err)}
+        )
+        return []
+    items = response.get("Items", [])
+    if not items:
+        logger.error(f"Agent {agentName} not found")
+        return []
+    row = items[0]
+    bundle_id = row.get("BundleId")
+    if not bundle_id:
+        logger.error(f"Agent {agentName} has no BundleId")
+        return []
+
+    # Invert QualifierToVersion so each versionId knows which qualifiers point at it.
+    version_to_qualifiers: dict[str, list[str]] = {}
+    for qualifier, version_id in (row.get("QualifierToVersion") or {}).items():
+        version_to_qualifiers.setdefault(version_id, []).append(qualifier)
+
+    versions: list[dict] = []
+    try:
+        paginator = BAC_CLIENT.get_paginator("list_configuration_bundle_versions")
+        for page in paginator.paginate(bundleId=bundle_id):
+            for v in page.get("versions", []):
+                version_id = v.get("versionId")
+                if not version_id:
+                    continue
+                created_at = v.get("versionCreatedAt")
+                lineage = v.get("lineageMetadata") or {}
+                versions.append(
+                    {
+                        "versionId": version_id,
+                        "createdAt": created_at.isoformat()
+                        if hasattr(created_at, "isoformat")
+                        else (str(created_at) if created_at else None),
+                        "commitMessage": lineage.get("commitMessage"),
+                        "qualifiers": version_to_qualifiers.get(version_id, []),
+                    }
+                )
+    except ClientError as err:
+        logger.error(
+            "Failed to list configuration bundle versions",
+            extra={"rawErrorMessage": str(err), "bundleId": bundle_id},
+        )
+        return []
+
+    # Newest first — createdAt is ISO-8601 so lexical sort matches chronological.
+    versions.sort(key=lambda v: v.get("createdAt") or "", reverse=True)
+    return versions
 
 
 @app.resolver(type_name="Query", field_name="listAgentEndpoints")
