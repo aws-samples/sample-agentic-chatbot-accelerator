@@ -7,6 +7,7 @@
 
 import { useCollection } from "@cloudscape-design/collection-hooks";
 import {
+    Badge,
     Box,
     Button,
     CollectionPreferences,
@@ -283,28 +284,31 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
                 const updatedAgent = agents.find((a) => a.agentRuntimeId === agent.agentRuntimeId);
                 if (!updatedAgent) return;
 
-                const versionsResult = await apiClient.graphql({
-                    query: listAgentVersionsQuery,
-                    variables: { agentRuntimeId: agent.agentRuntimeId },
-                });
+                // Config now lives in AgentCore configuration bundles: the only
+                // versions the resolver can serve are the bundle versionIds mapped
+                // by a qualifier in QualifierToVersion (getRuntimeConfigurationByVersion
+                // rejects anything else). Build the version list from that map — NOT
+                // from listAgentVersions, which returns numeric runtime versions the
+                // bundle read path can't resolve.
+                let qualifierToVersion: Record<string, string> = {};
+                try {
+                    qualifierToVersion = JSON.parse(updatedAgent.qualifierToVersion || "{}");
+                } catch {
+                    qualifierToVersion = {};
+                }
 
-                const qualifierToVersion = JSON.parse(updatedAgent.qualifierToVersion);
                 const versionToQualifiers: Record<string, string[]> = {};
-
-                // Group qualifiers by version
                 Object.entries(qualifierToVersion).forEach(([qualifier, version]) => {
-                    if (!versionToQualifiers[version as string]) {
-                        versionToQualifiers[version as string] = [];
+                    const v = version as string;
+                    if (!versionToQualifiers[v]) {
+                        versionToQualifiers[v] = [];
                     }
-                    versionToQualifiers[version as string].push(qualifier);
+                    versionToQualifiers[v].push(qualifier);
                 });
 
-                const versions = (versionsResult.data.listAgentVersions || [])
-                    .filter((v): v is string => v !== null)
-                    .map((version) => ({
-                        version,
-                        qualifiers: versionToQualifiers[version] || [],
-                    }));
+                const versions = Object.entries(versionToQualifiers).map(
+                    ([version, qualifiers]) => ({ version, qualifiers }),
+                );
 
                 setViewVersions(versions);
                 setShowViewModal(true);
@@ -709,42 +713,59 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
                             id: "qualifierToVersion",
                             header: "Qualifiers",
                             cell: (item) => {
-                                const qualifierToVersion = JSON.parse(item.qualifierToVersion);
-                                const versionToQualifiers: Record<string, string[]> = {};
+                                // qualifierToVersion maps a qualifier name (DEFAULT,
+                                // BACKUP, …) to the bundle versionId it points at. The
+                                // versionId is an opaque UUID, so we surface the
+                                // qualifier name as the primary label and keep only a
+                                // short id prefix as a muted hint.
+                                let qualifierToVersion: Record<string, string> = {};
+                                try {
+                                    qualifierToVersion = JSON.parse(item.qualifierToVersion || "{}");
+                                } catch {
+                                    qualifierToVersion = {};
+                                }
 
-                                // Group qualifiers by version
-                                Object.entries(qualifierToVersion).forEach(
-                                    ([qualifier, version]) => {
-                                        if (!versionToQualifiers[version as string]) {
-                                            versionToQualifiers[version as string] = [];
-                                        }
-                                        versionToQualifiers[version as string].push(qualifier);
-                                    },
+                                const entries = Object.entries(qualifierToVersion).sort(
+                                    ([a], [b]) =>
+                                        a === "DEFAULT" ? -1 : b === "DEFAULT" ? 1 : a.localeCompare(b),
                                 );
 
+                                if (entries.length === 0) {
+                                    return (
+                                        <Box color="text-status-inactive" fontSize="body-s">
+                                            —
+                                        </Box>
+                                    );
+                                }
+
                                 return (
-                                    <SpaceBetween direction="vertical" size="xs">
-                                        {Object.entries(versionToQualifiers)
-                                            .sort(([a], [b]) => parseInt(b) - parseInt(a))
-                                            .map(([version, qualifiers]) => (
-                                                <Box key={version} fontSize="body-s">
-                                                    <strong>v{version}:</strong>{" "}
-                                                    {qualifiers.map((qualifier, index) => (
-                                                        <span key={qualifier}>
-                                                            {qualifier}
-                                                            {favoriteRuntime?.agentRuntimeId ===
-                                                                item.agentRuntimeId &&
-                                                            favoriteRuntime?.endpointName ===
-                                                                qualifier
-                                                                ? " ⭐"
-                                                                : ""}
-                                                            {index < qualifiers.length - 1
-                                                                ? ", "
-                                                                : ""}
-                                                        </span>
-                                                    ))}
-                                                </Box>
-                                            ))}
+                                    <SpaceBetween direction="vertical" size="xxs">
+                                        {entries.map(([qualifier, version]) => {
+                                            const isFavorite =
+                                                favoriteRuntime?.agentRuntimeId ===
+                                                    item.agentRuntimeId &&
+                                                favoriteRuntime?.endpointName === qualifier;
+                                            const shortId = String(version).slice(0, 8);
+                                            return (
+                                                <SpaceBetween
+                                                    key={qualifier}
+                                                    direction="horizontal"
+                                                    size="xs"
+                                                    alignItems="center"
+                                                >
+                                                    <Badge color={isFavorite ? "green" : "blue"}>
+                                                        {isFavorite ? `★ ${qualifier}` : qualifier}
+                                                    </Badge>
+                                                    <Box
+                                                        color="text-status-inactive"
+                                                        fontSize="body-s"
+                                                        display="inline"
+                                                    >
+                                                        {shortId}
+                                                    </Box>
+                                                </SpaceBetween>
+                                            );
+                                        })}
                                     </SpaceBetween>
                                 );
                             },

@@ -29,6 +29,16 @@ interface VersionInfo {
     qualifiers: string[];
 }
 
+// Versions are AgentCore configuration-bundle versionIds (opaque UUIDs). Prefer
+// the qualifier names for a human-readable label, falling back to a short id
+// prefix so the selector never shows a full UUID.
+function versionLabel(version: string, qualifiers: string[]): string {
+    if (qualifiers.length > 0) {
+        return qualifiers.join(", ");
+    }
+    return version.slice(0, 8);
+}
+
 // One step in the drill-down navigation. stack[0] is the agent the user opened
 // from the table; the top of the stack is the agent currently displayed.
 interface NavFrame {
@@ -272,7 +282,7 @@ export default function ViewVersionModal({
                                 </Box>
                                 {selectedVersion && (
                                     <Box color="text-status-inactive" display="inline">
-                                        (v{selectedVersion})
+                                        ({selectedVersion.slice(0, 8)})
                                     </Box>
                                 )}
                             </SpaceBetween>
@@ -287,13 +297,11 @@ export default function ViewVersionModal({
                                           const foundVersion = current?.versions.find(
                                               (v) => v.version === selectedVersion,
                                           );
-                                          const hasQualifiers =
-                                              foundVersion?.qualifiers &&
-                                              foundVersion.qualifiers.length > 0;
                                           return {
-                                              label: hasQualifiers
-                                                  ? `${selectedVersion} (${foundVersion!.qualifiers.join(", ")})`
-                                                  : selectedVersion,
+                                              label: versionLabel(
+                                                  selectedVersion,
+                                                  foundVersion?.qualifiers ?? [],
+                                              ),
                                               value: selectedVersion,
                                           };
                                       })()
@@ -303,10 +311,7 @@ export default function ViewVersionModal({
                                 handleVersionChange(detail.selectedOption?.value || "")
                             }
                             options={(current?.versions ?? []).map((v) => ({
-                                label:
-                                    v.qualifiers.length > 0
-                                        ? `${v.version} (${v.qualifiers.join(", ")})`
-                                        : v.version,
+                                label: versionLabel(v.version, v.qualifiers),
                                 value: v.version,
                             }))}
                             placeholder="Select version"
