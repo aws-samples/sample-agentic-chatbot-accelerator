@@ -81,7 +81,6 @@ resource "aws_lambda_function" "agent_core_resolver" {
       GRAPH_CONTAINER_URI                = var.graph_container_uri
       AGENTS_AS_TOOLS_CONTAINER_URI      = var.agents_as_tools_container_uri
       AGENT_CORE_RUNTIME_ROLE_ARN        = var.agent_core_execution_role_arn
-      AGENT_CORE_RUNTIME_TABLE           = var.agent_core_runtime_table_name
       AGENT_CORE_SUMMARY_TABLE           = var.agent_core_summary_table_name
       TOOL_REGISTRY_TABLE                = var.tool_registry_table_name
       MCP_SERVER_REGISTRY_TABLE          = var.mcp_server_registry_table_name
@@ -203,23 +202,6 @@ resource "aws_iam_role_policy" "agent_core_resolver_bedrock" {
 # DynamoDB access policy
 data "aws_iam_policy_document" "agent_core_resolver_dynamodb" {
   statement {
-    sid    = "RuntimeTableAccess"
-    effect = "Allow"
-    actions = [
-      "dynamodb:GetItem",
-      "dynamodb:PutItem",
-      "dynamodb:UpdateItem",
-      "dynamodb:DeleteItem",
-      "dynamodb:Query",
-      "dynamodb:Scan"
-    ]
-    resources = [
-      var.agent_core_runtime_table_arn,
-      "${var.agent_core_runtime_table_arn}/index/*"
-    ]
-  }
-
-  statement {
     sid    = "SummaryTableAccess"
     effect = "Allow"
     actions = [
@@ -251,6 +233,26 @@ resource "aws_iam_role_policy" "agent_core_resolver_dynamodb" {
   name   = "${local.name_prefix}-agentCoreResolver-dynamodb"
   role   = aws_iam_role.agent_core_resolver.id
   policy = data.aws_iam_policy_document.agent_core_resolver_dynamodb.json
+}
+
+# Config-read GraphQL queries (getDefaultRuntimeConfiguration, etc.) now read
+# agent config from configuration bundle versions via the control plane (the
+# runtime config table was removed) — see ADR-0001. Bundle ids are
+# name-suffixed, not path-scoped, so configuration-bundle/* is the tightest
+# available resource.
+data "aws_iam_policy_document" "agent_core_resolver_bundle" {
+  statement {
+    sid       = "ReadConfigurationBundle"
+    effect    = "Allow"
+    actions   = ["bedrock-agentcore:GetConfigurationBundleVersion"]
+    resources = ["arn:aws:bedrock-agentcore:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:configuration-bundle/*"]
+  }
+}
+
+resource "aws_iam_role_policy" "agent_core_resolver_bundle" {
+  name   = "${local.name_prefix}-agentCoreResolver-bundle"
+  role   = aws_iam_role.agent_core_resolver.id
+  policy = data.aws_iam_policy_document.agent_core_resolver_bundle.json
 }
 
 # PassRole permission for Bedrock AgentCore

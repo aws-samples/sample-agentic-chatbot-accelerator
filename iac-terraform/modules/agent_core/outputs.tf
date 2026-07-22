@@ -7,16 +7,6 @@ SPDX-License-Identifier: MIT-0
 # DynamoDB Table Outputs
 # -----------------------------------------------------------------------------
 
-output "agent_runtime_config_table_name" {
-  description = "Name of the DynamoDB table storing agent runtime configurations"
-  value       = aws_dynamodb_table.agent_runtime_config.name
-}
-
-output "agent_runtime_config_table_arn" {
-  description = "ARN of the DynamoDB table storing agent runtime configurations"
-  value       = aws_dynamodb_table.agent_runtime_config.arn
-}
-
 output "tool_registry_table_name" {
   description = "Name of the DynamoDB table storing tool registry"
   value       = aws_dynamodb_table.tool_registry.name

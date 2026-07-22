@@ -84,17 +84,17 @@ variable "notify_runtime_update_function_arn" {
   type        = string
 }
 
+variable "put_config_bundle_function_arn" {
+  description = "ARN of the put config bundle Lambda"
+  type        = string
+}
+
 # -----------------------------------------------------------------------------
 # DynamoDB Tables
 # -----------------------------------------------------------------------------
 
 variable "agent_core_summary_table_arn" {
   description = "ARN of the agent core summary DynamoDB table"
-  type        = string
-}
-
-variable "agent_core_runtime_table_arn" {
-  description = "ARN of the agent core runtime versions DynamoDB table"
   type        = string
 }
 

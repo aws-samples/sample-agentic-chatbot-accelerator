@@ -69,16 +69,6 @@ variable "agents_as_tools_container_uri" {
 # DynamoDB Tables
 # -----------------------------------------------------------------------------
 
-variable "agent_core_runtime_table_name" {
-  description = "Name of the agent core runtime versions DynamoDB table"
-  type        = string
-}
-
-variable "agent_core_runtime_table_arn" {
-  description = "ARN of the agent core runtime versions DynamoDB table"
-  type        = string
-}
-
 variable "agent_core_summary_table_name" {
   description = "Name of the agent core summary DynamoDB table"
   type        = string

@@ -29,49 +29,12 @@ data "aws_region" "current" {}
 # DynamoDB Tables
 # -----------------------------------------------------------------------------
 
-# Agent Runtime Configuration Table
-# Stores agent configurations with versioning support
-resource "aws_dynamodb_table" "agent_runtime_config" {
-  name         = "${local.name_prefix}-agentCoreRuntimeCfgTable"
-  billing_mode = "PAY_PER_REQUEST"
-
-  hash_key  = "AgentName"
-  range_key = "CreatedAt"
-
-  attribute {
-    name = "AgentName"
-    type = "S"
-  }
-
-  attribute {
-    name = "CreatedAt"
-    type = "N"
-  }
-
-  attribute {
-    name = "AgentRuntimeVersion"
-    type = "S"
-  }
-
-  local_secondary_index {
-    name            = "byAgentNameAndVersion"
-    projection_type = "ALL"
-    range_key       = "AgentRuntimeVersion"
-  }
-
-  point_in_time_recovery {
-    enabled = true
-  }
-
-  server_side_encryption {
-    enabled     = true
-    kms_key_arn = var.kms_key_arn
-  }
-
-  tags = {
-    Name = "${local.name_prefix}-agentCoreRuntimeCfgTable"
-  }
-}
+# Per-agent runtime configuration is stored in AgentCore configuration bundles
+# (control-plane), not DynamoDB — see ADR-0001/ADR-0002 and the
+# configuration-bundles migration. The former `agentCoreRuntimeCfgTable`
+# (+ its `byAgentNameAndVersion` LSI) was removed here; the summary table (below)
+# keeps the bundle identity fields (BundleId/BundleArn) and the
+# QualifierToVersion → bundle-versionId mapping.
 
 # Tool Registry Table
 # Stores tool specifications available to agents

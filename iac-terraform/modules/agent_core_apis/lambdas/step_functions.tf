@@ -132,12 +132,10 @@ locals {
     remove_references = {
       name        = "removeRuntimeReferences"
       asset       = "delete-agent-runtime-references"
-      description = "Removes runtime version references from DynamoDB"
+      description = "Deletes the agent's AgentCore configuration bundle on runtime delete"
       permissions = []
       resource    = ""
-      extra_envs = {
-        VERSIONS_TABLE_NAME = var.agent_core_runtime_table_name
-      }
+      extra_envs  = {}
     }
   }
 }
@@ -290,38 +288,21 @@ resource "aws_iam_role_policy" "delete_runtime_workload_identity" {
   })
 }
 
-# DynamoDB access for remove_references function
-resource "aws_iam_role_policy" "remove_references_dynamodb" {
-  name = "${local.name_prefix}-removeRuntimeReferences-dynamodb"
+# T12: on agent delete, remove the agent's configuration bundle (by the bundleId
+# passed from the summary row) instead of purging version rows. Delete is scoped
+# to configuration-bundle/* (bundle ids are name-suffixed, not path-scoped).
+resource "aws_iam_role_policy" "remove_references_bundle" {
+  name = "${local.name_prefix}-removeRuntimeReferences-bundle"
   role = aws_iam_role.step_function_lambdas["remove_references"].id
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "RuntimeTableAccess"
-        Effect = "Allow"
-        Action = [
-          "dynamodb:GetItem",
-          "dynamodb:PutItem",
-          "dynamodb:UpdateItem",
-          "dynamodb:DeleteItem",
-          "dynamodb:Query",
-          "dynamodb:Scan"
-        ]
-        Resource = [
-          var.agent_core_runtime_table_arn,
-          "${var.agent_core_runtime_table_arn}/index/*"
-        ]
-      },
-      {
-        Sid    = "KMSAccess"
-        Effect = "Allow"
-        Action = [
-          "kms:Decrypt",
-          "kms:GenerateDataKey*"
-        ]
-        Resource = [var.kms_key_arn]
+        Sid      = "DeleteConfigurationBundle"
+        Effect   = "Allow"
+        Action   = ["bedrock-agentcore:DeleteConfigurationBundle"]
+        Resource = "arn:aws:bedrock-agentcore:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:configuration-bundle/*"
       }
     ]
   })
@@ -386,14 +367,12 @@ resource "aws_lambda_function" "create_runtime_version" {
         GRAPH_CONTAINER_URI           = var.graph_container_uri
         AGENTS_AS_TOOLS_CONTAINER_URI = var.agents_as_tools_container_uri
         AGENT_CORE_RUNTIME_ROLE_ARN   = var.agent_core_execution_role_arn
-        AGENT_CORE_RUNTIME_TABLE      = var.agent_core_runtime_table_name
         TOOL_REGISTRY_TABLE           = var.tool_registry_table_name
         MCP_SERVER_REGISTRY_TABLE     = var.mcp_server_registry_table_name
         ACCOUNT_ID                    = data.aws_caller_identity.current.account_id
         ENVIRONMENT_TAG               = var.environment_tag
         STACK_TAG                     = var.stack_tag
         SESSIONS_TABLE_NAME           = "${local.name_prefix}-sessionsTable"
-        AGENTS_TABLE_NAME             = var.agent_core_runtime_table_name
         AGENTS_SUMMARY_TABLE_NAME     = var.agent_core_summary_table_name
       },
       var.bedrock_access_role_arn != null ? { BEDROCK_ACCESS_ROLE_ARN = var.bedrock_access_role_arn } : {}
@@ -475,6 +454,118 @@ resource "aws_iam_role_policy" "create_runtime_version_passrole" {
             "iam:PassedToService" = "bedrock-agentcore.amazonaws.com"
           }
         }
+      }
+    ]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# Put Config Bundle Lambda (T4/T5)
+# Writes the agent config into an AgentCore configuration bundle (create or new
+# version) BEFORE the runtime is created, so the create SFN can inject
+# BUNDLE_ID/BUNDLE_VERSION into the container env (ADR-0002).
+# -----------------------------------------------------------------------------
+
+resource "aws_cloudwatch_log_group" "put_config_bundle" {
+  # checkov:skip=CKV_AWS_338:Log retention configurable, 7 days acceptable
+  name              = "/aws/lambda/${local.name_prefix}-putConfigBundle"
+  retention_in_days = 7
+  kms_key_id        = var.kms_key_arn
+
+  tags = merge(var.tags, {
+    Name = "${local.name_prefix}-putConfigBundle-logs"
+  })
+}
+
+data "archive_file" "put_config_bundle" {
+  type        = "zip"
+  source_dir  = "${local.functions_dir}/put-config-bundle"
+  output_path = "${path.module}/../../../../iac-terraform/build/put-config-bundle.zip"
+  excludes    = ["__pycache__", "*.pyc", ".pytest_cache", "genai_core"]
+}
+
+resource "aws_lambda_function" "put_config_bundle" {
+  # checkov:skip=CKV_AWS_116:DLQ handled by Step Functions retry
+  # checkov:skip=CKV_AWS_117:VPC not required for this function
+  # checkov:skip=CKV_AWS_272:Code signing not required for internal functions
+  # checkov:skip=CKV_AWS_115:Concurrency limit managed at account level
+  # checkov:skip=CKV_AWS_173:Environment variables do not contain secrets
+  function_name = "${local.name_prefix}-putConfigBundle"
+  description   = "Creates or versions the agent's AgentCore configuration bundle"
+
+  filename         = data.archive_file.put_config_bundle.output_path
+  source_code_hash = data.archive_file.put_config_bundle.output_base64sha256
+  handler          = "index.handler"
+  runtime          = var.python_runtime
+  architectures    = [var.lambda_architecture]
+  timeout          = 60
+  memory_size      = 128
+
+  role = aws_iam_role.put_config_bundle.arn
+
+  layers = [
+    var.powertools_layer_arn,
+    var.boto3_layer_arn,
+    var.genai_core_layer_arn,
+  ]
+
+  environment {
+    variables = {
+      POWERTOOLS_SERVICE_NAME = "putConfigBundle"
+      POWERTOOLS_LOG_LEVEL    = "INFO"
+      REGION_NAME             = data.aws_region.current.id
+    }
+  }
+
+  tracing_config {
+    mode = "Active"
+  }
+
+  depends_on = [aws_cloudwatch_log_group.put_config_bundle]
+
+  tags = merge(var.tags, {
+    Name = "${local.name_prefix}-putConfigBundle"
+  })
+}
+
+resource "aws_iam_role" "put_config_bundle" {
+  name               = "${local.name_prefix}-putConfigBundle-role"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
+
+  tags = merge(var.tags, {
+    Name = "${local.name_prefix}-putConfigBundle-role"
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "put_config_bundle_basic" {
+  role       = aws_iam_role.put_config_bundle.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_iam_role_policy_attachment" "put_config_bundle_xray" {
+  role       = aws_iam_role.put_config_bundle.name
+  policy_arn = "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
+}
+
+# CreateConfigurationBundle is not resource-scopable (no ARN exists pre-create);
+# Update is scoped to configuration-bundle/*. Mirrors the CDK PutConfigurationBundle
+# statement which uses Resource "*" for both under the existing IAM5 suppression.
+resource "aws_iam_role_policy" "put_config_bundle_bedrock" {
+  # checkov:skip=CKV_AWS_355:CreateConfigurationBundle is not resource-scopable
+  name = "${local.name_prefix}-putConfigBundle-bedrock"
+  role = aws_iam_role.put_config_bundle.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "PutConfigurationBundle"
+        Effect = "Allow"
+        Action = [
+          "bedrock-agentcore:CreateConfigurationBundle",
+          "bedrock-agentcore:UpdateConfigurationBundle",
+        ]
+        Resource = "*"
       }
     ]
   })

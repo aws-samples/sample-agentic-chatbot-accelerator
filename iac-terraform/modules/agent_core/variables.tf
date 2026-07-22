@@ -143,6 +143,19 @@ variable "agent_runtime_config" {
     }))
   })
   default = null
+
+  # GUARD (configuration-bundles migration, mirrors the CDK synth-time throw):
+  # the deploy-time default agent still creates the AgentCore Runtime *before*
+  # its config bundle exists, so BUNDLE_ID/BUNDLE_VERSION cannot be injected
+  # into the container env at create time (ADR-0002 requires the bundle first).
+  # The container would then fail to load its config. Restructuring the seeder
+  # into create-bundle → create-runtime(with BUNDLE env) → update-summary is
+  # tracked as a follow-up. Fail loudly rather than deploy an agent that cannot
+  # start.
+  validation {
+    condition     = var.agent_runtime_config == null
+    error_message = "agent_runtime_config (deploy-time default agent) is not yet supported after the configuration-bundles migration: the seeder must create the config bundle before the runtime so BUNDLE_ID/BUNDLE_VERSION can be injected. Create the default agent via the Agent Factory UI instead, or complete the seeder restructure (see the configuration-bundles design doc, T8 follow-up)."
+  }
 }
 
 # -----------------------------------------------------------------------------
