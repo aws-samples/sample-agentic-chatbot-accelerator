@@ -1,4 +1,7 @@
-boto3==1.40.53
+# boto3 must be >=1.43.0: the put-config-bundle Lambda calls
+# bedrock-agentcore-control.create_configuration_bundle, an API absent from
+# earlier releases (config-bundles migration).
+boto3==1.43.52
 requests==2.33.0
 opensearch-py==2.8.0
 retry==0.9.2

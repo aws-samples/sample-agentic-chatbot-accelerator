@@ -22,4 +22,8 @@ prerelease = "allow"
 # between mcp-proxy-for-aws (needs awscrt==0.31.2 via botocore[crt])
 # and strands-agents[bidi] (needs awscrt~=0.28.2 via aws-sdk-bedrock-runtime).
 # CRT is a performance optimization, not required for correctness.
-override-dependencies = ["botocore>=1.42.86"]
+# Floor must track boto3: boto3/botocore are lockstep-coupled (boto3 1.43.x
+# imports symbols like DocumentModifiedShape from the matching botocore). A
+# lower floor let botocore lock to 1.43.30 while boto3 advanced to 1.43.52,
+# crashing `import boto3` at container startup.
+override-dependencies = ["botocore>=1.43.52"]
