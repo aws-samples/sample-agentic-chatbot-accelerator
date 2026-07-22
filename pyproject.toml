@@ -31,9 +31,6 @@ dev = [
 ]
 
 [tool.uv]
-# Wait 7 days before resolving newly published package versions — newly
-# published packages can be malicious or unstable (supply-chain hardening).
-exclude-newer = "7 days"
 override-dependencies = [
     "urllib3>=2.6.3",
     "asteval>=1.0.6",

@@ -20,9 +20,6 @@ dependencies = [
 [tool.uv]
 package = false
 prerelease = "allow"
-# Wait 7 days before resolving newly published package versions — newly
-# published packages can be malicious or unstable (supply-chain hardening).
-exclude-newer = "7 days"
 # Override: install botocore WITHOUT [crt] extra to avoid awscrt version conflict
 # between mcp-proxy-for-aws (needs awscrt==0.31.2 via botocore[crt])
 # and strands-agents[bidi] (needs awscrt~=0.28.2 via aws-sdk-bedrock-runtime).

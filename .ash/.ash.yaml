@@ -66,6 +66,21 @@ global_settings:
     - path: 'CLAUDE.md'
       reason: 'AI coding assistant configuration'
 
+  # Per-finding suppressions (rule_id + path) — distinct from ignore_paths
+  # (which drop whole files); these keep the file scanned but silence one rule.
+  suppressions:
+    # semgrep supply-chain rule suggesting `exclude-newer` under [tool.uv]. The
+    # relative-duration form ("7 days") requires uv >= 0.9.17, but the repo / CI
+    # / tooling images are not yet pinned there; adding it breaks
+    # uv lock/sync/run on older uv with a cryptic date-parse error. Revisit
+    # (add the cooldown) once uv is bumped to >= 0.9.17 everywhere.
+    # ASH matches `path` with fnmatch against the repo-relative finding path, so
+    # `*pyproject.toml` covers both the root `pyproject.toml` and the nested
+    # `src/agent-core/*/pyproject.toml` (a `**/` prefix would miss the bare root).
+    - rule_id: 'package_managers.uv.uv-missing-dependency-cooldown.uv-missing-dependency-cooldown'
+      path: '*pyproject.toml'
+      reason: 'exclude-newer relative-duration needs uv>=0.9.17; repo/CI not yet pinned there. Tracked as a follow-up.'
+
 converters:
   archive:
     enabled: false
