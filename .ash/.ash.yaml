@@ -36,12 +36,21 @@ global_settings:
       reason: 'Python virtual environment'
     - path: '**/.ruff_cache/**'
       reason: 'Ruff cache — high-entropy hashes in CACHEDIR.TAG, not secrets'
+    - path: '**/.pytest_cache/**'
+      reason: 'Pytest cache — high-entropy hash in CACHEDIR.TAG, not a secret (same as .ruff_cache)'
 
     # ASH itself
     - path: '.ash/'
       reason: 'ASH working directory and config'
     - path: '**/ash_output/**'
       reason: 'ASH scan output (also covers container path)'
+
+    # Local, gitignored config files (present in the working tree, not in the
+    # repo / CI checkout — high-entropy runtime IDs read as secrets)
+    - path: 'iac-cdk/bin/config-demo.yaml'
+      reason: 'Gitignored local demo config — AgentCore runtime IDs, not secrets'
+    - path: 'iac-cdk/bin/config.yaml'
+      reason: 'Gitignored local deploy config — AgentCore runtime IDs, not secrets'
 
     # Repo caches and docs assets
     - path: 'cache/'
