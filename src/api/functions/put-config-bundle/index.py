@@ -111,6 +111,12 @@ def handler(event: PutConfigBundleInput, _) -> dict:
             raise ValueError(err_msg)
         api_args["bundleId"] = event.bundleId
         api_args["parentVersionIds"] = [event.parentVersionId]
+        # UpdateConfigurationBundle rejects component updates without a
+        # commitMessage; the create SFN doesn't supply one, so default it here
+        # rather than fail every agent re-submit/modify.
+        api_args.setdefault(
+            "commitMessage", f"Update configuration for agent {event.agentName}"
+        )
         api_func = BAC_CLIENT.update_configuration_bundle
         logger.info(
             "Adding a new version to configuration bundle",

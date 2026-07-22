@@ -83,6 +83,32 @@ def test_update_path_passes_parent_version_ids(bac_client):
     assert "bundleName" not in kwargs
 
 
+def test_update_path_defaults_commit_message_when_absent(bac_client):
+    # UpdateConfigurationBundle rejects component updates without a
+    # commitMessage; the create SFN doesn't pass one, so the handler must
+    # default it rather than let the update fail.
+    bac_client.update_configuration_bundle.return_value = {
+        "bundleId": "bundle-123",
+        "bundleArn": "arn:aws:bedrock-agentcore:us-east-1:1234:bundle/bundle-123",
+        "versionId": "v2",
+        "updatedAt": "2026-07-21T00:00:00Z",
+    }
+
+    index.handler(
+        {
+            "agentName": "my-agent",
+            "configurationValue": CONFIG_JSON,
+            "bundleId": "bundle-123",
+            "parentVersionId": "v1",
+        },
+        None,
+    )
+
+    kwargs = bac_client.update_configuration_bundle.call_args.kwargs
+    assert kwargs["commitMessage"]  # non-empty default supplied
+    assert "my-agent" in kwargs["commitMessage"]
+
+
 def test_update_without_parent_version_raises(bac_client):
     with pytest.raises(ValueError, match="parentVersionId is required"):
         index.handler(
