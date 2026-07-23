@@ -13,6 +13,7 @@ cdk.out
 
 # MISC
 cache
+local/
 .vscode
 .env
 *.DS_Store*
