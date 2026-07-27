@@ -18,7 +18,7 @@ from strands.agent.conversation_manager import (
     SlidingWindowConversationManager,
     SummarizingConversationManager,
 )
-from strands.models import BedrockModel
+from strands.models import BedrockModel, Model
 
 from . import mantle_support
 from .base_constants import RETRIEVE_FROM_KB_PREFIX
@@ -90,19 +90,38 @@ class BaseAgentFactory:
         stop_sequences: list[str] | None = None,
         enable_caching: bool = True,
         reasoning_budget: ReasoningEffort | int | None = None,
-    ) -> BedrockModel:
-        """Create a BedrockModel instance with optional prompt caching.
+    ) -> Model:
+        """Create the Strands model for ``model_id``, routing by Mantle membership.
+
+        Dispatches by provider on an exact-id membership test against the Bedrock
+        Mantle catalog:
+
+        - not on Mantle → ``BedrockModel`` (the Converse path, unchanged).
+        - on Mantle, ``anthropic.*`` → ``AnthropicModel`` (Mantle Messages API).
+        - on Mantle, anything else → ``OpenAIModel`` (Mantle Chat Completions).
+
+        The Converse-path arg assembly below (``model_args``, ``cache_prompt``,
+        reasoning ``additional_request_fields``, ``stop_sequences``, cross-account
+        ``boto_session``) is used only by the ``BedrockModel`` branch; for any
+        ``model_id`` absent from the Mantle catalog, behavior is identical to
+        before this routing was introduced. The membership check reads a
+        process-cached set, so it adds no per-call network round-trip.
 
         Args:
-            model_id (str): The Bedrock model ID
-            max_tokens (int): Maximum tokens for generation
-            temperature (float): Temperature for sampling
-            stop_sequences (list[str] | None): Stop sequences for generation. Defaults to None.
-                Only included in model config if provided and non-empty.
-            enable_caching (bool): Whether to enable prompt caching if supported. Defaults to True.
+            model_id (str): The configured model id (Converse-form or Mantle id).
+            max_tokens (int): Maximum tokens for generation.
+            temperature (float): Temperature for sampling.
+            stop_sequences (list[str] | None): Converse-only stop sequences,
+                passed to ``BedrockModel`` when provided and non-empty. Defaults
+                to None.
+            enable_caching (bool): Converse-only prompt caching, applied when the
+                model supports it. Defaults to True.
+            reasoning_budget (ReasoningEffort | int | None): Reasoning budget,
+                mapped per branch. Defaults to None.
 
         Returns:
-            BedrockModel: Configured BedrockModel instance
+            Model: An ``OpenAIModel`` (Mantle non-Anthropic), ``AnthropicModel``
+                (Mantle ``anthropic.*``), or ``BedrockModel`` (non-Mantle).
         """
         model_args: dict[str, Any] = {
             "model_id": model_id,
@@ -160,7 +179,18 @@ class BaseAgentFactory:
             )
             model_args["boto_session"] = boto_session
 
-        return BedrockModel(**model_args)
+        # Route by provider on an exact-id membership test. Non-Mantle ids take
+        # the Converse path with the model_args assembled above; Mantle ids are
+        # built from the caller inputs directly (Converse-only args do not apply).
+        if not mantle_support.is_on_mantle(model_id):
+            return BedrockModel(**model_args)
+        if model_id.startswith("anthropic."):
+            return BaseAgentFactory._build_anthropic_mantle(
+                model_id, max_tokens, temperature, reasoning_budget
+            )
+        return BaseAgentFactory._build_openai_mantle(
+            model_id, max_tokens, temperature, reasoning_budget
+        )
 
     @staticmethod
     def _build_openai_mantle(
