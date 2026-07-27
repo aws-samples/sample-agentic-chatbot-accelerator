@@ -20,6 +20,7 @@ from strands.agent.conversation_manager import (
 )
 from strands.models import BedrockModel
 
+from . import mantle_support
 from .base_constants import RETRIEVE_FROM_KB_PREFIX
 from .stream_types import ReasoningEffort
 
@@ -27,6 +28,8 @@ _cross_account_logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from logging import Logger
+
+    from strands.models import AnthropicModel, OpenAIModel
 
 # Models that require an integer reasoning budget (minimum 1024 tokens)
 _INT_BUDGET_MODELS_ANTHROPIC = {
@@ -158,6 +161,115 @@ class BaseAgentFactory:
             model_args["boto_session"] = boto_session
 
         return BedrockModel(**model_args)
+
+    @staticmethod
+    def _build_openai_mantle(
+        model_id: str,
+        max_tokens: int,
+        temperature: float,
+        reasoning_budget: ReasoningEffort | int | None = None,
+    ) -> OpenAIModel:
+        """Build an OpenAIModel routed through Bedrock Mantle (Chat Completions).
+
+        Inference params go inside a ``params`` dict (OpenAIConfig shape), NOT as
+        top-level kwargs the way BedrockModel takes them. Endpoint wiring is
+        turnkey via ``bedrock_mantle_config``: strands builds the ``…/v1`` base
+        URL and mints a fresh bearer token per request internally (see
+        ``strands.models._openai_bedrock``). MUST NOT pass any Converse-only arg
+        (``cache_prompt``, ``additional_request_fields``, ``stop_sequences``,
+        ``boto_session``).
+
+        Args:
+            model_id (str): Mantle model id (e.g. ``"openai.gpt-oss-20b"``).
+            max_tokens (int): Maximum tokens for generation.
+            temperature (float): Sampling temperature.
+            reasoning_budget (ReasoningEffort | int | None): When set, mapped to
+                ``params["reasoning_effort"]`` as an OpenAI-style enum string
+                (``low``/``medium``/``high``). Defaults to None.
+
+        Returns:
+            OpenAIModel: Model configured for the Mantle Chat Completions surface.
+        """
+        # Import lazily: strands.models.openai does `import openai` at module
+        # top, and the openai SDK only ships in the model-building containers
+        # (see T4). A top-level import here would break `import base_factory`
+        # everywhere the SDK is absent (local tests, non-Mantle patterns).
+        from strands.models import OpenAIModel
+
+        params: dict[str, Any] = {
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
+        if reasoning_budget is not None:
+            params["reasoning_effort"] = (
+                reasoning_budget.value
+                if isinstance(reasoning_budget, ReasoningEffort)
+                else reasoning_budget
+            )
+
+        return OpenAIModel(
+            model_id=model_id,
+            params=params,
+            bedrock_mantle_config={"region": os.environ["AWS_REGION"]},
+        )
+
+    @staticmethod
+    def _build_anthropic_mantle(
+        model_id: str,
+        max_tokens: int,
+        temperature: float,
+        reasoning_budget: ReasoningEffort | int | None = None,
+    ) -> AnthropicModel:
+        """Build an AnthropicModel routed through Bedrock Mantle (Messages API).
+
+        AnthropicModel has no Mantle helper, so the endpoint is injected via
+        ``client_args`` (``base_url`` + a minted ``api_key``) using T1's shared
+        helpers. Inference params go inside a ``params`` dict, which strands
+        passes verbatim into the Messages request body.
+
+        Only the newest Claude is Mantle-eligible (see ADR-0003), and every
+        Claude from Opus 4.7 onward rejects a non-default ``temperature`` /
+        ``top_p`` / ``top_k`` with a 400. So ``temperature`` is deliberately
+        NOT forwarded on this branch, matching Anthropic's guidance to omit
+        sampling params entirely. Reasoning/thinking is also omitted: the
+        Messages ``thinking`` shape differs from OpenAI ``reasoning_effort`` and
+        is left for a follow-up rather than guessed (T2 decision).
+
+        MUST NOT pass any Converse-only arg (``cache_prompt``,
+        ``additional_request_fields``, ``stop_sequences``, ``boto_session``).
+
+        Args:
+            model_id (str): Mantle model id (e.g. ``"anthropic.claude-sonnet-5"``).
+            max_tokens (int): Maximum tokens for generation (required).
+            temperature (float): Sampling temperature. Accepted for a uniform
+                builder signature but intentionally not sent (see above).
+            reasoning_budget (ReasoningEffort | int | None): Not yet mapped on
+                the Anthropic branch; see follow-up note above. Defaults to None.
+
+        Returns:
+            AnthropicModel: Model configured for the Mantle Messages surface.
+        """
+        # Import lazily: strands.models.anthropic does `import anthropic` at
+        # module top; the anthropic SDK only ships in the model-building
+        # containers (see T4). Mirrors the OpenAI branch above.
+        from strands.models import AnthropicModel
+
+        region = os.environ["AWS_REGION"]
+
+        # NOTE: static api_key minted at construction. The model is built per
+        # session and tokens are short-lived (bounded lifetime), so a long-lived
+        # session could outlive the token. OpenAIModel re-mints per request via
+        # bedrock_mantle_config; AnthropicModel has no equivalent. Follow-up:
+        # per-session re-mint / custom credential provider if this bites.
+        return AnthropicModel(
+            client_args={
+                "base_url": mantle_support.anthropic_base_url(region),
+                "api_key": mantle_support.mint_token(region),
+            },
+            model_id=model_id,
+            max_tokens=max_tokens,
+            params={},
+        )
 
     @staticmethod
     def _get_cross_account_boto_session(role_arn: str) -> boto3.Session:

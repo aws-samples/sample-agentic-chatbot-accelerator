@@ -1,0 +1,168 @@
+# ---------------------------------------------------------------------------- #
+# Copyright 2026 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+#
+# SPDX-License-Identifier: MIT-0
+# ---------------------------------------------------------------------------- #
+"""Tests for the Mantle builder helpers on BaseAgentFactory (T2).
+
+The Strands model constructors (`OpenAIModel`, `AnthropicModel`) are patched as
+attributes on `strands.models`, which both records the kwargs and short-circuits
+the lazy `__getattr__` in `strands.models.__init__` that would otherwise
+`import openai` / `import anthropic` (SDKs that only ship in the model-building
+containers, added in T4).
+
+Run with:
+    pytest shared/tests/test_mantle_builders.py -v
+"""
+
+from __future__ import annotations
+
+import contextlib
+from unittest.mock import MagicMock, patch
+
+import pytest
+import strands.models
+from shared.base_factory import BaseAgentFactory
+from shared.stream_types import ReasoningEffort
+
+# Converse-only kwargs that must never reach a Mantle builder's constructor.
+_CONVERSE_ONLY_KWARGS = {
+    "cache_prompt",
+    "additional_request_fields",
+    "stop_sequences",
+    "boto_session",
+}
+
+
+@contextlib.contextmanager
+def _patched_model(name: str, mock: MagicMock):
+    """Set a real attribute on `strands.models` and remove it afterwards.
+
+    `patch.object` / `monkeypatch.setattr` both `getattr` the target first,
+    which triggers the lazy `__getattr__` in `strands.models.__init__` →
+    `import openai` / `import anthropic` (absent locally, added in T4). A plain
+    `setattr` installs a real attribute that shadows `__getattr__`, so the
+    builder's `from strands.models import <name>` resolves to the mock without
+    importing the SDK.
+    """
+    setattr(strands.models, name, mock)
+    try:
+        yield mock
+    finally:
+        delattr(strands.models, name)
+
+
+@pytest.fixture(autouse=True)
+def _region(monkeypatch):
+    monkeypatch.setenv("AWS_REGION", "us-west-2")
+
+
+# --------------------------------------------------------------------------- #
+# _build_openai_mantle
+# --------------------------------------------------------------------------- #
+def test_build_openai_mantle_wires_params_and_mantle_config():
+    openai_cls = MagicMock(name="OpenAIModel")
+    with _patched_model("OpenAIModel", openai_cls):
+        BaseAgentFactory._build_openai_mantle(
+            model_id="openai.gpt-oss-20b",
+            max_tokens=512,
+            temperature=0.7,
+        )
+
+    openai_cls.assert_called_once_with(
+        model_id="openai.gpt-oss-20b",
+        params={"max_tokens": 512, "temperature": 0.7},
+        bedrock_mantle_config={"region": "us-west-2"},
+    )
+
+
+def test_build_openai_mantle_maps_reasoning_effort_enum():
+    openai_cls = MagicMock(name="OpenAIModel")
+    with _patched_model("OpenAIModel", openai_cls):
+        BaseAgentFactory._build_openai_mantle(
+            model_id="openai.gpt-oss-20b",
+            max_tokens=512,
+            temperature=0.7,
+            reasoning_budget=ReasoningEffort.HIGH,
+        )
+
+    _, kwargs = openai_cls.call_args
+    assert kwargs["params"]["reasoning_effort"] == "high"
+
+
+def test_build_openai_mantle_no_converse_only_kwargs():
+    openai_cls = MagicMock(name="OpenAIModel")
+    with _patched_model("OpenAIModel", openai_cls):
+        BaseAgentFactory._build_openai_mantle(
+            model_id="openai.gpt-oss-20b",
+            max_tokens=512,
+            temperature=0.7,
+            reasoning_budget=5000,
+        )
+
+    _, kwargs = openai_cls.call_args
+    assert not _CONVERSE_ONLY_KWARGS & set(kwargs)
+    assert not _CONVERSE_ONLY_KWARGS & set(kwargs["params"])
+    # An int reasoning_budget is forwarded verbatim.
+    assert kwargs["params"]["reasoning_effort"] == 5000
+
+
+# --------------------------------------------------------------------------- #
+# _build_anthropic_mantle
+# --------------------------------------------------------------------------- #
+def test_build_anthropic_mantle_wires_client_args_and_max_tokens():
+    anthropic_cls = MagicMock(name="AnthropicModel")
+    with _patched_model("AnthropicModel", anthropic_cls):
+        with patch(
+            "shared.base_factory.mantle_support.mint_token", return_value="tok"
+        ) as mint:
+            BaseAgentFactory._build_anthropic_mantle(
+                model_id="anthropic.claude-sonnet-5",
+                max_tokens=1024,
+                temperature=0.5,
+            )
+
+    mint.assert_called_once_with("us-west-2")
+    anthropic_cls.assert_called_once_with(
+        client_args={
+            "base_url": "https://bedrock-mantle.us-west-2.api.aws/anthropic",
+            "api_key": "tok",
+        },
+        model_id="anthropic.claude-sonnet-5",
+        max_tokens=1024,
+        params={},
+    )
+
+
+def test_build_anthropic_mantle_omits_temperature():
+    """Claude >=4.7 (all Mantle-eligible Claude) 400s on non-default sampling."""
+    anthropic_cls = MagicMock(name="AnthropicModel")
+    with _patched_model("AnthropicModel", anthropic_cls):
+        with patch("shared.base_factory.mantle_support.mint_token", return_value="tok"):
+            BaseAgentFactory._build_anthropic_mantle(
+                model_id="anthropic.claude-sonnet-5",
+                max_tokens=1024,
+                temperature=0.5,
+                reasoning_budget=ReasoningEffort.HIGH,
+            )
+
+    _, kwargs = anthropic_cls.call_args
+    assert "temperature" not in kwargs["params"]
+    assert "temperature" not in kwargs
+    # Reasoning is deferred on the Anthropic branch (T2 decision), not guessed.
+    assert kwargs["params"] == {}
+
+
+def test_build_anthropic_mantle_no_converse_only_kwargs():
+    anthropic_cls = MagicMock(name="AnthropicModel")
+    with _patched_model("AnthropicModel", anthropic_cls):
+        with patch("shared.base_factory.mantle_support.mint_token", return_value="tok"):
+            BaseAgentFactory._build_anthropic_mantle(
+                model_id="anthropic.claude-sonnet-5",
+                max_tokens=1024,
+                temperature=0.5,
+            )
+
+    _, kwargs = anthropic_cls.call_args
+    assert not _CONVERSE_ONLY_KWARGS & set(kwargs)
+    assert not _CONVERSE_ONLY_KWARGS & set(kwargs["params"])
