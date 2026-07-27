@@ -138,6 +138,34 @@ data "aws_iam_policy_document" "agentcore_execution" {
     ]
   }
 
+  # Bedrock Mantle inference: models on the bedrock-mantle endpoint (the OSS
+  # tail + newest Claude) are reached via CreateInference on the `project`
+  # resource type — a distinct action namespace that the bedrock:InvokeModel
+  # actions above do NOT cover. Mirrors the AWS managed policy
+  # AmazonBedrockAgentCoreMemoryBedrockModelInferenceExecutionRolePolicy.
+  statement {
+    sid       = "BedrockMantleInference"
+    actions   = ["bedrock-mantle:CreateInference"]
+    resources = ["arn:aws:bedrock-mantle:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:project/*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+  }
+
+  # Authenticating to Mantle with the short-lived bearer token minted by
+  # aws_bedrock_token_generator (the api_key for both the OpenAI and Anthropic
+  # Mantle clients). AWS requires this permission-only action to be scoped to
+  # "*"; the SHORT_TERM token inherits this role's permissions, so effective
+  # access is still bounded by the CreateInference statement above.
+  statement {
+    sid       = "BedrockMantleCallWithBearerToken"
+    actions   = ["bedrock-mantle:CallWithBearerToken"]
+    resources = ["*"]
+  }
+
   # Bedrock Knowledge Base (Retrieve and Rerank)
   statement {
     sid = "RetrieveFromBedrockKB"
