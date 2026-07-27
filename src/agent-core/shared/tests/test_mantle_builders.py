@@ -166,3 +166,69 @@ def test_build_anthropic_mantle_no_converse_only_kwargs():
     _, kwargs = anthropic_cls.call_args
     assert not _CONVERSE_ONLY_KWARGS & set(kwargs)
     assert not _CONVERSE_ONLY_KWARGS & set(kwargs["params"])
+
+
+# --------------------------------------------------------------------------- #
+# _build_openai_responses_mantle (OpenAI gpt-5.* proprietary passthrough)
+# --------------------------------------------------------------------------- #
+# The builder imports `from strands.models.openai_responses import
+# OpenAIResponsesModel`, so patch the name on that module.
+_RESPONSES_TARGET = "strands.models.openai_responses.OpenAIResponsesModel"
+
+
+def test_build_openai_responses_mantle_wires_params_and_mantle_config():
+    with patch(_RESPONSES_TARGET) as responses_cls:
+        BaseAgentFactory._build_openai_responses_mantle(
+            model_id="openai.gpt-5.4",
+            max_tokens=512,
+            temperature=0.7,
+        )
+
+    responses_cls.assert_called_once_with(
+        model_id="openai.gpt-5.4",
+        params={"max_output_tokens": 512, "temperature": 0.7},
+        bedrock_mantle_config={"region": "us-west-2"},
+    )
+
+
+def test_build_openai_responses_mantle_maps_reasoning_effort():
+    with patch(_RESPONSES_TARGET) as responses_cls:
+        BaseAgentFactory._build_openai_responses_mantle(
+            model_id="openai.gpt-5.4",
+            max_tokens=512,
+            temperature=0.7,
+            reasoning_budget=ReasoningEffort.HIGH,
+        )
+
+    _, kwargs = responses_cls.call_args
+    assert kwargs["params"]["reasoning"] == {"effort": "high"}
+
+
+def test_build_openai_responses_mantle_ignores_int_reasoning_budget():
+    """Responses has no int-budget equivalent; an int is not forwarded."""
+    with patch(_RESPONSES_TARGET) as responses_cls:
+        BaseAgentFactory._build_openai_responses_mantle(
+            model_id="openai.gpt-5.4",
+            max_tokens=512,
+            temperature=0.7,
+            reasoning_budget=4096,
+        )
+
+    _, kwargs = responses_cls.call_args
+    assert "reasoning" not in kwargs["params"]
+
+
+def test_build_openai_responses_mantle_no_converse_only_kwargs():
+    with patch(_RESPONSES_TARGET) as responses_cls:
+        BaseAgentFactory._build_openai_responses_mantle(
+            model_id="openai.gpt-5.4",
+            max_tokens=512,
+            temperature=0.7,
+            reasoning_budget=ReasoningEffort.LOW,
+        )
+
+    _, kwargs = responses_cls.call_args
+    assert not _CONVERSE_ONLY_KWARGS & set(kwargs)
+    assert not _CONVERSE_ONLY_KWARGS & set(kwargs["params"])
+    # Responses uses max_output_tokens, never the Chat-Completions max_tokens.
+    assert "max_tokens" not in kwargs["params"]

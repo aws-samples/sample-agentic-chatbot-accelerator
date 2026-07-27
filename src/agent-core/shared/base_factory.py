@@ -30,6 +30,18 @@ if TYPE_CHECKING:
     from logging import Logger
 
     from strands.models import AnthropicModel, OpenAIModel
+    from strands.models.openai_responses import OpenAIResponsesModel
+
+# Mantle model-id prefixes served on the OpenAI-proprietary passthrough
+# (``/openai/v1``, Responses API) rather than the general Mantle surface
+# (``/v1``, Chat Completions). This mirrors strands'
+# ``strands.models._openai_bedrock._OPENAI_PATH_MODEL_PREFIXES``, which is the
+# source of truth for the base-path decision — we duplicate the prefix only to
+# pick the matching Strands class (OpenAIResponsesModel), since strands' config
+# selects the path but not the API surface. Keep in sync if strands adds
+# families (e.g. a future gpt-6). See AWS model cards: the openai/v1 path is
+# "specific to the OpenAI models".
+_MANTLE_OPENAI_RESPONSES_PREFIXES = ("openai.gpt-5.",)
 
 # Models that require an integer reasoning budget (minimum 1024 tokens)
 _INT_BUDGET_MODELS_ANTHROPIC = {
@@ -98,7 +110,10 @@ class BaseAgentFactory:
 
         - not on Mantle → ``BedrockModel`` (the Converse path, unchanged).
         - on Mantle, ``anthropic.*`` → ``AnthropicModel`` (Mantle Messages API).
-        - on Mantle, anything else → ``OpenAIModel`` (Mantle Chat Completions).
+        - on Mantle, ``openai.gpt-5.*`` → ``OpenAIResponsesModel`` (the OpenAI
+          proprietary passthrough: Responses API on ``/openai/v1``).
+        - on Mantle, anything else → ``OpenAIModel`` (Mantle Chat Completions,
+          ``/v1`` — the OSS tail incl. ``openai.gpt-oss-*``).
 
         The Converse-path arg assembly below (``model_args``, ``cache_prompt``,
         reasoning ``additional_request_fields``, ``stop_sequences``, cross-account
@@ -188,6 +203,10 @@ class BaseAgentFactory:
             return BaseAgentFactory._build_anthropic_mantle(
                 model_id, max_tokens, temperature, reasoning_budget
             )
+        if model_id.startswith(_MANTLE_OPENAI_RESPONSES_PREFIXES):
+            return BaseAgentFactory._build_openai_responses_mantle(
+                model_id, max_tokens, temperature, reasoning_budget
+            )
         return BaseAgentFactory._build_openai_mantle(
             model_id, max_tokens, temperature, reasoning_budget
         )
@@ -238,6 +257,56 @@ class BaseAgentFactory:
             )
 
         return OpenAIModel(
+            model_id=model_id,
+            params=params,
+            bedrock_mantle_config={"region": os.environ["AWS_REGION"]},
+        )
+
+    @staticmethod
+    def _build_openai_responses_mantle(
+        model_id: str,
+        max_tokens: int,
+        temperature: float,
+        reasoning_budget: ReasoningEffort | int | None = None,
+    ) -> OpenAIResponsesModel:
+        """Build an OpenAIResponsesModel routed through Bedrock Mantle (Responses API).
+
+        The OpenAI proprietary models (``openai.gpt-5.*``) are served only on the
+        Responses API at the ``/openai/v1`` passthrough — they reject Chat
+        Completions. Endpoint wiring is turnkey via ``bedrock_mantle_config``:
+        strands resolves the ``/openai/v1`` base path for these ids (see
+        ``strands.models._openai_bedrock``) and mints a fresh bearer token per
+        request. Params use the Responses shape (``max_output_tokens``, not
+        ``max_tokens``). MUST NOT pass any Converse-only arg (``cache_prompt``,
+        ``additional_request_fields``, ``stop_sequences``, ``boto_session``).
+
+        Args:
+            model_id (str): Mantle model id (e.g. ``"openai.gpt-5.4"``).
+            max_tokens (int): Maximum tokens for generation, passed as the
+                Responses-API ``max_output_tokens``.
+            temperature (float): Sampling temperature (accepted by GPT-5.x on the
+                Responses surface).
+            reasoning_budget (ReasoningEffort | int | None): When a
+                ``ReasoningEffort`` is given, mapped to
+                ``params["reasoning"] = {"effort": <low|medium|high>}``. An int
+                budget has no Responses equivalent and is ignored. Defaults to None.
+
+        Returns:
+            OpenAIResponsesModel: Model configured for the Mantle Responses surface.
+        """
+        # Import lazily: strands.models.openai_responses does `import openai` at
+        # module top; the openai SDK ships only in the model-building containers.
+        # A top-level import would break `import base_factory` where it is absent.
+        from strands.models.openai_responses import OpenAIResponsesModel
+
+        params: dict[str, Any] = {
+            "max_output_tokens": max_tokens,
+            "temperature": temperature,
+        }
+        if isinstance(reasoning_budget, ReasoningEffort):
+            params["reasoning"] = {"effort": reasoning_budget.value}
+
+        return OpenAIResponsesModel(
             model_id=model_id,
             params=params,
             bedrock_mantle_config={"region": os.environ["AWS_REGION"]},

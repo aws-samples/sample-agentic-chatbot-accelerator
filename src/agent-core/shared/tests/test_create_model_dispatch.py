@@ -32,10 +32,14 @@ def _region(monkeypatch):
 # --------------------------------------------------------------------------- #
 # Mantle branches
 # --------------------------------------------------------------------------- #
-def test_mantle_non_anthropic_routes_to_openai_builder():
+def test_mantle_oss_routes_to_openai_chat_builder():
+    """OSS tail (incl. openai.gpt-oss-*) -> Chat Completions, NOT the Responses branch."""
     with patch("shared.base_factory.mantle_support.is_on_mantle", return_value=True):
         with (
             patch.object(BaseAgentFactory, "_build_openai_mantle") as openai_builder,
+            patch.object(
+                BaseAgentFactory, "_build_openai_responses_mantle"
+            ) as responses_builder,
             patch.object(
                 BaseAgentFactory, "_build_anthropic_mantle"
             ) as anthropic_builder,
@@ -51,9 +55,39 @@ def test_mantle_non_anthropic_routes_to_openai_builder():
     openai_builder.assert_called_once_with(
         "openai.gpt-oss-20b", 512, 0.7, ReasoningEffort.HIGH
     )
+    responses_builder.assert_not_called()
     anthropic_builder.assert_not_called()
     bedrock_cls.assert_not_called()
     assert result is openai_builder.return_value
+
+
+def test_mantle_openai_gpt5_routes_to_responses_builder():
+    """openai.gpt-5.* -> Responses passthrough, NOT Chat Completions."""
+    with patch("shared.base_factory.mantle_support.is_on_mantle", return_value=True):
+        with (
+            patch.object(BaseAgentFactory, "_build_openai_mantle") as openai_builder,
+            patch.object(
+                BaseAgentFactory, "_build_openai_responses_mantle"
+            ) as responses_builder,
+            patch.object(
+                BaseAgentFactory, "_build_anthropic_mantle"
+            ) as anthropic_builder,
+            patch("shared.base_factory.BedrockModel") as bedrock_cls,
+        ):
+            result = BaseAgentFactory.create_model(
+                model_id="openai.gpt-5.4",
+                max_tokens=512,
+                temperature=0.7,
+                reasoning_budget=ReasoningEffort.HIGH,
+            )
+
+    responses_builder.assert_called_once_with(
+        "openai.gpt-5.4", 512, 0.7, ReasoningEffort.HIGH
+    )
+    openai_builder.assert_not_called()
+    anthropic_builder.assert_not_called()
+    bedrock_cls.assert_not_called()
+    assert result is responses_builder.return_value
 
 
 def test_mantle_anthropic_routes_to_anthropic_builder():
