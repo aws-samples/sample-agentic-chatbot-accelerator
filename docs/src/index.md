@@ -32,6 +32,7 @@ The complete documentation map for the Agentic Chatbot Accelerator. The guides a
 
 - [AWS Architecture](./architecture.md) — system architecture, real-time communication, and the AWS resources deployed.
 - [API Reference](./api.md) — the GraphQL API schema and operations.
+- [Bedrock Mantle Models](./mantle-models.md) — which models are usable (OSS tail, OpenAI, Anthropic), and how `create_model` routes each to its native protocol.
 
 ---
 
