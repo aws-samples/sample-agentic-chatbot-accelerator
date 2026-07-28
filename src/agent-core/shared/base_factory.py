@@ -43,6 +43,19 @@ if TYPE_CHECKING:
 # "specific to the OpenAI models".
 _MANTLE_OPENAI_RESPONSES_PREFIXES = ("openai.gpt-5.",)
 
+# Mantle model-id prefixes served for **Chat Completions** on the OpenAI
+# proprietary passthrough (``/openai/v1``) rather than the general Mantle Chat
+# Completions surface (``/v1``). Unlike the Responses split above, strands'
+# ``bedrock_mantle_config`` does NOT resolve these to ``/openai/v1`` — its
+# ``_OPENAI_PATH_MODEL_PREFIXES`` only covers ``openai.gpt-5.*`` — so we build
+# the client_args (base_url + token) ourselves for this set, the same way the
+# Anthropic branch does. Determined empirically (2026-07-28): a full sweep of
+# the Mantle catalog found exactly ``google.gemma-4-*`` and ``xai.grok-4.*``
+# take Chat Completions on ``/openai/v1`` and reject ``/v1`` with
+# ``400 "model isn't supported on this route"``. Keep in sync with the AWS
+# model cards as new families land on this path.
+_MANTLE_OPENAI_V1_CHAT_PREFIXES = ("google.gemma-4", "xai.grok-4.")
+
 # Models that require an integer reasoning budget (minimum 1024 tokens)
 _INT_BUDGET_MODELS_ANTHROPIC = {
     "claude-opus-4-5",
@@ -221,12 +234,21 @@ class BaseAgentFactory:
         """Build an OpenAIModel routed through Bedrock Mantle (Chat Completions).
 
         Inference params go inside a ``params`` dict (OpenAIConfig shape), NOT as
-        top-level kwargs the way BedrockModel takes them. Endpoint wiring is
-        turnkey via ``bedrock_mantle_config``: strands builds the ``…/v1`` base
-        URL and mints a fresh bearer token per request internally (see
-        ``strands.models._openai_bedrock``). MUST NOT pass any Converse-only arg
-        (``cache_prompt``, ``additional_request_fields``, ``stop_sequences``,
-        ``boto_session``).
+        top-level kwargs the way BedrockModel takes them. MUST NOT pass any
+        Converse-only arg (``cache_prompt``, ``additional_request_fields``,
+        ``stop_sequences``, ``boto_session``).
+
+        **Base-path split.** Most Chat Completions models use the general ``/v1``
+        surface, wired turnkey via ``bedrock_mantle_config`` (strands builds the
+        base URL and mints a fresh bearer token *per request*). A minority
+        (``_MANTLE_OPENAI_V1_CHAT_PREFIXES`` — ``google.gemma-4-*``,
+        ``xai.grok-4.*``) are served only on the ``/openai/v1`` passthrough and
+        ``400`` on ``/v1``; strands' ``bedrock_mantle_config`` cannot target that
+        path for them (its prefix set is ``openai.gpt-5.*`` only), so we inject
+        ``client_args`` (``base_url`` + a minted ``api_key``) ourselves, mirroring
+        the Anthropic branch. Caveat: that path mints a *static* token at
+        construction (no per-request re-mint) — same bounded-lifetime tradeoff
+        noted on ``_build_anthropic_mantle``.
 
         Args:
             model_id (str): Mantle model id (e.g. ``"openai.gpt-oss-20b"``).
@@ -254,6 +276,19 @@ class BaseAgentFactory:
                 reasoning_budget.value
                 if isinstance(reasoning_budget, ReasoningEffort)
                 else reasoning_budget
+            )
+
+        # Models on the /openai/v1 passthrough: build client_args ourselves,
+        # since bedrock_mantle_config would resolve them to the wrong (/v1) path.
+        if model_id.startswith(_MANTLE_OPENAI_V1_CHAT_PREFIXES):
+            region = os.environ["AWS_REGION"]
+            return OpenAIModel(
+                client_args={
+                    "base_url": mantle_support.openai_passthrough_base_url(region),
+                    "api_key": mantle_support.mint_token(region),
+                },
+                model_id=model_id,
+                params=params,
             )
 
         return OpenAIModel(

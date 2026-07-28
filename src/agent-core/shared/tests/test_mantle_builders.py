@@ -107,6 +107,57 @@ def test_build_openai_mantle_no_converse_only_kwargs():
     assert kwargs["params"]["reasoning_effort"] == 5000
 
 
+@pytest.mark.parametrize(
+    "model_id",
+    ["google.gemma-4-31b", "google.gemma-4-e2b", "xai.grok-4.3"],
+)
+def test_build_openai_mantle_openai_v1_models_use_passthrough_client_args(model_id):
+    """gemma-4-* / grok-4.* take Chat Completions on /openai/v1 via client_args.
+
+    strands' bedrock_mantle_config can't target /openai/v1 for these (its prefix
+    set is openai.gpt-5.* only), so the builder injects base_url + minted token
+    itself and MUST NOT pass bedrock_mantle_config.
+    """
+    openai_cls = MagicMock(name="OpenAIModel")
+    with _patched_model("OpenAIModel", openai_cls):
+        with patch(
+            "shared.base_factory.mantle_support.mint_token", return_value="tok"
+        ) as mint:
+            BaseAgentFactory._build_openai_mantle(
+                model_id=model_id,
+                max_tokens=512,
+                temperature=0.7,
+            )
+
+    mint.assert_called_once_with("us-west-2")
+    _, kwargs = openai_cls.call_args
+    assert kwargs["client_args"] == {
+        "base_url": "https://bedrock-mantle.us-west-2.api.aws/openai/v1",
+        "api_key": "tok",
+    }
+    assert "bedrock_mantle_config" not in kwargs
+    assert kwargs["model_id"] == model_id
+    assert kwargs["params"] == {"max_tokens": 512, "temperature": 0.7}
+
+
+def test_build_openai_mantle_oss_still_uses_bedrock_mantle_config():
+    """The /v1 OSS tail keeps the turnkey bedrock_mantle_config (per-request mint)."""
+    openai_cls = MagicMock(name="OpenAIModel")
+    with _patched_model("OpenAIModel", openai_cls):
+        with patch("shared.base_factory.mantle_support.mint_token") as mint:
+            BaseAgentFactory._build_openai_mantle(
+                model_id="openai.gpt-oss-20b",
+                max_tokens=512,
+                temperature=0.7,
+            )
+
+    # No self-minted token on the /v1 path; strands mints per request.
+    mint.assert_not_called()
+    _, kwargs = openai_cls.call_args
+    assert kwargs["bedrock_mantle_config"] == {"region": "us-west-2"}
+    assert "client_args" not in kwargs
+
+
 # --------------------------------------------------------------------------- #
 # _build_anthropic_mantle
 # --------------------------------------------------------------------------- #
