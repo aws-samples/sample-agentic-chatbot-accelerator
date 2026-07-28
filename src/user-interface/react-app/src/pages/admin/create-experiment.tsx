@@ -17,9 +17,9 @@ import {
 import { generateClient } from "aws-amplify/api";
 import { useContext, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { AppContext } from "../../common/app-context";
 import { CHATBOT_NAME } from "../../common/constants";
 import useOnFollow from "../../common/hooks/use-on-follow";
-import { AppContext } from "../../common/app-context";
 import BaseAppLayout from "../../components/base-app-layout";
 import * as mutations from "../../graphql/mutations";
 
@@ -39,13 +39,12 @@ export default function CreateExperimentPage() {
     useEffect(() => {
         const experimentsConfig = appConfig?.experimentsConfig;
         if (experimentsConfig?.supportedModels && appConfig) {
-            const models = Object.entries(experimentsConfig.supportedModels).map(([label, value]) => {
-                const modelValue = (value as string).replace(
-                    "[REGION-PREFIX]",
-                    appConfig.aws_project_region.split("-")[0],
-                );
-                return { label, value: modelValue };
-            });
+            const models = Object.entries(experimentsConfig.supportedModels).map(
+                ([label, value]) => ({
+                    label,
+                    value: value as string,
+                }),
+            );
             setModelOptions(models);
             if (models.length > 0) {
                 setModelId(models[0].value);
@@ -148,17 +147,10 @@ export default function CreateExperimentPage() {
                 <Form
                     actions={
                         <SpaceBetween direction="horizontal" size="xs">
-                            <Button
-                                variant="link"
-                                onClick={() => navigate("/experiments")}
-                            >
+                            <Button variant="link" onClick={() => navigate("/experiments")}>
                                 Cancel
                             </Button>
-                            <Button
-                                variant="primary"
-                                loading={loading}
-                                onClick={handleSubmit}
-                            >
+                            <Button variant="primary" loading={loading} onClick={handleSubmit}>
                                 Create and Run Experiment
                             </Button>
                         </SpaceBetween>
@@ -174,7 +166,10 @@ export default function CreateExperimentPage() {
 
                         <Container header={<Header variant="h2">Basic Information</Header>}>
                             <SpaceBetween size="l">
-                                <FormField label="Name" description="A descriptive name for your experiment">
+                                <FormField
+                                    label="Name"
+                                    description="A descriptive name for your experiment"
+                                >
                                     <Input
                                         value={name}
                                         onChange={({ detail }) => setName(detail.value)}
@@ -251,7 +246,9 @@ export default function CreateExperimentPage() {
                                 errorText={modelId === "" ? "Model is required" : ""}
                             >
                                 <Select
-                                    selectedOption={modelOptions.find(opt => opt.value === modelId) || null}
+                                    selectedOption={
+                                        modelOptions.find((opt) => opt.value === modelId) || null
+                                    }
                                     onChange={({ detail }) =>
                                         setModelId(detail.selectedOption?.value || modelId)
                                     }
@@ -263,7 +260,8 @@ export default function CreateExperimentPage() {
 
                         <Box>
                             <Alert type="info">
-                                The experiment will automatically run after creation to generate synthetic test cases using AI.
+                                The experiment will automatically run after creation to generate
+                                synthetic test cases using AI.
                             </Alert>
                         </Box>
                     </SpaceBetween>
