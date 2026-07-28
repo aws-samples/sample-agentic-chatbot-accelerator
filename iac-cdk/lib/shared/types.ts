@@ -354,20 +354,16 @@ export interface AgentRuntimeConfig {
 
 /**
  * Interface defining configuration for the evaluation framework.
- * @property supportedModels - Record mapping user-friendly model names to Bedrock model identifiers for evaluations.
- *                             The first model in this record is used as the default.
  * @property passThreshold - Score threshold (0.0-1.0) above which a test case is considered passed.
  * @property defaultRubrics - Optional record mapping evaluator types to their default rubric text
  */
 export interface EvaluatorConfig {
-    supportedModels: Record<string, string>;
     passThreshold: number;
     defaultRubrics?: Record<string, string>;
 }
 
 /**
  * Configuration for the experiments (synthetic data generation) feature.
- * @property supportedModels - Record mapping user-friendly model names to their Bedrock model identifiers
  * @property vpcId - Optional VPC ID to reuse an existing VPC for Batch compute instead of creating a new one.
  *                   When provided, the construct imports the VPC and skips VPC/flow-log creation.
  * @property deployBatchInfrastructure - Whether to deploy the AWS Batch infrastructure required for
@@ -377,7 +373,6 @@ export interface EvaluatorConfig {
  *                                       the "runExperiment" (generation) capability is disabled.
  */
 export interface ExperimentsConfig {
-    supportedModels: Record<string, string>;
     vpcId?: string;
     deployBatchInfrastructure?: boolean;
 }
@@ -391,7 +386,6 @@ export interface ExperimentsConfig {
  * @property allowedGeoRegions - List of ISO 3166-1 alpha-2 country codes allowed to access the application when geo-restrictions are enabled
  * @property dataProcessingParameters - Optional configuration for document data processing pipelines (ingestion, transcription, etc.)
  * @property knowledgeBaseParameters - Optional configuration for the Amazon Bedrock knowledge base (chunking, embedding model, data source)
- * @property supportedModels - Record mapping user-friendly model names to their Bedrock model identifiers (e.g., {"Claude 3.5 Sonnet": "anthropic.claude-3-5-sonnet-20241022-v2:0"})
  * @property rerankingModels - Record mapping user-friendly reranking model names to their Bedrock model identifiers
  * @property toolRegistry - Array of Tool objects defining the tools available to agents for task execution
  * @property mcpServerRegistry - Array of MCP server configurations for external capability providers
@@ -411,8 +405,6 @@ export interface SystemConfig {
     dataProcessingParameters?: DataProcessingParameters;
 
     knowledgeBaseParameters?: KnowledgeBaseParameters;
-
-    supportedModels: Record<string, string>;
 
     rerankingModels?: Record<string, string>;
 
