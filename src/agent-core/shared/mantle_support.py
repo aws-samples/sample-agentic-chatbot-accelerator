@@ -120,6 +120,25 @@ def openai_base_url(region: str) -> str:
     return f"https://bedrock-mantle.{region}.api.aws/v1"
 
 
+def openai_passthrough_base_url(region: str) -> str:
+    """Build the OpenAI-proprietary-passthrough Mantle base URL (``/openai/v1``).
+
+    A handful of Mantle models are served only on the ``/openai/v1`` passthrough
+    rather than the general Chat Completions path (``/v1``) — the newest OpenAI
+    proprietary models (``openai.gpt-5.*``, Responses API) plus, per their AWS
+    model cards, ``google.gemma-4-*`` and ``xai.grok-4.*`` on Chat Completions.
+    Hitting ``/v1`` for those returns ``400 "model isn't supported on this
+    route"`` (verified live 2026-07-28).
+
+    Args:
+        region (str): AWS region hosting the Mantle endpoint.
+
+    Returns:
+        str: ``https://bedrock-mantle.{region}.api.aws/openai/v1``.
+    """
+    return f"https://bedrock-mantle.{region}.api.aws/openai/v1"
+
+
 def anthropic_base_url(region: str) -> str:
     """Build the Anthropic Messages Mantle base URL.
 

@@ -112,6 +112,13 @@ def test_openai_base_url():
     )
 
 
+def test_openai_passthrough_base_url():
+    assert (
+        mantle_support.openai_passthrough_base_url("us-east-1")
+        == "https://bedrock-mantle.us-east-1.api.aws/openai/v1"
+    )
+
+
 def test_anthropic_base_url():
     assert (
         mantle_support.anthropic_base_url("eu-central-1")
