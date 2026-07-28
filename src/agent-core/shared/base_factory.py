@@ -56,21 +56,18 @@ _MANTLE_OPENAI_RESPONSES_PREFIXES = ("openai.gpt-5.",)
 # model cards as new families land on this path.
 _MANTLE_OPENAI_V1_CHAT_PREFIXES = ("google.gemma-4", "xai.grok-4.")
 
-# Models that require an integer reasoning budget (minimum 1024 tokens)
-_INT_BUDGET_MODELS_ANTHROPIC = {
-    "claude-opus-4-5",
-    "claude-opus-4",
-    "claude-sonnet-4",
-    "claude-sonnet-4-5",
-    "claude-sonnet-4-6",
-    "claude-haiku-4-5",
-    "claude-3-7-sonnet",
-}
-
-# Models that require a ReasoningEffort enum value
+# Anthropic models whose reasoning is expressed as an effort level. On the
+# Converse path this maps to a ``thinking`` adaptive block plus an
+# ``output_config`` effort; on the Mantle Messages path the same shape is sent
+# through ``params``. Integer token budgets are no longer supported — the newest
+# Claude models (Opus 5, Sonnet 5) take an effort level, and older token-budget
+# variants are out of scope. Keep in sync with ``_EFFORT_BUDGET_MODELS`` in
+# stream_types.py.
 _EFFORT_BUDGET_MODELS_ANTHROPIC = {
     "claude-sonnet-4-6",
     "claude-opus-4-6",
+    "claude-opus-5",
+    "claude-sonnet-5",
 }
 
 _EFFORT_BUDGET_MODELS_NOVA = {
@@ -114,7 +111,7 @@ class BaseAgentFactory:
         temperature: float,
         stop_sequences: list[str] | None = None,
         enable_caching: bool = True,
-        reasoning_budget: ReasoningEffort | int | None = None,
+        reasoning_budget: ReasoningEffort | None = None,
     ) -> Model:
         """Create the Strands model for ``model_id``, routing by Mantle membership.
 
@@ -144,8 +141,8 @@ class BaseAgentFactory:
                 to None.
             enable_caching (bool): Converse-only prompt caching, applied when the
                 model supports it. Defaults to True.
-            reasoning_budget (ReasoningEffort | int | None): Reasoning budget,
-                mapped per branch. Defaults to None.
+            reasoning_budget (ReasoningEffort | None): Reasoning effort level
+                (low/medium/high), mapped per branch. Defaults to None.
 
         Returns:
             Model: An ``OpenAIModel`` (Mantle non-Anthropic), ``AnthropicModel``
@@ -170,11 +167,7 @@ class BaseAgentFactory:
 
         if reasoning_budget is not None:
             reasoning_cfg: dict = {"type": "enabled"}
-            reasoning_val = (
-                reasoning_budget.value
-                if isinstance(reasoning_budget, ReasoningEffort)
-                else reasoning_budget
-            )
+            reasoning_val = reasoning_budget.value
 
             set_additional_args = True
             temp_add_args = {}
@@ -184,11 +177,6 @@ class BaseAgentFactory:
                 temp_add_args["output_config"] = {"effort": reasoning_val}
                 del model_args["temperature"]
                 # If thinking is enabled with Anthropic models, temperature cannot be set
-            elif any(m in model_id for m in _INT_BUDGET_MODELS_ANTHROPIC):
-                reasoning_key = "thinking"
-                reasoning_cfg["budget_tokens"] = reasoning_val
-                # If thinking is enabled with Anthropic models, temperature cannot be set
-                del model_args["temperature"]
             elif any(m in model_id for m in _EFFORT_BUDGET_MODELS_NOVA):
                 reasoning_key = "reasoningConfig"
                 reasoning_cfg["maxReasoningEffort"] = reasoning_val
@@ -229,7 +217,7 @@ class BaseAgentFactory:
         model_id: str,
         max_tokens: int,
         temperature: float,
-        reasoning_budget: ReasoningEffort | int | None = None,
+        reasoning_budget: ReasoningEffort | None = None,
     ) -> OpenAIModel:
         """Build an OpenAIModel routed through Bedrock Mantle (Chat Completions).
 
@@ -254,7 +242,7 @@ class BaseAgentFactory:
             model_id (str): Mantle model id (e.g. ``"openai.gpt-oss-20b"``).
             max_tokens (int): Maximum tokens for generation.
             temperature (float): Sampling temperature.
-            reasoning_budget (ReasoningEffort | int | None): When set, mapped to
+            reasoning_budget (ReasoningEffort | None): When set, mapped to
                 ``params["reasoning_effort"]`` as an OpenAI-style enum string
                 (``low``/``medium``/``high``). Defaults to None.
 
@@ -272,11 +260,7 @@ class BaseAgentFactory:
             "temperature": temperature,
         }
         if reasoning_budget is not None:
-            params["reasoning_effort"] = (
-                reasoning_budget.value
-                if isinstance(reasoning_budget, ReasoningEffort)
-                else reasoning_budget
-            )
+            params["reasoning_effort"] = reasoning_budget.value
 
         # Models on the /openai/v1 passthrough: build client_args ourselves,
         # since bedrock_mantle_config would resolve them to the wrong (/v1) path.
@@ -302,7 +286,7 @@ class BaseAgentFactory:
         model_id: str,
         max_tokens: int,
         temperature: float,
-        reasoning_budget: ReasoningEffort | int | None = None,
+        reasoning_budget: ReasoningEffort | None = None,
     ) -> OpenAIResponsesModel:
         """Build an OpenAIResponsesModel routed through Bedrock Mantle (Responses API).
 
@@ -328,10 +312,9 @@ class BaseAgentFactory:
                 Responses-API ``max_output_tokens``.
             temperature (float): Sampling temperature. Accepted for a uniform
                 builder signature but intentionally not sent (see above).
-            reasoning_budget (ReasoningEffort | int | None): When a
-                ``ReasoningEffort`` is given, mapped to
-                ``params["reasoning"] = {"effort": <low|medium|high>}``. An int
-                budget has no Responses equivalent and is ignored. Defaults to None.
+            reasoning_budget (ReasoningEffort | None): When set, mapped to
+                ``params["reasoning"] = {"effort": <low|medium|high>}``. Defaults
+                to None.
 
         Returns:
             OpenAIResponsesModel: Model configured for the Mantle Responses surface.
@@ -344,7 +327,7 @@ class BaseAgentFactory:
         params: dict[str, Any] = {
             "max_output_tokens": max_tokens,
         }
-        if isinstance(reasoning_budget, ReasoningEffort):
+        if reasoning_budget is not None:
             params["reasoning"] = {"effort": reasoning_budget.value}
 
         return OpenAIResponsesModel(
@@ -358,7 +341,7 @@ class BaseAgentFactory:
         model_id: str,
         max_tokens: int,
         temperature: float,
-        reasoning_budget: ReasoningEffort | int | None = None,
+        reasoning_budget: ReasoningEffort | None = None,
     ) -> AnthropicModel:
         """Build an AnthropicModel routed through Bedrock Mantle (Messages API).
 
@@ -371,9 +354,15 @@ class BaseAgentFactory:
         Claude from Opus 4.7 onward rejects a non-default ``temperature`` /
         ``top_p`` / ``top_k`` with a 400. So ``temperature`` is deliberately
         NOT forwarded on this branch, matching Anthropic's guidance to omit
-        sampling params entirely. Reasoning/thinking is also omitted: the
-        Messages ``thinking`` shape differs from OpenAI ``reasoning_effort`` and
-        is left for a follow-up rather than guessed (T2 decision).
+        sampling params entirely.
+
+        Reasoning is expressed as an **effort level** on the newest Claude
+        models: the Messages API takes an adaptive ``thinking`` block paired with
+        an ``output_config`` effort (``low``/``medium``/``high``) — the same shape
+        the Converse path assembles for ``_EFFORT_BUDGET_MODELS_ANTHROPIC``. Both
+        keys are forwarded through ``params``; enabling thinking is itself the
+        reason ``temperature`` must be omitted. Integer token budgets are not
+        supported (see ``ReasoningEffort``).
 
         MUST NOT pass any Converse-only arg (``cache_prompt``,
         ``additional_request_fields``, ``stop_sequences``, ``boto_session``).
@@ -383,8 +372,9 @@ class BaseAgentFactory:
             max_tokens (int): Maximum tokens for generation (required).
             temperature (float): Sampling temperature. Accepted for a uniform
                 builder signature but intentionally not sent (see above).
-            reasoning_budget (ReasoningEffort | int | None): Not yet mapped on
-                the Anthropic branch; see follow-up note above. Defaults to None.
+            reasoning_budget (ReasoningEffort | None): When set, mapped to an
+                adaptive ``thinking`` block plus ``output_config`` effort in
+                ``params``. Defaults to None.
 
         Returns:
             AnthropicModel: Model configured for the Mantle Messages surface.
@@ -395,6 +385,15 @@ class BaseAgentFactory:
         from strands.models import AnthropicModel
 
         region = os.environ["AWS_REGION"]
+
+        # Effort-based reasoning via the native Messages shape: an adaptive
+        # thinking block + output_config effort (verified against anthropic SDK
+        # 0.109.1 ThinkingConfigAdaptiveParam + OutputConfigParam). strands
+        # spreads params verbatim into the request body.
+        params: dict[str, Any] = {}
+        if reasoning_budget is not None:
+            params["thinking"] = {"type": "adaptive"}
+            params["output_config"] = {"effort": reasoning_budget.value}
 
         # NOTE: static api_key minted at construction. The model is built per
         # session and tokens are short-lived (bounded lifetime), so a long-lived
@@ -408,7 +407,7 @@ class BaseAgentFactory:
             },
             model_id=model_id,
             max_tokens=max_tokens,
-            params={},
+            params=params,
         )
 
     @staticmethod

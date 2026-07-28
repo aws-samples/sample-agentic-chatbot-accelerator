@@ -197,15 +197,14 @@ class ModelConfiguration(BaseModel):
     Attributes:
         modelId (str): Identifier for the model to be used
         parameters (InferenceConfig): Configuration parameters for model inference
-        reasoningBudget (Optional[int | str]): Budget reserved for model reasoning.
-            An integer (min 1024) for token-budget models, or a string
-            ("low"/"medium"/"high") for effort-based models.
+        reasoningBudget (Optional[str]): Reasoning effort level
+            ("low"/"medium"/"high") for reasoning-capable models.
             Default to None, meaning no reasoning enabled.
     """
 
     modelId: str
     parameters: InferenceConfig
-    reasoningBudget: Optional[int | str] = None
+    reasoningBudget: Optional[str] = None
 
 
 class StructuredOutputFieldSpec(BaseModel):

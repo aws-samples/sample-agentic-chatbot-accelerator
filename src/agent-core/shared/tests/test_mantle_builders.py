@@ -97,14 +97,14 @@ def test_build_openai_mantle_no_converse_only_kwargs():
             model_id="openai.gpt-oss-20b",
             max_tokens=512,
             temperature=0.7,
-            reasoning_budget=5000,
+            reasoning_budget=ReasoningEffort.MEDIUM,
         )
 
     _, kwargs = openai_cls.call_args
     assert not _CONVERSE_ONLY_KWARGS & set(kwargs)
     assert not _CONVERSE_ONLY_KWARGS & set(kwargs["params"])
-    # An int reasoning_budget is forwarded verbatim.
-    assert kwargs["params"]["reasoning_effort"] == 5000
+    # The reasoning effort is mapped to the OpenAI-style enum string.
+    assert kwargs["params"]["reasoning_effort"] == "medium"
 
 
 @pytest.mark.parametrize(
@@ -200,7 +200,37 @@ def test_build_anthropic_mantle_omits_temperature():
     _, kwargs = anthropic_cls.call_args
     assert "temperature" not in kwargs["params"]
     assert "temperature" not in kwargs
-    # Reasoning is deferred on the Anthropic branch (T2 decision), not guessed.
+
+
+def test_build_anthropic_mantle_maps_reasoning_effort():
+    """Effort reasoning maps to an adaptive thinking block + output_config effort."""
+    anthropic_cls = MagicMock(name="AnthropicModel")
+    with _patched_model("AnthropicModel", anthropic_cls):
+        with patch("shared.base_factory.mantle_support.mint_token", return_value="tok"):
+            BaseAgentFactory._build_anthropic_mantle(
+                model_id="anthropic.claude-sonnet-5",
+                max_tokens=1024,
+                temperature=0.5,
+                reasoning_budget=ReasoningEffort.HIGH,
+            )
+
+    _, kwargs = anthropic_cls.call_args
+    assert kwargs["params"]["thinking"] == {"type": "adaptive"}
+    assert kwargs["params"]["output_config"] == {"effort": "high"}
+
+
+def test_build_anthropic_mantle_omits_reasoning_when_unset():
+    """No reasoning_budget → no thinking/output_config keys in params."""
+    anthropic_cls = MagicMock(name="AnthropicModel")
+    with _patched_model("AnthropicModel", anthropic_cls):
+        with patch("shared.base_factory.mantle_support.mint_token", return_value="tok"):
+            BaseAgentFactory._build_anthropic_mantle(
+                model_id="anthropic.claude-sonnet-5",
+                max_tokens=1024,
+                temperature=0.5,
+            )
+
+    _, kwargs = anthropic_cls.call_args
     assert kwargs["params"] == {}
 
 
@@ -269,20 +299,6 @@ def test_build_openai_responses_mantle_maps_reasoning_effort():
 
     _, kwargs = responses_cls.call_args
     assert kwargs["params"]["reasoning"] == {"effort": "high"}
-
-
-def test_build_openai_responses_mantle_ignores_int_reasoning_budget():
-    """Responses has no int-budget equivalent; an int is not forwarded."""
-    with patch(_RESPONSES_TARGET) as responses_cls:
-        BaseAgentFactory._build_openai_responses_mantle(
-            model_id="openai.gpt-5.4",
-            max_tokens=512,
-            temperature=0.7,
-            reasoning_budget=4096,
-        )
-
-    _, kwargs = responses_cls.call_args
-    assert "reasoning" not in kwargs["params"]
 
 
 def test_build_openai_responses_mantle_no_converse_only_kwargs():

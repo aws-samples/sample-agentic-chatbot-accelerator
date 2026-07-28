@@ -587,11 +587,8 @@ export function isAgentsAsToolsStepValid(
         const budget = agentsAsToolsConfig.modelInferenceParameters.reasoningBudget;
         if (budget != null) {
             const rType = getReasoningType(agentsAsToolsConfig.modelInferenceParameters.modelId);
-            if (rType === "int") {
-                return typeof budget === "number" && budget >= 1024;
-            }
             if (rType === "effort") {
-                return typeof budget === "string" && ["low", "medium", "high"].includes(budget);
+                return ["low", "medium", "high"].includes(budget);
             }
             return false;
         }
