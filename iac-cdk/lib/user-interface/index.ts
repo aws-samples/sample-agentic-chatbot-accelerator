@@ -13,6 +13,7 @@ import { Construct } from "constructs";
 
 import { ChatbotApi } from "../api";
 import { CodeBuildNpmBuild } from "../codebuild-builder";
+import { modelsForRegion } from "../shared/supported-models";
 import { SystemConfig } from "../shared/types";
 import { generatePrefix } from "../shared/utils";
 import { PublicWebsite } from "./public-website";
@@ -29,6 +30,8 @@ export interface UserInterfaceProps {
     readonly dataBucket?: s3.Bucket;
     /** Pre-built React app artifact from CodeBuild (BuilderStack). */
     readonly reactAppBuild: CodeBuildNpmBuild;
+    /** Concrete, already-validated deploy region (see bin/aca.ts guard). */
+    readonly deployRegion: string;
 }
 
 /**
@@ -106,22 +109,27 @@ export class UserInterface extends Construct {
                 aws_user_files_s3_bucket: props.dataBucket.bucketName,
                 aws_user_files_s3_bucket_region: cdk.Aws.REGION,
             }),
-            // Define supported models from the stack at deployment time
-            aws_bedrock_supported_models: props.config.supportedModels,
+            // Supported models are a region property (see lib/shared/supported-models.ts),
+            // resolved to the deploy region's flat slice — literal ids, no [REGION-PREFIX].
+            aws_bedrock_supported_models: modelsForRegion(props.deployRegion),
             ...(props.config.rerankingModels && {
                 aws_bedrock_supported_reranking_models: props.config.rerankingModels,
             }),
 
-            // Evaluator configuration
+            // Evaluator configuration — inject the shared region slice (wizard reads supportedModels)
             ...(props.config.evaluatorConfig && {
-                evaluatorConfig: props.config.evaluatorConfig,
+                evaluatorConfig: {
+                    ...props.config.evaluatorConfig,
+                    supportedModels: modelsForRegion(props.deployRegion),
+                },
             }),
 
-            // Experiments configuration
+            // Experiments configuration — inject the shared region slice
             ...(props.config.experimentsConfig && {
                 experimentsConfig: {
                     ...props.config.experimentsConfig,
                     enabled: true,
+                    supportedModels: modelsForRegion(props.deployRegion),
                 },
             }),
 

@@ -24,6 +24,8 @@ export interface AcaProps extends cdk.StackProps {
     readonly config: SystemConfig;
     /** BuilderStack containing pre-built CodeBuild projects. */
     readonly builder: BuilderStack;
+    /** Concrete deploy region, validated in bin/aca.ts. Passed to UserInterface for the model slice. */
+    readonly deployRegion: string;
 }
 
 export class AcaStack extends cdk.Stack {
@@ -156,6 +158,7 @@ export class AcaStack extends cdk.Stack {
             api: api,
             dataBucket: dataProcessing?.dataBucket,
             reactAppBuild: props.builder.reactAppBuild,
+            deployRegion: props.deployRegion,
         });
 
         new Cleanup(this, "Cleanup", {
@@ -201,8 +204,12 @@ export class AcaStack extends cdk.Stack {
             // DefaultPolicy only exists when CDK adds inline policies (e.g. Lambda/SQS notification targets).
             // With eventBridgeEnabled-only buckets the role has no inline policies.
             const defaultPolicyPath = `/${this.stackName}/BucketNotificationsHandler050a0587b7544547bf325f094a3db834/Role/DefaultPolicy/Resource`;
-            if (this.node.tryFindChild("BucketNotificationsHandler050a0587b7544547bf325f094a3db834")) {
-                const handler = this.node.findChild("BucketNotificationsHandler050a0587b7544547bf325f094a3db834");
+            if (
+                this.node.tryFindChild("BucketNotificationsHandler050a0587b7544547bf325f094a3db834")
+            ) {
+                const handler = this.node.findChild(
+                    "BucketNotificationsHandler050a0587b7544547bf325f094a3db834",
+                );
                 if (handler.node.tryFindChild("Role")) {
                     const role = handler.node.findChild("Role");
                     if (role.node.tryFindChild("DefaultPolicy")) {
@@ -210,20 +217,16 @@ export class AcaStack extends cdk.Stack {
                     }
                 }
             }
-            NagSuppressions.addResourceSuppressionsByPath(
-                this,
-                bucketNotifPaths,
-                [
-                    {
-                        id: "AwsSolutions-IAM4",
-                        reason: "IAM role implicitly created by CDK.",
-                    },
-                    {
-                        id: "AwsSolutions-IAM5",
-                        reason: "IAM role implicitly created by CDK.",
-                    },
-                ],
-            );
+            NagSuppressions.addResourceSuppressionsByPath(this, bucketNotifPaths, [
+                {
+                    id: "AwsSolutions-IAM4",
+                    reason: "IAM role implicitly created by CDK.",
+                },
+                {
+                    id: "AwsSolutions-IAM5",
+                    reason: "IAM role implicitly created by CDK.",
+                },
+            ]);
         }
         NagSuppressions.addResourceSuppressionsByPath(
             this,

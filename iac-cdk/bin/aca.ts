@@ -11,6 +11,7 @@ import { IConstruct } from "constructs";
 import "source-map-support/register";
 import { AcaStack } from "../lib/aca-stack";
 import { BuilderStack } from "../lib/builder-stack";
+import { assertRegionSupported } from "../lib/shared/supported-models";
 import { getConfig } from "./config";
 
 /**
@@ -38,6 +39,18 @@ class LambdaNodejsRuntimeUpgrader implements cdk.IAspect {
 const app = new cdk.App();
 const config = getConfig();
 
+/**
+ * Concrete deploy region for synth-time validation and the UI model slice.
+ * The stacks are env-agnostic (no `env:` block), so `cdk.Aws.REGION` is an unresolved
+ * token here — the CDK CLI injects the resolved region via CDK_DEFAULT_REGION.
+ * Fallback to AWS_REGION for bare `cdk synth` invocations.
+ */
+const deployRegion = process.env.CDK_DEFAULT_REGION ?? process.env.AWS_REGION;
+
+// Fail fast (listing supported regions) if unset or unsupported, before any
+// construct is created. Narrows deployRegion to `string` for the rest of the file.
+assertRegionSupported(deployRegion);
+
 const baseName = "aca";
 const stackName = config.prefix == "" ? baseName : `${config.prefix}-${baseName}`;
 const builderStackName = `${stackName}-builder`;
@@ -51,6 +64,7 @@ const builderStack = new BuilderStack(app, builderStackName, {
 const acaStack = new AcaStack(app, stackName, {
     config: config,
     builder: builderStack,
+    deployRegion, // narrowed to string by assertRegionSupported above
 });
 
 // Explicit dependency: AcaStack requires BuilderStack

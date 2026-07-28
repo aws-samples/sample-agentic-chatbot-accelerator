@@ -21,6 +21,7 @@ function synthTemplate(): Template {
     const acaStack = new AcaStack(app, "test-aca", {
         config,
         builder: builderStack,
+        deployRegion: "us-east-1",
     });
     acaStack.addDependency(builderStack);
     return Template.fromStack(acaStack);
