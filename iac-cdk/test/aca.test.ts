@@ -5,9 +5,13 @@
 import * as cdk from "aws-cdk-lib";
 import { Match, Template } from "aws-cdk-lib/assertions";
 import * as lambda from "aws-cdk-lib/aws-lambda";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 import { getConfig } from "../bin/config";
 import { AcaStack } from "../lib/aca-stack";
 import { BuilderStack } from "../lib/builder-stack";
+import { modelsForRegion } from "../lib/shared/supported-models";
 
 // Synthesize the application stack once and reuse the template across the
 // configuration-bundles migration assertions (T11). The stacks are wired the
@@ -25,6 +29,60 @@ function synthTemplate(): Template {
     });
     acaStack.addDependency(builderStack);
     return Template.fromStack(acaStack);
+}
+
+// The deploy region the synth-slice assertions pin to. Must be a region seeded in
+// SUPPORTED_MODELS, or T3's synth guard would abort. Kept in sync with synthTemplate().
+const DEPLOY_REGION = "us-east-1";
+
+// The UserInterface construct writes aws-exports.json via s3deploy.Source.jsonData(),
+// which becomes a BucketDeployment asset: the JSON is emitted to a file under the synth
+// output dir (cdk.out) rather than inlined in the CFN template. Synthesize the app to a
+// throwaway outdir and return the raw text of that emitted asset so the test can inspect
+// the exact bytes shipped to the browser.
+function synthAwsExportsText(): string {
+    const outdir = fs.mkdtempSync(path.join(os.tmpdir(), "aca-synth-"));
+    const app = new cdk.App({ outdir });
+    const config = getConfig();
+    const builderStack = new BuilderStack(app, "test-aca-builder", {
+        lambdaArchitecture: lambda.Architecture.X86_64,
+    });
+    const acaStack = new AcaStack(app, "test-aca", {
+        config,
+        builder: builderStack,
+        deployRegion: DEPLOY_REGION,
+    });
+    acaStack.addDependency(builderStack);
+    app.synth();
+
+    // The jsonData asset is a single "aws-exports.json" at an asset root (the checked-in
+    // React public/aws-exports.json also matches the name, so require both the file name
+    // and the field we care about, and skip the "public/" static copy).
+    const matches = findFiles(outdir, "aws-exports.json").filter(
+        (f) =>
+            !f.includes(`${path.sep}public${path.sep}`) &&
+            fs.readFileSync(f, "utf8").includes("aws_bedrock_supported_models"),
+    );
+    if (matches.length !== 1) {
+        throw new Error(
+            `Expected exactly one emitted aws-exports.json asset, found ${matches.length}: ${matches.join(", ")}`,
+        );
+    }
+    return fs.readFileSync(matches[0], "utf8");
+}
+
+// Recursively collect files whose base name matches `name` under `dir`.
+function findFiles(dir: string, name: string): string[] {
+    const out: string[] = [];
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+            out.push(...findFiles(full, name));
+        } else if (entry.name === name) {
+            out.push(full);
+        }
+    }
+    return out;
 }
 
 describe("configuration-bundles migration (T11)", () => {
@@ -107,5 +165,29 @@ describe("configuration-bundles migration (T11)", () => {
             return resources.some((r: any) => JSON.stringify(r).includes("configuration-bundle/"));
         });
         expect(scopedGetVersion).toBe(true);
+    });
+});
+
+describe("region-supported-models synth slice (T5)", () => {
+    let exportsText: string;
+
+    beforeAll(() => {
+        exportsText = synthAwsExportsText();
+    });
+
+    test("aws_bedrock_supported_models equals modelsForRegion(deployRegion)", () => {
+        // The emitted asset is not valid JSON wholesale (cdk.Aws.REGION etc. serialize to
+        // <<marker:...>> tokens), but the model-id values are literal, so the slice object
+        // parses in isolation. Extract just that object — its values contain no "}" so a
+        // non-greedy match to the first closing brace captures the whole flat map.
+        const match = exportsText.match(/"aws_bedrock_supported_models":(\{.*?\})/);
+        expect(match).not.toBeNull();
+        const slice = JSON.parse(match![1]);
+        expect(slice).toEqual(modelsForRegion(DEPLOY_REGION));
+    });
+
+    test("emitted exports contain no [REGION-PREFIX] substitution token", () => {
+        // T4/T6 invariant: ids are literal in IaC — no leftover substitution marker.
+        expect(exportsText).not.toContain("[REGION-PREFIX]");
     });
 });
