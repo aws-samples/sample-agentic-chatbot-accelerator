@@ -143,9 +143,14 @@ data "aws_iam_policy_document" "agentcore_execution" {
   # resource type — a distinct action namespace that the bedrock:InvokeModel
   # actions above do NOT cover. Mirrors the AWS managed policy
   # AmazonBedrockAgentCoreMemoryBedrockModelInferenceExecutionRolePolicy.
+  # ListModels backs the dynamic catalog fetch (`client.models.list()` in
+  # mantle_support.get_mantle_model_ids): without it the GET /v1/models call
+  # 401s, the catalog is empty, and EVERY model falls back to Converse — so
+  # Mantle-only ids (e.g. anthropic.claude-sonnet-5) then fail on-demand.
+  # Same `project/*` resource as CreateInference.
   statement {
     sid       = "BedrockMantleInference"
-    actions   = ["bedrock-mantle:CreateInference"]
+    actions   = ["bedrock-mantle:CreateInference", "bedrock-mantle:ListModels"]
     resources = ["arn:aws:bedrock-mantle:${data.aws_region.current.id}:${data.aws_caller_identity.current.account_id}:project/*"]
 
     condition {
