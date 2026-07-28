@@ -121,13 +121,8 @@ export default function AgentConfigView({
     const getModelName = (modelId: string) => {
         if (!appContext?.aws_bedrock_supported_models) return modelId;
 
-        const regionPrefix = appContext.aws_project_region.split("-")[0];
-
-        for (const [label, templateValue] of Object.entries(
-            appContext.aws_bedrock_supported_models,
-        )) {
-            const processedValue = templateValue.replace("[REGION-PREFIX]", regionPrefix);
-            if (processedValue === modelId) {
+        for (const [label, id] of Object.entries(appContext.aws_bedrock_supported_models)) {
+            if (id === modelId) {
                 return label;
             }
         }
@@ -309,9 +304,7 @@ export default function AgentConfigView({
                                                     </Box>
                                                 </div>
                                                 <div>
-                                                    <Box variant="awsui-key-label">
-                                                        Temperature
-                                                    </Box>
+                                                    <Box variant="awsui-key-label">Temperature</Box>
                                                     <Box>{params?.temperature ?? "N/A"}</Box>
                                                 </div>
                                                 <div>
@@ -648,9 +641,7 @@ export default function AgentConfigView({
                                             })
                                         ) : (
                                             <Box color="text-status-inactive">
-                                                {item.deterministicNodeKey ||
-                                                    item.nodeType ||
-                                                    "-"}
+                                                {item.deterministicNodeKey || item.nodeType || "-"}
                                             </Box>
                                         ),
                                 },
@@ -727,9 +718,7 @@ export default function AgentConfigView({
                                     id: "condition",
                                     header: "Condition",
                                     cell: (item: any) =>
-                                        item.condition || (
-                                            <Box color="text-status-inactive">-</Box>
-                                        ),
+                                        item.condition || <Box color="text-status-inactive">-</Box>,
                                 },
                             ]}
                         />
@@ -743,8 +732,7 @@ export default function AgentConfigView({
                                 <Box variant="awsui-key-label">State Class</Box>
                                 <Box>{config.stateClass}</Box>
                             </div>
-                        ) : config.stateSchema &&
-                          Object.keys(config.stateSchema).length > 0 ? (
+                        ) : config.stateSchema && Object.keys(config.stateSchema).length > 0 ? (
                             <SpaceBetween direction="vertical" size="xs">
                                 {Object.entries(config.stateSchema).map(([key, type]) => (
                                     <Box key={key}>
@@ -817,7 +805,9 @@ export default function AgentConfigView({
                     <ColumnLayout columns={4} variant="text-grid">
                         <div>
                             <Box variant="awsui-key-label">Model</Box>
-                            <Box>{getModelName(config.modelInferenceParameters?.modelId || "")}</Box>
+                            <Box>
+                                {getModelName(config.modelInferenceParameters?.modelId || "")}
+                            </Box>
                         </div>
                         <div>
                             <Box variant="awsui-key-label">Temperature</Box>

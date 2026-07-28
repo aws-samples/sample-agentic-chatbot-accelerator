@@ -27,8 +27,8 @@ import {
 } from "@cloudscape-design/components";
 import { RuntimeSummary } from "../../API";
 import { AppContext } from "../../common/app-context";
+import { EvaluatorConfigType, EvaluatorType, TestCase } from "../../common/types";
 import { resolveRuntimeVersion } from "../../common/utils";
-import { EvaluatorType, TestCase, EvaluatorConfigType } from "../../common/types";
 import {
     listAgentEndpoints as listAgentEndpointsQuery,
     listRuntimeAgents as listRuntimeAgentsQuery,
@@ -66,14 +66,50 @@ interface CreateEvaluatorWizardProps {
 }
 
 const EVALUATOR_TYPE_OPTIONS = [
-    { label: "Output Evaluator", value: EvaluatorType.OUTPUT, description: "Evaluates response accuracy and completeness against expected output" },
-    { label: "Helpfulness Evaluator", value: EvaluatorType.HELPFULNESS, description: "Measures how helpful and useful the agent response is (requires trajectory)" },
-    { label: "Faithfulness Evaluator", value: EvaluatorType.FAITHFULNESS, description: "Checks if the response is faithful to the source content (requires trajectory)" },
-    { label: "Goal Success Rate Evaluator", value: EvaluatorType.GOAL_SUCCESS_RATE, description: "Evaluates whether all user goals were achieved in the conversation (binary: 1.0=success, 0.0=failure)" },
-    { label: "Interactions Evaluator", value: EvaluatorType.INTERACTIONS, description: "Evaluates how well the agent interacts with users, including tone, clarity, and engagement (requires rubric)" },
-    { label: "Tool Selection Evaluator", value: EvaluatorType.TOOL_SELECTION, description: "Evaluates if the agent selected the correct tools (requires trajectory)" },
-    { label: "Tool Parameter Evaluator", value: EvaluatorType.TOOL_PARAMETER, description: "Checks if tool parameters were correctly provided (requires trajectory)" },
-    { label: "Trajectory Evaluator", value: EvaluatorType.TRAJECTORY, description: "Assesses the sequence of actions/tool calls taken by the agent to reach its goal" },
+    {
+        label: "Output Evaluator",
+        value: EvaluatorType.OUTPUT,
+        description: "Evaluates response accuracy and completeness against expected output",
+    },
+    {
+        label: "Helpfulness Evaluator",
+        value: EvaluatorType.HELPFULNESS,
+        description: "Measures how helpful and useful the agent response is (requires trajectory)",
+    },
+    {
+        label: "Faithfulness Evaluator",
+        value: EvaluatorType.FAITHFULNESS,
+        description:
+            "Checks if the response is faithful to the source content (requires trajectory)",
+    },
+    {
+        label: "Goal Success Rate Evaluator",
+        value: EvaluatorType.GOAL_SUCCESS_RATE,
+        description:
+            "Evaluates whether all user goals were achieved in the conversation (binary: 1.0=success, 0.0=failure)",
+    },
+    {
+        label: "Interactions Evaluator",
+        value: EvaluatorType.INTERACTIONS,
+        description:
+            "Evaluates how well the agent interacts with users, including tone, clarity, and engagement (requires rubric)",
+    },
+    {
+        label: "Tool Selection Evaluator",
+        value: EvaluatorType.TOOL_SELECTION,
+        description: "Evaluates if the agent selected the correct tools (requires trajectory)",
+    },
+    {
+        label: "Tool Parameter Evaluator",
+        value: EvaluatorType.TOOL_PARAMETER,
+        description: "Checks if tool parameters were correctly provided (requires trajectory)",
+    },
+    {
+        label: "Trajectory Evaluator",
+        value: EvaluatorType.TRAJECTORY,
+        description:
+            "Assesses the sequence of actions/tool calls taken by the agent to reach its goal",
+    },
     {
         label: "Structured Output Evaluator",
         value: EvaluatorType.STRUCTURED_OUTPUT,
@@ -83,7 +119,11 @@ const EVALUATOR_TYPE_OPTIONS = [
 ];
 
 // Evaluators that require a rubric
-const EVALUATORS_REQUIRING_RUBRIC = [EvaluatorType.OUTPUT, EvaluatorType.TRAJECTORY, EvaluatorType.INTERACTIONS];
+const EVALUATORS_REQUIRING_RUBRIC = [
+    EvaluatorType.OUTPUT,
+    EvaluatorType.TRAJECTORY,
+    EvaluatorType.INTERACTIONS,
+];
 
 export default function CreateEvaluatorWizard({
     onSubmit,
@@ -104,13 +144,7 @@ export default function CreateEvaluatorWizard({
     useEffect(() => {
         if (evaluatorAppConfig?.supportedModels && appConfig) {
             const models = Object.entries(evaluatorAppConfig.supportedModels).map(
-                ([label, value]) => {
-                    const modelValue = (value as string).replace(
-                        "[REGION-PREFIX]",
-                        appConfig.aws_project_region.split("-")[0],
-                    );
-                    return { label, value: modelValue };
-                },
+                ([label, value]) => ({ label, value: value as string }),
             );
             setModelOptions(models);
         }
@@ -148,13 +182,13 @@ export default function CreateEvaluatorWizard({
             customRubric: "", // Legacy
             evaluators: [], // NEW
             testCases: [],
-        }
+        },
     );
 
     // Set default model ID when model options become available
     useEffect(() => {
         if (modelOptions.length > 0 && !config.modelId) {
-            setConfig(prev => ({ ...prev, modelId: modelOptions[0].value }));
+            setConfig((prev) => ({ ...prev, modelId: modelOptions[0].value }));
         }
     }, [modelOptions, config.modelId]);
 
@@ -167,7 +201,9 @@ export default function CreateEvaluatorWizard({
                 const result = await apiClient.graphql({ query: listRuntimeAgentsQuery });
                 const agents = result.data?.listRuntimeAgents || [];
                 // Only show agents that are ready
-                setAvailableAgents(agents.filter((a: RuntimeSummary) => a.status.toLowerCase() === "ready"));
+                setAvailableAgents(
+                    agents.filter((a: RuntimeSummary) => a.status.toLowerCase() === "ready"),
+                );
             } catch (error) {
                 console.error("Failed to fetch agents:", error);
             }
@@ -182,9 +218,7 @@ export default function CreateEvaluatorWizard({
     // This also lets the endpoint/qualifier section render with its saved value.
     useEffect(() => {
         if (config.agentRuntimeId || !config.agentRuntimeName) return;
-        const match = availableAgents.find(
-            (a) => a.agentName === config.agentRuntimeName,
-        );
+        const match = availableAgents.find((a) => a.agentName === config.agentRuntimeName);
         if (match) {
             setConfig((prev) => ({ ...prev, agentRuntimeId: match.agentRuntimeId }));
         }
@@ -204,13 +238,13 @@ export default function CreateEvaluatorWizard({
                     variables: { agentRuntimeId: config.agentRuntimeId },
                 });
                 const endpoints = (result.data?.listAgentEndpoints || []).filter(
-                    (e: string | null): e is string => e !== null
+                    (e: string | null): e is string => e !== null,
                 );
                 setAvailableEndpoints(endpoints);
 
                 // Auto-select first endpoint
                 if (endpoints.length > 0 && !config.qualifier) {
-                    setConfig(prev => ({ ...prev, qualifier: endpoints[0] }));
+                    setConfig((prev) => ({ ...prev, qualifier: endpoints[0] }));
                 }
             } catch (error) {
                 console.error("Failed to fetch endpoints:", error);
@@ -222,7 +256,7 @@ export default function CreateEvaluatorWizard({
     }, [config.agentRuntimeId, apiClient]);
 
     // Parse test cases from JSON string
-    const parseTestCasesJson = (jsonText: string): { cases: TestCase[], error: string } => {
+    const parseTestCasesJson = (jsonText: string): { cases: TestCase[]; error: string } => {
         if (!jsonText.trim()) {
             return { cases: [], error: "" };
         }
@@ -238,22 +272,31 @@ export default function CreateEvaluatorWizard({
             const validatedCases: TestCase[] = parsed.map((item, index) => {
                 // Only name and input are required
                 if (!item.name || !item.input) {
-                    throw new Error(`Test case ${index + 1} is missing required fields (name, input)`);
+                    throw new Error(
+                        `Test case ${index + 1} is missing required fields (name, input)`,
+                    );
                 }
                 return {
                     name: item.name,
                     input: item.input,
                     expected_output: item.expected_output || "", // Optional
                     ...(item.state && { state: item.state }),
-                    ...(item.expected_trajectory && { expected_trajectory: item.expected_trajectory }),
-                    ...(item.expected_interactions && { expected_interactions: item.expected_interactions }),
+                    ...(item.expected_trajectory && {
+                        expected_trajectory: item.expected_trajectory,
+                    }),
+                    ...(item.expected_interactions && {
+                        expected_interactions: item.expected_interactions,
+                    }),
                     metadata: item.metadata || {},
                 };
             });
 
             return { cases: validatedCases, error: "" };
         } catch (error) {
-            return { cases: [], error: error instanceof Error ? error.message : "Failed to parse JSON" };
+            return {
+                cases: [],
+                error: error instanceof Error ? error.message : "Failed to parse JSON",
+            };
         }
     };
 
@@ -263,7 +306,7 @@ export default function CreateEvaluatorWizard({
         setParseError("");
 
         if (files.length === 0) {
-            setConfig(prev => ({ ...prev, testCases: [] }));
+            setConfig((prev) => ({ ...prev, testCases: [] }));
             return;
         }
 
@@ -273,13 +316,13 @@ export default function CreateEvaluatorWizard({
             const { cases, error } = parseTestCasesJson(text);
             if (error) {
                 setParseError(error);
-                setConfig(prev => ({ ...prev, testCases: [] }));
+                setConfig((prev) => ({ ...prev, testCases: [] }));
             } else {
-                setConfig(prev => ({ ...prev, testCases: cases }));
+                setConfig((prev) => ({ ...prev, testCases: cases }));
             }
         } catch (error) {
             setParseError(error instanceof Error ? error.message : "Failed to read file");
-            setConfig(prev => ({ ...prev, testCases: [] }));
+            setConfig((prev) => ({ ...prev, testCases: [] }));
         }
     };
 
@@ -288,7 +331,7 @@ export default function CreateEvaluatorWizard({
         setTestCasesJson(jsonText);
         const { cases, error } = parseTestCasesJson(jsonText);
         setParseError(error);
-        setConfig(prev => ({ ...prev, testCases: cases }));
+        setConfig((prev) => ({ ...prev, testCases: cases }));
     };
 
     // Add evaluator
@@ -298,7 +341,7 @@ export default function CreateEvaluatorWizard({
         const id = `${evaluatorType}-${Date.now()}`;
         const needsRubric = EVALUATORS_REQUIRING_RUBRIC.includes(evaluatorType as EvaluatorType);
 
-        setConfig(prev => ({
+        setConfig((prev) => ({
             ...prev,
             evaluators: [
                 ...prev.evaluators,
@@ -313,15 +356,15 @@ export default function CreateEvaluatorWizard({
 
     // Remove evaluator
     const removeEvaluator = (evaluatorId: string) => {
-        setConfig(prev => ({
+        setConfig((prev) => ({
             ...prev,
-            evaluators: prev.evaluators.filter(e => e.id !== evaluatorId),
+            evaluators: prev.evaluators.filter((e) => e.id !== evaluatorId),
         }));
     };
 
     // Open configure modal for evaluator
     const openConfigureModal = (evaluatorId: string) => {
-        const evaluator = config.evaluators.find(e => e.id === evaluatorId);
+        const evaluator = config.evaluators.find((e) => e.id === evaluatorId);
         if (evaluator) {
             setSelectedEvaluatorId(evaluatorId);
             setTempRubric(evaluator.rubric || defaultRubrics[evaluator.type] || "");
@@ -332,10 +375,10 @@ export default function CreateEvaluatorWizard({
     // Save evaluator configuration
     const saveEvaluatorConfig = () => {
         if (selectedEvaluatorId) {
-            setConfig(prev => ({
+            setConfig((prev) => ({
                 ...prev,
-                evaluators: prev.evaluators.map(e =>
-                    e.id === selectedEvaluatorId ? { ...e, rubric: tempRubric } : e
+                evaluators: prev.evaluators.map((e) =>
+                    e.id === selectedEvaluatorId ? { ...e, rubric: tempRubric } : e,
                 ),
             }));
         }
@@ -359,12 +402,12 @@ export default function CreateEvaluatorWizard({
         }
     };
 
-    const agentOptions = availableAgents.map(agent => ({
+    const agentOptions = availableAgents.map((agent) => ({
         label: agent.agentName,
         value: agent.agentRuntimeId,
     }));
 
-    const endpointOptions = availableEndpoints.map(endpoint => ({
+    const endpointOptions = availableEndpoints.map((endpoint) => ({
         label: endpoint,
         value: endpoint,
     }));
@@ -375,7 +418,7 @@ export default function CreateEvaluatorWizard({
     // automatically when the qualifier or agent changes. Returns "" when the
     // map is missing/unparseable or the qualifier has no entry.
     const selectedAgent = availableAgents.find(
-        agent => agent.agentRuntimeId === config.agentRuntimeId,
+        (agent) => agent.agentRuntimeId === config.agentRuntimeId,
     );
     const resolvedVersion = resolveRuntimeVersion(
         selectedAgent?.qualifierToVersion,
@@ -384,7 +427,7 @@ export default function CreateEvaluatorWizard({
 
     // Get evaluator label
     const getEvaluatorLabel = (type: string) => {
-        return EVALUATOR_TYPE_OPTIONS.find(opt => opt.value === type)?.label || type;
+        return EVALUATOR_TYPE_OPTIONS.find((opt) => opt.value === type)?.label || type;
     };
 
     // Check if evaluator requires rubric
@@ -404,12 +447,14 @@ export default function CreateEvaluatorWizard({
                             <FormField
                                 label="Evaluator Name"
                                 description="Enter a unique name for this evaluator"
-                                errorText={config.name.trim() === "" ? "Evaluator name is required" : ""}
+                                errorText={
+                                    config.name.trim() === "" ? "Evaluator name is required" : ""
+                                }
                             >
                                 <Input
                                     value={config.name}
                                     onChange={({ detail }) =>
-                                        setConfig(prev => ({ ...prev, name: detail.value }))
+                                        setConfig((prev) => ({ ...prev, name: detail.value }))
                                     }
                                     placeholder="Enter evaluator name..."
                                 />
@@ -421,7 +466,10 @@ export default function CreateEvaluatorWizard({
                                 <Textarea
                                     value={config.description}
                                     onChange={({ detail }) =>
-                                        setConfig(prev => ({ ...prev, description: detail.value }))
+                                        setConfig((prev) => ({
+                                            ...prev,
+                                            description: detail.value,
+                                        }))
                                     }
                                     placeholder="Enter evaluator description..."
                                     rows={4}
@@ -430,14 +478,17 @@ export default function CreateEvaluatorWizard({
                             <FormField
                                 label="Evaluation Model"
                                 description="Select the LLM model to use for evaluation scoring"
-                                errorText={config.modelId === "" ? "Evaluation model is required" : ""}
+                                errorText={
+                                    config.modelId === "" ? "Evaluation model is required" : ""
+                                }
                             >
                                 <Select
                                     selectedOption={
-                                        modelOptions.find(opt => opt.value === config.modelId) || null
+                                        modelOptions.find((opt) => opt.value === config.modelId) ||
+                                        null
                                     }
                                     onChange={({ detail }) =>
-                                        setConfig(prev => ({
+                                        setConfig((prev) => ({
                                             ...prev,
                                             modelId: detail.selectedOption?.value || config.modelId,
                                         }))
@@ -456,7 +507,10 @@ export default function CreateEvaluatorWizard({
                                     onChange={({ detail }) => {
                                         const value = parseFloat(detail.value);
                                         if (!isNaN(value) && value >= 0 && value <= 1) {
-                                            setConfig(prev => ({ ...prev, passThreshold: value }));
+                                            setConfig((prev) => ({
+                                                ...prev,
+                                                passThreshold: value,
+                                            }));
                                         }
                                     }}
                                     placeholder="0.8"
@@ -472,7 +526,7 @@ export default function CreateEvaluatorWizard({
                                     onChange={({ detail }) => {
                                         const value = parseInt(detail.value, 10);
                                         if (!isNaN(value) && value >= 1 && value <= 20) {
-                                            setConfig(prev => ({ ...prev, repeatCount: value }));
+                                            setConfig((prev) => ({ ...prev, repeatCount: value }));
                                         }
                                     }}
                                     placeholder="1"
@@ -492,19 +546,24 @@ export default function CreateEvaluatorWizard({
                             <FormField
                                 label="AgentCore Runtime"
                                 description="Select the agent runtime to evaluate"
-                                errorText={config.agentRuntimeId === "" ? "Agent runtime is required" : ""}
+                                errorText={
+                                    config.agentRuntimeId === "" ? "Agent runtime is required" : ""
+                                }
                             >
                                 <Select
                                     selectedOption={
                                         config.agentRuntimeId
-                                            ? agentOptions.find(opt => opt.value === config.agentRuntimeId) || null
+                                            ? agentOptions.find(
+                                                  (opt) => opt.value === config.agentRuntimeId,
+                                              ) || null
                                             : null
                                     }
                                     onChange={({ detail }) => {
                                         const selectedAgent = availableAgents.find(
-                                            a => a.agentRuntimeId === detail.selectedOption?.value
+                                            (a) =>
+                                                a.agentRuntimeId === detail.selectedOption?.value,
                                         );
-                                        setConfig(prev => ({
+                                        setConfig((prev) => ({
                                             ...prev,
                                             agentRuntimeId: detail.selectedOption?.value || "",
                                             agentRuntimeName: selectedAgent?.agentName || "",
@@ -522,16 +581,20 @@ export default function CreateEvaluatorWizard({
                                 <FormField
                                     label="Endpoint/Qualifier"
                                     description="Select the endpoint qualifier for the agent"
-                                    errorText={config.qualifier === "" ? "Endpoint is required" : ""}
+                                    errorText={
+                                        config.qualifier === "" ? "Endpoint is required" : ""
+                                    }
                                 >
                                     <Select
                                         selectedOption={
                                             config.qualifier
-                                                ? endpointOptions.find(opt => opt.value === config.qualifier) || null
+                                                ? endpointOptions.find(
+                                                      (opt) => opt.value === config.qualifier,
+                                                  ) || null
                                                 : null
                                         }
                                         onChange={({ detail }) =>
-                                            setConfig(prev => ({
+                                            setConfig((prev) => ({
                                                 ...prev,
                                                 qualifier: detail.selectedOption?.value || "",
                                             }))
@@ -575,7 +638,8 @@ export default function CreateEvaluatorWizard({
                                 <Select
                                     placeholder="Select an evaluator type to add"
                                     options={EVALUATOR_TYPE_OPTIONS.filter(
-                                        opt => !config.evaluators.some(e => e.type === opt.value)
+                                        (opt) =>
+                                            !config.evaluators.some((e) => e.type === opt.value),
                                     )}
                                     onChange={({ detail }) => {
                                         if (detail.selectedOption) {
@@ -583,17 +647,26 @@ export default function CreateEvaluatorWizard({
                                         }
                                     }}
                                     selectedOption={null}
-                                    disabled={config.evaluators.length >= EVALUATOR_TYPE_OPTIONS.length}
+                                    disabled={
+                                        config.evaluators.length >= EVALUATOR_TYPE_OPTIONS.length
+                                    }
                                     empty="All evaluator types have been added"
                                 />
                             </FormField>
 
                             <Alert type="info" header="Multiple Evaluators">
-                                You can add multiple evaluators to assess different aspects of the agent's response.
-                                Each evaluator will run independently and provide separate scores.
+                                You can add multiple evaluators to assess different aspects of the
+                                agent's response. Each evaluator will run independently and provide
+                                separate scores.
                             </Alert>
 
-                            <Container header={<Header variant="h3">Selected Evaluators ({config.evaluators.length})</Header>}>
+                            <Container
+                                header={
+                                    <Header variant="h3">
+                                        Selected Evaluators ({config.evaluators.length})
+                                    </Header>
+                                }
+                            >
                                 {config.evaluators.length === 0 ? (
                                     <Alert type="warning">
                                         No evaluators selected. Please add at least one evaluator.
@@ -604,14 +677,16 @@ export default function CreateEvaluatorWizard({
                                             {
                                                 id: "type",
                                                 header: "Evaluator Type",
-                                                cell: item => getEvaluatorLabel(item.type),
+                                                cell: (item) => getEvaluatorLabel(item.type),
                                                 width: 200,
                                             },
                                             {
                                                 id: "description",
                                                 header: "Description",
-                                                cell: item => {
-                                                    const option = EVALUATOR_TYPE_OPTIONS.find(opt => opt.value === item.type);
+                                                cell: (item) => {
+                                                    const option = EVALUATOR_TYPE_OPTIONS.find(
+                                                        (opt) => opt.value === item.type,
+                                                    );
                                                     return (
                                                         <Popover
                                                             dismissButton={false}
@@ -620,7 +695,8 @@ export default function CreateEvaluatorWizard({
                                                             triggerType="custom"
                                                             content={
                                                                 <Box padding="xs">
-                                                                    {option?.description || "No description available"}
+                                                                    {option?.description ||
+                                                                        "No description available"}
                                                                 </Box>
                                                             }
                                                         >
@@ -633,24 +709,32 @@ export default function CreateEvaluatorWizard({
                                             {
                                                 id: "rubric",
                                                 header: "Configuration",
-                                                cell: item => {
+                                                cell: (item) => {
                                                     if (evaluatorRequiresRubric(item.type)) {
                                                         return (
                                                             <Button
                                                                 variant="normal"
-                                                                onClick={() => openConfigureModal(item.id)}
+                                                                onClick={() =>
+                                                                    openConfigureModal(item.id)
+                                                                }
                                                             >
-                                                                {item.rubric ? "Edit Rubric" : "Configure"}
+                                                                {item.rubric
+                                                                    ? "Edit Rubric"
+                                                                    : "Configure"}
                                                             </Button>
                                                         );
                                                     }
-                                                    return <span style={{ color: "#666" }}>No configuration needed</span>;
+                                                    return (
+                                                        <span style={{ color: "#666" }}>
+                                                            No configuration needed
+                                                        </span>
+                                                    );
                                                 },
                                             },
                                             {
                                                 id: "actions",
                                                 header: "Actions",
-                                                cell: item => (
+                                                cell: (item) => (
                                                     <Button
                                                         variant="icon"
                                                         iconName="close"
@@ -681,7 +765,7 @@ export default function CreateEvaluatorWizard({
                                 onChange={({ detail }) => {
                                     setInputMode(detail.activeTabId as "file" | "json");
                                     // Clear test cases when switching modes
-                                    setConfig(prev => ({ ...prev, testCases: [] }));
+                                    setConfig((prev) => ({ ...prev, testCases: [] }));
                                     setParseError("");
                                     setUploadedFiles([]);
                                     setTestCasesJson("");
@@ -695,15 +779,26 @@ export default function CreateEvaluatorWizard({
                                                 <FormField
                                                     label="Test Cases JSON File"
                                                     description="Upload a JSON file containing test cases"
-                                                    errorText={inputMode === "file" ? (parseError || (config.testCases.length === 0 ? "At least one test case is required" : "")) : ""}
+                                                    errorText={
+                                                        inputMode === "file"
+                                                            ? parseError ||
+                                                              (config.testCases.length === 0
+                                                                  ? "At least one test case is required"
+                                                                  : "")
+                                                            : ""
+                                                    }
                                                 >
                                                     <FileUpload
-                                                        onChange={({ detail }) => handleFileUpload(detail.value)}
+                                                        onChange={({ detail }) =>
+                                                            handleFileUpload(detail.value)
+                                                        }
                                                         value={uploadedFiles}
                                                         i18nStrings={{
                                                             uploadButtonText: () => "Choose file",
-                                                            dropzoneText: () => "Drop JSON file here",
-                                                            removeFileAriaLabel: () => "Remove file",
+                                                            dropzoneText: () =>
+                                                                "Drop JSON file here",
+                                                            removeFileAriaLabel: () =>
+                                                                "Remove file",
                                                             limitShowFewer: "Show fewer files",
                                                             limitShowMore: "Show more files",
                                                             errorIconAriaLabel: "Error",
@@ -723,11 +818,23 @@ export default function CreateEvaluatorWizard({
                                                 <FormField
                                                     label="Test Cases JSON"
                                                     description="Enter test cases as a JSON array"
-                                                    errorText={inputMode === "json" ? (parseError || (config.testCases.length === 0 && testCasesJson.trim() !== "" ? "Invalid JSON format" : (config.testCases.length === 0 ? "At least one test case is required" : ""))) : ""}
+                                                    errorText={
+                                                        inputMode === "json"
+                                                            ? parseError ||
+                                                              (config.testCases.length === 0 &&
+                                                              testCasesJson.trim() !== ""
+                                                                  ? "Invalid JSON format"
+                                                                  : config.testCases.length === 0
+                                                                    ? "At least one test case is required"
+                                                                    : "")
+                                                            : ""
+                                                    }
                                                 >
                                                     <Textarea
                                                         value={testCasesJson}
-                                                        onChange={({ detail }) => handleJsonInput(detail.value)}
+                                                        onChange={({ detail }) =>
+                                                            handleJsonInput(detail.value)
+                                                        }
                                                         placeholder={`[
   {
     "name": "knowledge-1",
@@ -751,9 +858,11 @@ export default function CreateEvaluatorWizard({
                             />
 
                             <Alert type="info" header="Test Case Format">
-                                Each test case must have: <strong>name</strong> and <strong>input</strong>. The fields <strong>expected_output</strong> and <strong>metadata</strong> are optional.
+                                Each test case must have: <strong>name</strong> and{" "}
+                                <strong>input</strong>. The fields <strong>expected_output</strong>{" "}
+                                and <strong>metadata</strong> are optional.
                                 <pre style={{ margin: "8px 0 0 0", fontSize: "12px" }}>
-{`[
+                                    {`[
   {
     "name": "knowledge-1",
     "input": "What is the capital of France?",
@@ -770,29 +879,37 @@ export default function CreateEvaluatorWizard({
                             </Alert>
 
                             {config.testCases.length > 0 && (
-                                <Container header={<Header variant="h3">Parsed Test Cases ({config.testCases.length})</Header>}>
+                                <Container
+                                    header={
+                                        <Header variant="h3">
+                                            Parsed Test Cases ({config.testCases.length})
+                                        </Header>
+                                    }
+                                >
                                     <Table
                                         items={config.testCases.slice(0, 10)}
                                         columnDefinitions={[
                                             {
                                                 id: "name",
                                                 header: "Name",
-                                                cell: item => item.name,
+                                                cell: (item) => item.name,
                                                 width: 150,
                                             },
                                             {
                                                 id: "input",
                                                 header: "Input",
-                                                cell: item => (
+                                                cell: (item) => (
                                                     <span title={item.input}>
-                                                        {item.input.length > 50 ? `${item.input.substring(0, 50)}...` : item.input}
+                                                        {item.input.length > 50
+                                                            ? `${item.input.substring(0, 50)}...`
+                                                            : item.input}
                                                     </span>
                                                 ),
                                             },
                                             {
                                                 id: "expected_output",
                                                 header: "Expected Output",
-                                                cell: item => (
+                                                cell: (item) => (
                                                     <span
                                                         style={{
                                                             wordBreak: "break-word",
@@ -808,7 +925,11 @@ export default function CreateEvaluatorWizard({
                                         variant="embedded"
                                     />
                                     {config.testCases.length > 10 && (
-                                        <Box padding="s" textAlign="center" color="text-body-secondary">
+                                        <Box
+                                            padding="s"
+                                            textAlign="center"
+                                            color="text-body-secondary"
+                                        >
                                             Showing 10 of {config.testCases.length} test cases
                                         </Box>
                                     )}
@@ -831,28 +952,54 @@ export default function CreateEvaluatorWizard({
 
                             <Container header={<Header variant="h3">Basic Details</Header>}>
                                 <SpaceBetween direction="vertical" size="xs">
-                                    <Box><strong>Name:</strong> {config.name}</Box>
-                                    <Box><strong>Description:</strong> {config.description || "N/A"}</Box>
-                                    <Box><strong>Evaluation Model:</strong> {modelOptions.find(opt => opt.value === config.modelId)?.label || config.modelId}</Box>
-                                    <Box><strong>Pass Threshold:</strong> {(config.passThreshold * 100).toFixed(0)}%</Box>
-                                    <Box><strong>Repetitions per case:</strong> {config.repeatCount}</Box>
+                                    <Box>
+                                        <strong>Name:</strong> {config.name}
+                                    </Box>
+                                    <Box>
+                                        <strong>Description:</strong> {config.description || "N/A"}
+                                    </Box>
+                                    <Box>
+                                        <strong>Evaluation Model:</strong>{" "}
+                                        {modelOptions.find((opt) => opt.value === config.modelId)
+                                            ?.label || config.modelId}
+                                    </Box>
+                                    <Box>
+                                        <strong>Pass Threshold:</strong>{" "}
+                                        {(config.passThreshold * 100).toFixed(0)}%
+                                    </Box>
+                                    <Box>
+                                        <strong>Repetitions per case:</strong> {config.repeatCount}
+                                    </Box>
                                 </SpaceBetween>
                             </Container>
 
                             <Container header={<Header variant="h3">Agent Configuration</Header>}>
                                 <SpaceBetween direction="vertical" size="xs">
-                                    <Box><strong>Agent Runtime:</strong> {config.agentRuntimeName}</Box>
-                                    <Box><strong>Endpoint:</strong> {config.qualifier}</Box>
+                                    <Box>
+                                        <strong>Agent Runtime:</strong> {config.agentRuntimeName}
+                                    </Box>
+                                    <Box>
+                                        <strong>Endpoint:</strong> {config.qualifier}
+                                    </Box>
                                 </SpaceBetween>
                             </Container>
 
-                            <Container header={<Header variant="h3">Evaluators ({config.evaluators.length})</Header>}>
+                            <Container
+                                header={
+                                    <Header variant="h3">
+                                        Evaluators ({config.evaluators.length})
+                                    </Header>
+                                }
+                            >
                                 <SpaceBetween direction="vertical" size="xs">
                                     {config.evaluators.map((evaluator, index) => (
                                         <Box key={evaluator.id}>
-                                            <strong>{index + 1}.</strong> {getEvaluatorLabel(evaluator.type)}
+                                            <strong>{index + 1}.</strong>{" "}
+                                            {getEvaluatorLabel(evaluator.type)}
                                             {evaluator.rubric && (
-                                                <span style={{ color: "#666", marginLeft: "8px" }}>(custom rubric)</span>
+                                                <span style={{ color: "#666", marginLeft: "8px" }}>
+                                                    (custom rubric)
+                                                </span>
                                             )}
                                         </Box>
                                     ))}
@@ -860,7 +1007,9 @@ export default function CreateEvaluatorWizard({
                             </Container>
 
                             <Container header={<Header variant="h3">Test Cases</Header>}>
-                                <Box><strong>Total Test Cases:</strong> {config.testCases.length}</Box>
+                                <Box>
+                                    <strong>Total Test Cases:</strong> {config.testCases.length}
+                                </Box>
                             </Container>
                         </SpaceBetween>
                     </Container>
@@ -873,15 +1022,20 @@ export default function CreateEvaluatorWizard({
         <>
             <Wizard
                 i18nStrings={{
-                    stepNumberLabel: stepNumber => `Step ${stepNumber}`,
-                    collapsedStepsLabel: (stepNumber, stepsCount) => `Step ${stepNumber} of ${stepsCount}`,
+                    stepNumberLabel: (stepNumber) => `Step ${stepNumber}`,
+                    collapsedStepsLabel: (stepNumber, stepsCount) =>
+                        `Step ${stepNumber} of ${stepsCount}`,
                     navigationAriaLabel: "Steps",
                     cancelButton: "Cancel",
                     previousButton: "Previous",
                     nextButton: "Next",
                     submitButton: isCreating
-                        ? (isEditMode ? "Saving..." : "Creating...")
-                        : (isEditMode ? "Save Changes" : "Create Evaluator"),
+                        ? isEditMode
+                            ? "Saving..."
+                            : "Creating..."
+                        : isEditMode
+                          ? "Save Changes"
+                          : "Create Evaluator",
                 }}
                 onNavigate={({ detail }) => setActiveStepIndex(detail.requestedStepIndex)}
                 activeStepIndex={activeStepIndex}
@@ -901,25 +1055,30 @@ export default function CreateEvaluatorWizard({
 
             {/* Configure Evaluator Modal */}
             {configModalVisible && selectedEvaluatorId && (
-                <div style={{
-                    position: "fixed",
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    backgroundColor: "rgba(0, 0, 0, 0.5)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    zIndex: 1000,
-                }}>
+                <div
+                    style={{
+                        position: "fixed",
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        backgroundColor: "rgba(0, 0, 0, 0.5)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        zIndex: 1000,
+                    }}
+                >
                     <Container
                         header={
                             <Header
                                 variant="h2"
                                 actions={
                                     <SpaceBetween direction="horizontal" size="xs">
-                                        <Button variant="link" onClick={() => setConfigModalVisible(false)}>
+                                        <Button
+                                            variant="link"
+                                            onClick={() => setConfigModalVisible(false)}
+                                        >
                                             Cancel
                                         </Button>
                                         <Button variant="primary" onClick={saveEvaluatorConfig}>
@@ -945,8 +1104,9 @@ export default function CreateEvaluatorWizard({
                                 />
                             </FormField>
                             <Alert type="info">
-                                The rubric defines how the evaluator should score responses.
-                                Include clear criteria and scoring guidelines (1.0 = excellent, 0.5 = acceptable, 0.0 = poor).
+                                The rubric defines how the evaluator should score responses. Include
+                                clear criteria and scoring guidelines (1.0 = excellent, 0.5 =
+                                acceptable, 0.0 = poor).
                             </Alert>
                         </SpaceBetween>
                     </Container>

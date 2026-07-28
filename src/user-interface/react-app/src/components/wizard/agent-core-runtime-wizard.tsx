@@ -237,13 +237,7 @@ export default function AgentCoreRuntimeCreatorWizard({
     useEffect(() => {
         if (appConfig && appConfig.aws_bedrock_supported_models) {
             const models = Object.entries(appConfig.aws_bedrock_supported_models).map(
-                ([label, value]) => ({
-                    label,
-                    value: value.replace(
-                        "[REGION-PREFIX]",
-                        appConfig.aws_project_region.split("-")[0],
-                    ),
-                }),
+                ([label, value]) => ({ label, value }),
             );
             setModelOptions(models);
 
