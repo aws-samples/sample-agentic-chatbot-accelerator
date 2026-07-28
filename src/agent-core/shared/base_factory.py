@@ -280,12 +280,19 @@ class BaseAgentFactory:
         ``max_tokens``). MUST NOT pass any Converse-only arg (``cache_prompt``,
         ``additional_request_fields``, ``stop_sequences``, ``boto_session``).
 
+        ``temperature`` is deliberately NOT forwarded: the GPT-5.x reasoning
+        models on the Mantle Responses surface reject it with
+        ``400 unsupported_parameter: 'temperature' is not supported with this
+        model`` (observed live in T6 for ``openai.gpt-5.6-luna`` and
+        ``openai.gpt-5.5``). This mirrors the Anthropic branch, which also omits
+        sampling params for the newest models.
+
         Args:
             model_id (str): Mantle model id (e.g. ``"openai.gpt-5.4"``).
             max_tokens (int): Maximum tokens for generation, passed as the
                 Responses-API ``max_output_tokens``.
-            temperature (float): Sampling temperature (accepted by GPT-5.x on the
-                Responses surface).
+            temperature (float): Sampling temperature. Accepted for a uniform
+                builder signature but intentionally not sent (see above).
             reasoning_budget (ReasoningEffort | int | None): When a
                 ``ReasoningEffort`` is given, mapped to
                 ``params["reasoning"] = {"effort": <low|medium|high>}``. An int
@@ -301,7 +308,6 @@ class BaseAgentFactory:
 
         params: dict[str, Any] = {
             "max_output_tokens": max_tokens,
-            "temperature": temperature,
         }
         if isinstance(reasoning_budget, ReasoningEffort):
             params["reasoning"] = {"effort": reasoning_budget.value}

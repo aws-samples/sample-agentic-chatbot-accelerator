@@ -184,11 +184,27 @@ def test_build_openai_responses_mantle_wires_params_and_mantle_config():
             temperature=0.7,
         )
 
+    # temperature is intentionally NOT sent: GPT-5.x on the Mantle Responses
+    # surface 400s on it (T6 live finding). Only max_output_tokens is forwarded.
     responses_cls.assert_called_once_with(
         model_id="openai.gpt-5.4",
-        params={"max_output_tokens": 512, "temperature": 0.7},
+        params={"max_output_tokens": 512},
         bedrock_mantle_config={"region": "us-west-2"},
     )
+
+
+def test_build_openai_responses_mantle_omits_temperature():
+    """GPT-5.x rejects temperature on the Responses surface; must not be sent."""
+    with patch(_RESPONSES_TARGET) as responses_cls:
+        BaseAgentFactory._build_openai_responses_mantle(
+            model_id="openai.gpt-5.4",
+            max_tokens=512,
+            temperature=0.5,
+        )
+
+    _, kwargs = responses_cls.call_args
+    assert "temperature" not in kwargs["params"]
+    assert "temperature" not in kwargs
 
 
 def test_build_openai_responses_mantle_maps_reasoning_effort():
