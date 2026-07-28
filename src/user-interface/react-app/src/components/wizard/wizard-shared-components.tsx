@@ -49,10 +49,10 @@ export interface AgentConfigSectionProps {
     onConversationManagerChange: (value: "null" | "sliding_window" | "summarizing") => void;
     useMemory: boolean;
     onUseMemoryChange: (checked: boolean) => void;
-    /** Optional reasoning budget — integer (tokens) or string ("low"/"medium"/"high") */
-    reasoningBudget?: number | string;
-    /** Callback when reasoning budget changes; undefined means disabled */
-    onReasoningBudgetChange?: (value: number | string | undefined) => void;
+    /** Optional reasoning effort level ("low"/"medium"/"high") */
+    reasoningBudget?: string;
+    /** Callback when reasoning effort changes; undefined means disabled */
+    onReasoningBudgetChange?: (value: string | undefined) => void;
 }
 
 export function AgentConfigSection({
@@ -108,9 +108,7 @@ export function AgentConfigSection({
                                         checked={reasoningEnabled}
                                         onChange={({ detail }) => {
                                             if (detail.checked) {
-                                                onReasoningBudgetChange(
-                                                    reasoningType === "int" ? 1024 : "medium",
-                                                );
+                                                onReasoningBudgetChange("medium");
                                             } else {
                                                 onReasoningBudgetChange(undefined);
                                             }
@@ -119,36 +117,7 @@ export function AgentConfigSection({
                                         Enable extended thinking
                                     </Checkbox>
 
-                                    {reasoningEnabled && reasoningType === "int" && (
-                                        <FormField
-                                            label="Reasoning Budget (tokens)"
-                                            description="Minimum 1024 tokens"
-                                            errorText={
-                                                typeof reasoningBudget === "number" &&
-                                                reasoningBudget < 1024
-                                                    ? "Budget must be at least 1024 tokens"
-                                                    : ""
-                                            }
-                                        >
-                                            <Input
-                                                type="number"
-                                                value={
-                                                    reasoningBudget != null
-                                                        ? reasoningBudget.toString()
-                                                        : ""
-                                                }
-                                                onChange={({ detail }) => {
-                                                    const val = parseInt(detail.value);
-                                                    if (!isNaN(val)) {
-                                                        onReasoningBudgetChange(val);
-                                                    }
-                                                }}
-                                                step={256}
-                                            />
-                                        </FormField>
-                                    )}
-
-                                    {reasoningEnabled && reasoningType === "effort" && (
+                                    {reasoningEnabled && (
                                         <FormField
                                             label="Reasoning Effort"
                                             description="Select the reasoning effort level"

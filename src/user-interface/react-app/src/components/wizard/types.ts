@@ -51,7 +51,7 @@ export interface AgentCoreRuntimeConfiguration {
             temperature: number;
             maxTokens: number;
         };
-        reasoningBudget?: number | string;
+        reasoningBudget?: string;
     };
     instructions: string;
     /** Capability blurb published in this agent's A2A agent card. */
@@ -84,7 +84,7 @@ export interface SwarmAgentDefinition {
     modelInferenceParameters: {
         modelId: string;
         parameters: { temperature: number; maxTokens: number };
-        reasoningBudget?: number | string;
+        reasoningBudget?: string;
     };
     tools: string[];
     toolParameters: { [toolName: string]: any };
@@ -198,7 +198,7 @@ export interface AgentsAsToolsConfiguration {
     modelInferenceParameters: {
         modelId: string;
         parameters: { temperature: number; maxTokens: number };
-        reasoningBudget?: number | string;
+        reasoningBudget?: string;
     };
     instructions: string;
     tools?: string[];

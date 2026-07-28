@@ -146,7 +146,7 @@ def test_non_mantle_routes_to_bedrock(model_id):
 
 def test_non_mantle_bedrock_kwargs_unchanged_for_caching_reasoning_model():
     """A caching + reasoning Anthropic Converse id keeps its exact model_args."""
-    model_id = "anthropic.claude-3-7-sonnet-20250219-v1:0"
+    model_id = "anthropic.claude-sonnet-4-6"
     with patch("shared.base_factory.mantle_support.is_on_mantle", return_value=False):
         with patch("shared.base_factory.BedrockModel") as bedrock_cls:
             BaseAgentFactory.create_model(
@@ -155,17 +155,19 @@ def test_non_mantle_bedrock_kwargs_unchanged_for_caching_reasoning_model():
                 temperature=0.9,
                 stop_sequences=["STOP"],
                 enable_caching=True,
-                reasoning_budget=4096,
+                reasoning_budget=ReasoningEffort.HIGH,
             )
 
     _, kwargs = bedrock_cls.call_args
     assert kwargs["model_id"] == model_id
     assert kwargs["max_tokens"] == 2048
     assert kwargs["stop_sequences"] == ["STOP"]
-    # 3.7-sonnet supports caching and takes an integer reasoning budget.
+    # sonnet-4-6 supports caching and takes an effort-based reasoning budget:
+    # an adaptive thinking block paired with an output_config effort.
     assert kwargs["cache_prompt"] == "default"
     assert kwargs["additional_request_fields"] == {
-        "thinking": {"type": "enabled", "budget_tokens": 4096}
+        "output_config": {"effort": "high"},
+        "thinking": {"type": "adaptive"},
     }
     # Reasoning-enabled Anthropic Converse models drop temperature by design.
     assert "temperature" not in kwargs

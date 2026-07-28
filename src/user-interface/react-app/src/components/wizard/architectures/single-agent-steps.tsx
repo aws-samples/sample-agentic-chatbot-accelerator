@@ -535,11 +535,8 @@ export function isSingleAgentStepValid(
         const budget = config.modelInferenceParameters.reasoningBudget;
         if (budget != null) {
             const rType = getReasoningType(config.modelInferenceParameters.modelId);
-            if (rType === "int") {
-                if (!(typeof budget === "number" && budget >= 1024)) return false;
-            } else if (rType === "effort") {
-                if (!(typeof budget === "string" && ["low", "medium", "high"].includes(budget)))
-                    return false;
+            if (rType === "effort") {
+                if (!["low", "medium", "high"].includes(budget)) return false;
             } else {
                 // Model doesn't support reasoning but budget is set — invalid
                 return false;

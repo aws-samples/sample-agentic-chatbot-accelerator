@@ -135,26 +135,22 @@ export default function AgentConfigView({
         return modelId; // fallback to showing the ID if no match found
     };
 
-    const isThinkingEnabled = (reasoningBudget: number | string | null | undefined): boolean => {
+    const isThinkingEnabled = (reasoningBudget: string | null | undefined): boolean => {
         return (
             reasoningBudget !== undefined &&
             reasoningBudget !== null &&
-            reasoningBudget !== "disabled" &&
-            reasoningBudget !== 0
+            reasoningBudget !== "disabled"
         );
     };
 
-    const renderThinkingStatus = (reasoningBudget: number | string | null | undefined) => {
+    const renderThinkingStatus = (reasoningBudget: string | null | undefined) => {
         if (isThinkingEnabled(reasoningBudget)) {
-            const budgetLabel =
-                typeof reasoningBudget === "number"
-                    ? `${reasoningBudget} tokens`
-                    : String(reasoningBudget);
+            const budgetLabel = String(reasoningBudget);
             return (
                 <SpaceBetween direction="vertical" size="xxs">
                     <StatusIndicator type="success">Enabled</StatusIndicator>
                     <Box variant="awsui-key-label" display="inline">
-                        Budget:{" "}
+                        Effort:{" "}
                         <Box display="inline" fontWeight="normal">
                             {budgetLabel}
                         </Box>
