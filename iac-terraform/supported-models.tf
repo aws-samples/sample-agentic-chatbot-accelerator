@@ -18,6 +18,13 @@ SPDX-License-Identifier: MIT-0
 # NOTE: the region key list is duplicated in the aws_region validation block in
 # variables.tf. Terraform cannot reference a local from a variable validation,
 # so the two must be kept in sync by hand.
+#
+# DELIBERATE OMISSION — `xai.grok-4.3`: on Mantle and otherwise working, but its
+# tool-calling is incompatible with the Strands streaming contract (xAI returns
+# tool calls as a complete response needing a fresh call with the results;
+# Strands pauses and resumes one stream). See strands-agents/harness-sdk#1340.
+# The tool runs, the stream never resumes, and the caller sees a read timeout.
+# Re-add once that issue lands.
 # -----------------------------------------------------------------------------
 locals {
   supported_models_by_region = {
@@ -59,8 +66,6 @@ locals {
       "Qwen3 Next 80B A3B"   = "qwen.qwen3-next-80b-a3b-instruct"
       "Qwen3 32B"            = "qwen.qwen3-32b"
       "Qwen3 235B A22B 2507" = "qwen.qwen3-235b-a22b-2507"
-      # "xAI"
-      "Grok 4.3" = "xai.grok-4.3"
       # Z.AI
       "GLM 5"         = "zai.glm-5"
       "GLM 4.7 Flash" = "zai.glm-4.7-flash"
@@ -99,8 +104,6 @@ locals {
       "Qwen3 Next 80B A3B"   = "qwen.qwen3-next-80b-a3b-instruct"
       "Qwen3 32B"            = "qwen.qwen3-32b"
       "Qwen3 235B A22B 2507" = "qwen.qwen3-235b-a22b-2507"
-      # "xAI"
-      "Grok 4.3" = "xai.grok-4.3"
       # Z.AI
       "GLM 5"         = "zai.glm-5"
       "GLM 4.7 Flash" = "zai.glm-4.7-flash"
@@ -139,8 +142,6 @@ locals {
       "Qwen3 Next 80B A3B"   = "qwen.qwen3-next-80b-a3b-instruct"
       "Qwen3 32B"            = "qwen.qwen3-32b"
       "Qwen3 235B A22B 2507" = "qwen.qwen3-235b-a22b-2507"
-      # "xAI"
-      "Grok 4.3" = "xai.grok-4.3"
       # Z.AI
       "GLM 5"         = "zai.glm-5"
       "GLM 4.7 Flash" = "zai.glm-4.7-flash"

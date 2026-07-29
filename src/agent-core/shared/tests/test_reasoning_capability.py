@@ -307,17 +307,51 @@ _US_EAST_1_CATALOG: list[tuple[str, frozenset[ReasoningEffort] | None]] = [
     ("qwen.qwen3-next-80b-a3b-instruct", None),
     ("qwen.qwen3-32b", None),
     ("qwen.qwen3-235b-a22b-2507", None),
-    # `xhigh` accepted but undocumented on the card.
-    ("xai.grok-4.3", _NO_MAX),
+    # NOTE: xai.grok-4.3 is deliberately ABSENT from the region catalog. Its
+    # tool-calling is incompatible with the Strands streaming contract: xAI
+    # returns tool calls as a *complete* response and requires a fresh API call
+    # carrying the results, whereas Strands pauses one stream and resumes it
+    # in place. See strands-agents/harness-sdk#1340. Symptom is a read timeout,
+    # not an error — the tool runs, the stream never resumes.
+    # Unrelated to reasoning: reproduced at both `none` and `low`, and outside
+    # our container with a plain openai client (T4 R9).
+    # Its REASONING_CAPABILITIES entry is retained: the table describes Bedrock
+    # capability, the catalog decides what is offerable. Re-add here when the
+    # catalog does.
     ("zai.glm-5", None),
     ("zai.glm-4.7-flash", None),
 ]
 
 
-def test_catalog_sweep_covers_all_29_models():
-    """Guard against a row being dropped from the sweep list."""
-    assert len(_US_EAST_1_CATALOG) == 29
-    assert len({model_id for model_id, _ in _US_EAST_1_CATALOG}) == 29
+def test_catalog_sweep_has_no_duplicate_rows():
+    assert len({model_id for model_id, _ in _US_EAST_1_CATALOG}) == len(
+        _US_EAST_1_CATALOG
+    )
+
+
+def test_catalog_sweep_matches_the_real_region_catalog():
+    """The sweep list must cover exactly what us-east-1 actually offers.
+
+    Parsed from the CDK catalog rather than pinned to a count: a hand-maintained
+    count silently goes stale the moment a model is added or removed (which is
+    how removing grok-4.3 left this list wrong while every test still passed).
+    """
+    # tests/ -> shared/ -> agent-core/ -> src/ -> repo root
+    catalog_ts = (
+        Path(__file__).resolve().parents[4] / "iac-cdk/lib/shared/supported-models.ts"
+    )
+    source = catalog_ts.read_text()
+    # Slice out the us-east-1 block, then take the literal id from each entry.
+    block = source.split('"us-east-1": {', 1)[1].split("\n    },", 1)[0]
+    catalog_ids = set(re.findall(r':\s*"([^"]+)"', block))
+    swept_ids = {model_id for model_id, _ in _US_EAST_1_CATALOG}
+
+    assert catalog_ids, "failed to parse the us-east-1 catalog block"
+    assert swept_ids == catalog_ids, (
+        f"sweep list is out of sync with the region catalog.\n"
+        f"  only in catalog: {sorted(catalog_ids - swept_ids)}\n"
+        f"  only in sweep:   {sorted(swept_ids - catalog_ids)}"
+    )
 
 
 @pytest.mark.parametrize("model_id,expected_efforts", _US_EAST_1_CATALOG)

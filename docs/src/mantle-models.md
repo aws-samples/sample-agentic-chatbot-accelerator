@@ -48,7 +48,18 @@ passthrough; requesting them on `/v1` returns
 | Provider         | Model ids                                                            |
 | ---------------- | -------------------------------------------------------------------- |
 | Google (Gemma 4) | `google.gemma-4-e2b`, `google.gemma-4-26b-a4b`, `google.gemma-4-31b` |
-| xAI              | `xai.grok-4.3`                                                       |
+| xAI              | `xai.grok-4.3` ⚠️ see below                                           |
+
+> ⚠️ **`xai.grok-4.3` is routed correctly but not offered in the catalog.** Plain
+> completions work; **tool calls hang**. xAI returns tool calls as a *complete*
+> response and expects a fresh API call carrying the results, while Strands pauses
+> a single stream and resumes it in place — see
+> [strands-agents/harness-sdk#1340](https://github.com/strands-agents/harness-sdk/issues/1340).
+> The tool executes and the stream never resumes, so the caller sees a read
+> timeout rather than an error. Because every agent in this accelerator is
+> tool-capable, the model is omitted from `supported-models.ts`/`.tf` rather than
+> shipped as an option that hangs. Its reasoning-capability entry is retained, so
+> re-adding it to the catalog is the only change needed once #1340 lands.
 
 ### Responses API — `/openai/v1` (OpenAIResponsesModel)
 

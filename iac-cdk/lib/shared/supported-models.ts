@@ -19,6 +19,15 @@ export type RegionKeyedModels = Record<string, Record<string, string>>;
  * per-region lists. Editing this constant + redeploying is how the offered set changes.
  *
  * INVARIANT: every value is a literal Bedrock/Mantle model id (no prefix token).
+ *
+ * DELIBERATE OMISSION — `xai.grok-4.3`: served on Mantle and otherwise working,
+ * but its tool-calling is incompatible with the Strands streaming contract. xAI
+ * returns tool calls as a *complete* response and expects a fresh API call
+ * carrying the results, whereas Strands pauses a single stream and resumes it in
+ * place (strands-agents/harness-sdk#1340). The tool executes, the stream never
+ * resumes, and the caller sees a read timeout rather than an error. Since every
+ * agent here is tool-capable, offering it would surface as a hang. Re-add once
+ * that issue lands.
  */
 export const SUPPORTED_MODELS: RegionKeyedModels = {
     // N. Virginia
@@ -59,8 +68,6 @@ export const SUPPORTED_MODELS: RegionKeyedModels = {
         "Qwen3 Next 80B A3B": "qwen.qwen3-next-80b-a3b-instruct",
         "Qwen3 32B": "qwen.qwen3-32b",
         "Qwen3 235B A22B 2507": "qwen.qwen3-235b-a22b-2507",
-        // "xAI"
-        "Grok 4.3": "xai.grok-4.3",
         // Z.AI
         "GLM 5": "zai.glm-5",
         "GLM 4.7 Flash": "zai.glm-4.7-flash",
@@ -99,8 +106,6 @@ export const SUPPORTED_MODELS: RegionKeyedModels = {
         "Qwen3 Next 80B A3B": "qwen.qwen3-next-80b-a3b-instruct",
         "Qwen3 32B": "qwen.qwen3-32b",
         "Qwen3 235B A22B 2507": "qwen.qwen3-235b-a22b-2507",
-        // "xAI"
-        "Grok 4.3": "xai.grok-4.3",
         // Z.AI
         "GLM 5": "zai.glm-5",
         "GLM 4.7 Flash": "zai.glm-4.7-flash",
@@ -139,8 +144,6 @@ export const SUPPORTED_MODELS: RegionKeyedModels = {
         "Qwen3 Next 80B A3B": "qwen.qwen3-next-80b-a3b-instruct",
         "Qwen3 32B": "qwen.qwen3-32b",
         "Qwen3 235B A22B 2507": "qwen.qwen3-235b-a22b-2507",
-        // "xAI"
-        "Grok 4.3": "xai.grok-4.3",
         // Z.AI
         "GLM 5": "zai.glm-5",
         "GLM 4.7 Flash": "zai.glm-4.7-flash",
