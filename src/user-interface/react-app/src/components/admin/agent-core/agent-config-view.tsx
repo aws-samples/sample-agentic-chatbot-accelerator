@@ -25,6 +25,7 @@ import {
     GraphConfiguration,
     SwarmConfiguration,
 } from "../../wizard/types";
+import { getReasoningCapability } from "../../wizard/wizard-utils";
 
 const apiClient = generateClient();
 
@@ -134,13 +135,32 @@ export default function AgentConfigView({
         return (
             reasoningBudget !== undefined &&
             reasoningBudget !== null &&
-            reasoningBudget !== "disabled"
+            reasoningBudget !== "disabled" &&
+            reasoningBudget !== "none"
         );
     };
 
-    const renderThinkingStatus = (reasoningBudget: string | null | undefined) => {
+    /**
+     * Render the saved reasoning setting verbatim.
+     *
+     * Historical configs can carry an effort the model no longer accepts (saved
+     * before per-model validation landed, or after a provider change), so the
+     * saved value is always shown as-is and only *annotated* when it is no
+     * longer in the model's accepted set — never coerced or blanked.
+     *
+     * `modelId` is optional because some render paths have no model id to hand;
+     * without it the accepted-set annotation and the always-on wording are
+     * simply omitted.
+     */
+    const renderThinkingStatus = (
+        reasoningBudget: string | null | undefined,
+        modelId?: string | null,
+    ) => {
+        const capability = modelId ? getReasoningCapability(modelId) : null;
+
         if (isThinkingEnabled(reasoningBudget)) {
             const budgetLabel = String(reasoningBudget);
+            const isAccepted = capability?.efforts.includes(budgetLabel) ?? true;
             return (
                 <SpaceBetween direction="vertical" size="xxs">
                     <StatusIndicator type="success">Enabled</StatusIndicator>
@@ -150,7 +170,31 @@ export default function AgentConfigView({
                             {budgetLabel}
                         </Box>
                     </Box>
+                    {!isAccepted && (
+                        <StatusIndicator type="warning">
+                            This model no longer accepts &quot;{budgetLabel}&quot; (accepted:{" "}
+                            {capability?.efforts.join(", ")})
+                        </StatusIndicator>
+                    )}
                 </SpaceBetween>
+            );
+        }
+
+        // Explicitly disabled, where the model supports it.
+        if (reasoningBudget === "none") {
+            return <StatusIndicator type="stopped">Disabled (none)</StatusIndicator>;
+        }
+
+        // Nothing saved. For an always-on model that is not "off" — omitting the
+        // parameter still yields reasoning at the model's own default.
+        if (capability && !capability.canDisable) {
+            return (
+                <StatusIndicator type="info">
+                    Always on
+                    {capability.defaultEffort
+                        ? ` (model default: ${capability.defaultEffort})`
+                        : ""}
+                </StatusIndicator>
             );
         }
         return <StatusIndicator type="stopped">Disabled</StatusIndicator>;
@@ -317,6 +361,8 @@ export default function AgentConfigView({
                                                         {renderThinkingStatus(
                                                             inlineAgent.modelInferenceParameters
                                                                 ?.reasoningBudget,
+                                                            inlineAgent.modelInferenceParameters
+                                                                ?.modelId,
                                                         )}
                                                     </Box>
                                                 </div>
@@ -490,6 +536,7 @@ export default function AgentConfigView({
                                 <Box>
                                     {renderThinkingStatus(
                                         config.modelInferenceParameters?.reasoningBudget,
+                                        config.modelInferenceParameters?.modelId,
                                     )}
                                 </Box>
                             </div>
@@ -826,6 +873,7 @@ export default function AgentConfigView({
                             <Box>
                                 {renderThinkingStatus(
                                     config.modelInferenceParameters?.reasoningBudget,
+                                    config.modelInferenceParameters?.modelId,
                                 )}
                             </Box>
                         </div>
