@@ -80,24 +80,22 @@ def test_documented_defaults_are_themselves_accepted(fragment: str):
 # --------------------------------------------------------------------------- #
 
 
-def test_gpt_56_keeps_its_six_levels():
-    """The six-level set must not be narrowed by a shorter gpt-5 fragment."""
+def test_gpt_56_accepts_all_six_levels():
+    """GPT-5.6 is the only family that takes `max` (verified live 2026-07-29)."""
     capability = reasoning_capability_for("openai.gpt-5.6-luna")
     assert capability is not None
-    assert ReasoningEffort.XHIGH in capability.efforts
-    assert ReasoningEffort.MAX in capability.efforts
-    assert ReasoningEffort.NONE in capability.efforts
+    assert capability.efforts == set(ReasoningEffort)
 
 
-def test_gpt_55_is_three_level():
-    """GPT-5.5 documents only low/medium/high — it must not inherit 5.6's set."""
+def test_gpt_55_takes_everything_except_max():
+    """`max` must not leak from the gpt-5.6 entry via the shared `gpt-5.` prefix.
+
+    5.5 rejects `max` ("not supported with the 'openai.gpt-5.5' model") but does
+    accept none+xhigh, which its card does not document.
+    """
     capability = reasoning_capability_for("openai.gpt-5.5")
     assert capability is not None
-    assert capability.efforts == {
-        ReasoningEffort.LOW,
-        ReasoningEffort.MEDIUM,
-        ReasoningEffort.HIGH,
-    }
+    assert capability.efforts == set(ReasoningEffort) - {ReasoningEffort.MAX}
 
 
 def test_geo_prefixed_and_bare_nova_ids_resolve_identically():
@@ -164,15 +162,25 @@ def test_only_gemma_4_e2b_carries_a_recommendation():
 
 
 def test_sonnet_5_reasoning_cannot_be_disabled():
-    """Card: "adaptive thinking is always on and cannot be disabled"."""
+    """Card: "adaptive thinking is always on and cannot be disabled".
+
+    Corroborated live: the Messages API 400s on `none` for every Claude, naming
+    the authoritative enum (low/medium/high/xhigh/max).
+    """
     capability = reasoning_capability_for("anthropic.claude-sonnet-5")
     assert capability is not None
     assert capability.can_disable is False
 
 
-def test_sonnet_5_rejects_none():
-    with pytest.raises(ValidationError, match="not accepted"):
-        _config("anthropic.claude-sonnet-5", "none")
+def test_no_claude_accepts_none():
+    """`none` is absent from the Anthropic Messages effort enum entirely."""
+    for model_id in (
+        "anthropic.claude-sonnet-5",
+        "anthropic.claude-opus-4-8",
+        "anthropic.claude-opus-5",
+    ):
+        with pytest.raises(ValidationError, match="not accepted"):
+            _config(model_id, "none")
 
 
 def test_grok_accepts_none_to_disable():
@@ -199,19 +207,33 @@ def test_opus_4_8_accepts_xhigh_and_max():
         )
 
 
-def test_sonnet_5_rejects_xhigh_naming_accepted_values():
-    """xhigh/max are Opus-only; the message must list what *is* accepted."""
+def test_sonnet_5_also_accepts_xhigh_and_max():
+    """The adaptive-thinking page calls xhigh/max Opus-only. It is wrong.
+
+    Live probe (2026-07-29) accepted both on claude-sonnet-5; T4 recorded this as
+    a doc error and the table follows the provider.
+    """
+    for effort in ("xhigh", "max"):
+        assert _config("anthropic.claude-sonnet-5", effort).reasoningBudget.value == (
+            effort
+        )
+
+
+def test_rejection_message_names_the_accepted_values():
+    """A rejected value must tell the caller what *is* accepted."""
     with pytest.raises(ValidationError) as excinfo:
-        _config("anthropic.claude-sonnet-5", "xhigh")
+        _config("openai.gpt-oss-20b", "xhigh")
     # Assert on the accepted-values clause specifically: pydantic echoes the
     # rejected input later in the message, so a substring check over the whole
     # string would find "xhigh" there regardless.
     assert "Accepted values: low, medium, high." in str(excinfo.value)
 
 
-def test_gpt_55_rejects_xhigh():
+def test_gpt_55_rejects_max_but_accepts_xhigh():
+    """`max` is 5.6-only; 5.5 takes xhigh. Both verified live."""
     with pytest.raises(ValidationError, match="not accepted"):
-        _config("openai.gpt-5.5", "xhigh")
+        _config("openai.gpt-5.5", "max")
+    assert _config("openai.gpt-5.5", "xhigh").reasoningBudget is ReasoningEffort.XHIGH
 
 
 def test_non_reasoning_model_rejected_with_unsupported_message():
@@ -240,25 +262,39 @@ def test_omitting_the_budget_is_always_valid():
 # --------------------------------------------------------------------------- #
 
 _LMH = frozenset({ReasoningEffort.LOW, ReasoningEffort.MEDIUM, ReasoningEffort.HIGH})
-_OPUS = _LMH | {ReasoningEffort.XHIGH, ReasoningEffort.MAX}
+_ANTHROPIC = _LMH | {ReasoningEffort.XHIGH, ReasoningEffort.MAX}
+_NO_MAX = _LMH | {ReasoningEffort.NONE, ReasoningEffort.XHIGH}
+_ALL = _NO_MAX | {ReasoningEffort.MAX}
 
 # (model_id, expected accepted efforts or None when reasoning is unsupported)
+#
+# These sets come from the T4 live enumeration (us-east-1, 2026-07-29 —
+# `cache/t4_enumerate.py` probed every effort against every family), NOT from the
+# model cards, which were too strict for 7 of 12 families. If a row here ever
+# disagrees with the provider, re-run that script and trust it over the docs.
 _US_EAST_1_CATALOG: list[tuple[str, frozenset[ReasoningEffort] | None]] = [
-    ("openai.gpt-5.6-luna", _OPUS | {ReasoningEffort.NONE}),
-    ("openai.gpt-5.6-sol", _OPUS | {ReasoningEffort.NONE}),
-    ("openai.gpt-5.6-terra", _OPUS | {ReasoningEffort.NONE}),
-    ("openai.gpt-5.5", _LMH),
-    ("openai.gpt-5.4", _LMH),
+    # Only the 5.6 line accepts `max`.
+    ("openai.gpt-5.6-luna", _ALL),
+    ("openai.gpt-5.6-sol", _ALL),
+    ("openai.gpt-5.6-terra", _ALL),
+    # 5.4/5.5 reject `max` but do take none+xhigh (undocumented).
+    ("openai.gpt-5.5", _NO_MAX),
+    ("openai.gpt-5.4", _NO_MAX),
+    # Genuinely three-level: none/xhigh/max all 400.
     ("openai.gpt-oss-20b", _LMH),
     ("openai.gpt-oss-120b", _LMH),
-    ("anthropic.claude-sonnet-5", _LMH),
-    ("anthropic.claude-opus-4-8", _OPUS),
+    # Messages rejects `none` for every Claude; xhigh/max are NOT Opus-only.
+    ("anthropic.claude-sonnet-5", _ANTHROPIC),
+    ("anthropic.claude-opus-4-8", _ANTHROPIC),
+    # Nova's enum is low/medium/high only (`high` also needs maxTokens unset,
+    # which create_model handles).
     ("us.amazon.nova-2-lite-v1:0", _LMH),
     ("amazon.nova-2-sonic-v1:0", None),
     ("deepseek.v3.2", None),
-    ("google.gemma-4-31b", _LMH),
-    ("google.gemma-4-e2b", _LMH),
-    ("google.gemma-4-26b-a4b", _LMH),
+    # Gemma 4 takes none+xhigh, undocumented on the cards.
+    ("google.gemma-4-31b", _NO_MAX),
+    ("google.gemma-4-e2b", _NO_MAX),
+    ("google.gemma-4-26b-a4b", _NO_MAX),
     ("google.gemma-3-4b-it", None),
     ("minimax.minimax-m2.5", None),
     ("mistral.mistral-large-3-675b-instruct", None),
@@ -271,7 +307,8 @@ _US_EAST_1_CATALOG: list[tuple[str, frozenset[ReasoningEffort] | None]] = [
     ("qwen.qwen3-next-80b-a3b-instruct", None),
     ("qwen.qwen3-32b", None),
     ("qwen.qwen3-235b-a22b-2507", None),
-    ("xai.grok-4.3", _LMH | {ReasoningEffort.NONE}),
+    # `xhigh` accepted but undocumented on the card.
+    ("xai.grok-4.3", _NO_MAX),
     ("zai.glm-5", None),
     ("zai.glm-4.7-flash", None),
 ]

@@ -170,11 +170,16 @@ export interface ReasoningCapability {
     recommendedEffort?: string;
 }
 
+// Ordered low → max for display. See the PROVENANCE note on the Python table
+// (stream_types.py): these sets are live-verified, not doc-derived.
 const EFFORT_LMH = ["low", "medium", "high"];
-// Anthropic's adaptive-thinking ladder. xhigh/max are documented Opus-only.
-const EFFORT_ANTHROPIC_OPUS = [...EFFORT_LMH, "xhigh", "max"];
-// GPT-5.6 (Sol/Terra/Luna) is the only family documenting the full six levels.
-const EFFORT_GPT_56 = ["none", ...EFFORT_ANTHROPIC_OPUS];
+// Anthropic adaptive thinking — the full ladder minus `none`, which the Messages
+// API rejects. Applies to Sonnet too, contra the "Opus only" docs claim.
+const EFFORT_ANTHROPIC = [...EFFORT_LMH, "xhigh", "max"];
+// Everything except `max`: what most OpenAI-surface families actually accept.
+const EFFORT_NO_MAX = ["none", ...EFFORT_LMH, "xhigh"];
+// GPT-5.6 (Sol/Terra/Luna) is the only family that accepts all six.
+const EFFORT_ALL = [...EFFORT_NO_MAX, "max"];
 
 /**
  * Model-id fragment → capability. Keyed by fragment (substring match) so one
@@ -184,40 +189,54 @@ const EFFORT_GPT_56 = ["none", ...EFFORT_ANTHROPIC_OPUS];
 export const REASONING_CAPABILITIES: Record<string, ReasoningCapability> = {
     // -- Anthropic (Messages) — adaptive thinking, `high` is the documented default
     "claude-opus-5": {
-        efforts: EFFORT_ANTHROPIC_OPUS,
+        efforts: EFFORT_ANTHROPIC,
         canDisable: true,
         defaultEffort: "high",
     },
     "claude-opus-4-8": {
-        efforts: EFFORT_ANTHROPIC_OPUS,
+        efforts: EFFORT_ANTHROPIC,
         canDisable: true,
         defaultEffort: "high",
     },
     "claude-opus-4-6": {
-        efforts: EFFORT_ANTHROPIC_OPUS,
+        efforts: EFFORT_ANTHROPIC,
         canDisable: true,
         defaultEffort: "high",
     },
-    // Sonnet is not an Opus: xhigh/max are Opus-only. Sonnet 5's card states
-    // adaptive thinking is always on and cannot be disabled.
-    "claude-sonnet-5": { efforts: EFFORT_LMH, canDisable: false, defaultEffort: "high" },
-    "claude-sonnet-4-6": { efforts: EFFORT_LMH, canDisable: true, defaultEffort: "high" },
-    // -- OpenAI proprietary (Responses). "gpt-5." is a prefix of "gpt-5.6": the
-    // six-level set must not leak to 5.4/5.5, which document only three.
-    "gpt-5.6": { efforts: EFFORT_GPT_56, canDisable: true },
-    "gpt-5.5": { efforts: EFFORT_LMH, canDisable: true },
-    "gpt-5.4": { efforts: EFFORT_LMH, canDisable: true },
-    // -- OpenAI open-weights (Chat Completions)
+    // Sonnet takes the same five levels as Opus (the "Opus only" docs claim about
+    // xhigh/max is wrong). Sonnet 5's thinking is always on and cannot be
+    // disabled, consistent with Messages rejecting `none`.
+    "claude-sonnet-5": {
+        efforts: EFFORT_ANTHROPIC,
+        canDisable: false,
+        defaultEffort: "high",
+    },
+    "claude-sonnet-4-6": {
+        efforts: EFFORT_ANTHROPIC,
+        canDisable: true,
+        defaultEffort: "high",
+    },
+    // -- OpenAI proprietary (Responses). "gpt-5." is a prefix of "gpt-5.6", so
+    // longest-match is what keeps `max` from leaking to 5.4/5.5, which 400 on it.
+    "gpt-5.6": { efforts: EFFORT_ALL, canDisable: true },
+    "gpt-5.5": { efforts: EFFORT_NO_MAX, canDisable: true },
+    "gpt-5.4": { efforts: EFFORT_NO_MAX, canDisable: true },
+    // -- OpenAI open-weights (Chat Completions) — genuinely three-level
     "gpt-oss": { efforts: EFFORT_LMH, canDisable: true },
-    // -- Google Gemma 4 (Chat Completions)
-    "gemma-4-31b": { efforts: EFFORT_LMH, canDisable: true },
-    "gemma-4-26b-a4b": { efforts: EFFORT_LMH, canDisable: true },
+    // -- Google Gemma 4 (Chat Completions) — none+xhigh undocumented but accepted
+    "gemma-4-31b": { efforts: EFFORT_NO_MAX, canDisable: true },
+    "gemma-4-26b-a4b": { efforts: EFFORT_NO_MAX, canDisable: true },
     // E2B over-reasons by default; the card *recommends* high. A recommendation,
     // not the provider default.
-    "gemma-4-e2b": { efforts: EFFORT_LMH, canDisable: true, recommendedEffort: "high" },
+    "gemma-4-e2b": {
+        efforts: EFFORT_NO_MAX,
+        canDisable: true,
+        recommendedEffort: "high",
+    },
     // -- xAI (Chat Completions) — reasons unless explicitly set to none
-    "grok-4.3": { efforts: ["none", ...EFFORT_LMH], canDisable: true, defaultEffort: "low" },
-    // -- Amazon Nova (Converse) — off by default, so no default effort to report
+    "grok-4.3": { efforts: EFFORT_NO_MAX, canDisable: true, defaultEffort: "low" },
+    // -- Amazon Nova (Converse) — off by default, so no default effort to report.
+    // `high` also requires maxTokens unset; the backend handles that.
     "nova-2-lite": { efforts: EFFORT_LMH, canDisable: true },
 };
 

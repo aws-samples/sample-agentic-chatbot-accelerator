@@ -257,6 +257,44 @@ def test_converse_nova_drops_temperature_at_every_effort(effort):
     assert "temperature" not in kwargs
 
 
+def test_converse_nova_high_drops_max_tokens():
+    """Nova rejects ``maxTokens`` at ``high``:
+
+        "`maxTokens` must be unset when reasoningConfig type is 'enabled' and
+         maxReasoningEffort is 'high'"
+
+    A ValidationException verified live (2026-07-29, T4). Unbounded output is the
+    provider's requirement for this combination, so create_model honours it rather
+    than letting the request 400.
+    """
+    kwargs = _converse_kwargs(
+        "us.amazon.nova-2-lite-v1:0", reasoning_budget=ReasoningEffort.HIGH
+    )
+
+    assert "max_tokens" not in kwargs
+    assert kwargs["additional_request_fields"]["reasoningConfig"] == {
+        "type": "enabled",
+        "maxReasoningEffort": "high",
+    }
+
+
+@pytest.mark.parametrize("effort", [ReasoningEffort.LOW, ReasoningEffort.MEDIUM])
+def test_converse_nova_keeps_max_tokens_below_high(effort):
+    """The maxTokens restriction is specific to ``high`` — don't over-apply it."""
+    kwargs = _converse_kwargs("us.amazon.nova-2-lite-v1:0", reasoning_budget=effort)
+
+    assert kwargs["max_tokens"] == 1024
+
+
+def test_converse_anthropic_keeps_max_tokens_at_high():
+    """The Nova maxTokens rule must not leak to the Anthropic branch."""
+    kwargs = _converse_kwargs(
+        "anthropic.claude-opus-4-8", reasoning_budget=ReasoningEffort.HIGH
+    )
+
+    assert kwargs["max_tokens"] == 1024
+
+
 def test_converse_non_reasoning_claude_gets_no_reasoning_fields():
     """haiku-4-5 has no capability entry: a budget must not be attached anywhere.
 
