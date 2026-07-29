@@ -197,9 +197,15 @@ class ModelConfiguration(BaseModel):
     Attributes:
         modelId (str): Identifier for the model to be used
         parameters (InferenceConfig): Configuration parameters for model inference
-        reasoningBudget (Optional[str]): Reasoning effort level
-            ("low"/"medium"/"high") for reasoning-capable models.
-            Default to None, meaning no reasoning enabled.
+        reasoningBudget (Optional[str]): Reasoning effort level for
+            reasoning-capable models — one of "none", "low", "medium", "high",
+            "xhigh", "max". The accepted subset is per-model and enforced by the
+            agent container (REASONING_CAPABILITIES in
+            src/agent-core/shared/stream_types.py); this layer stays a plain str
+            so the SDK does not need its own copy of that table.
+            Default None, meaning the parameter is omitted — note that
+            always-on models (Claude Sonnet 5, Grok 4.3) still reason when it is
+            omitted; "none" disables explicitly where the model allows it.
     """
 
     modelId: str

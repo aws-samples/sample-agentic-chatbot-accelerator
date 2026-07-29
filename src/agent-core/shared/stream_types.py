@@ -70,23 +70,173 @@ class InferenceConfig(BaseModel):
 
 
 class ReasoningEffort(str, Enum):
+    """Reasoning effort level.
+
+    ``NONE`` explicitly disables reasoning and is distinct from
+    ``reasoningBudget=None``, which omits the parameter entirely. The
+    distinction matters for always-on models (Grok 4.3, GPT-5.6): omitting the
+    field still yields reasoning, so ``none`` must be sent to silence them.
+
+    Not every model accepts every level — see ``REASONING_CAPABILITIES``.
+    """
+
+    NONE = "none"
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
+    XHIGH = "xhigh"
+    MAX = "max"
 
 
-# Models that support reasoning, expressed as an effort level (low/medium/high).
-# Token-budget reasoning (integer budgets) is no longer supported: the newest
-# Claude models (Opus 5, Sonnet 5) and Nova take an effort level, and older
-# token-budget Claude variants are out of scope. Keep in sync with the frontend
-# EFFORT_BUDGET_MODEL_FRAGMENTS in wizard-utils.ts.
-_EFFORT_BUDGET_MODELS = {
-    "nova-2-lite",
-    "claude-opus-4-6",
-    "claude-sonnet-4-6",
-    "claude-opus-5",
-    "claude-sonnet-5",
+class ReasoningCapability(BaseModel):
+    """What reasoning controls one model family accepts.
+
+    Attributes:
+        efforts (frozenset[ReasoningEffort]): Effort values the model accepts. A
+            value outside this set is rejected at config-parse time rather than
+            surfacing as a provider 400 at first inference.
+        can_disable (bool): Whether reasoning can be turned off at all. False
+            for models whose card states reasoning is always active
+            (``claude-sonnet-5``, ``xai.grok-4.3`` reasons unless explicitly set
+            to ``none``). When False, ``ReasoningEffort.NONE`` must not appear in
+            ``efforts``.
+        default_effort (Optional[ReasoningEffort]): The effort the provider
+            applies when the parameter is omitted, **only where AWS documents
+            it**. None means the default is genuinely undocumented (the
+            ``openai.*`` families publish accepted values but never a default).
+            Consumed by the UI to prefill the effort picker; never substituted
+            into a request when the user left the field unset.
+        recommended_effort (Optional[ReasoningEffort]): A card-recommended value
+            that is *not* the provider default. Kept distinct from
+            ``default_effort`` so the UI can say "recommended" without claiming
+            it is what the provider would do.
+    """
+
+    efforts: frozenset[ReasoningEffort]
+    can_disable: bool
+    default_effort: Optional[ReasoningEffort] = None
+    recommended_effort: Optional[ReasoningEffort] = None
+
+
+_EFFORT_LMH = frozenset(
+    {ReasoningEffort.LOW, ReasoningEffort.MEDIUM, ReasoningEffort.HIGH}
+)
+# Anthropic's adaptive-thinking effort ladder. xhigh/max are Opus-only.
+_EFFORT_ANTHROPIC_OPUS = _EFFORT_LMH | {ReasoningEffort.XHIGH, ReasoningEffort.MAX}
+# GPT-5.6 (Sol/Terra/Luna) is the only family documenting the full six levels.
+_EFFORT_GPT_56 = _EFFORT_ANTHROPIC_OPUS | {ReasoningEffort.NONE}
+
+
+# Model-id fragment -> reasoning capability. Keyed by fragment (substring match)
+# so one entry covers a family and both the geo-prefixed and unprefixed forms of
+# the same id (``us.amazon.nova-2-lite-v1:0`` / ``amazon.nova-2-lite-v1:0``).
+#
+# MAINTENANCE: derived from the AWS model cards, NOT discoverable at runtime —
+# the Mantle ``/v1/models`` catalog exposes no reasoning metadata (only id,
+# created, object, owned_by, data_retention, status). Same necessity as
+# ``_MANTLE_OPENAI_V1_CHAT_PREFIXES`` in base_factory.py. Re-check the cards
+# when adding a model to the region catalog (iac-cdk/lib/shared/supported-
+# models.ts). Mirrored in the frontend as REASONING_CAPABILITIES in
+# wizard-utils.ts; tests assert the two agree.
+#
+# Deliberately absent: qwen3-* report "Reasoning: Supported" but the control is
+# a ``/no_think`` token appended to the prompt, with no API parameter — an
+# effort level there would be silently ignored. Also absent: every model whose
+# card carries no Reasoning field (deepseek.v3.2, minimax, kimi-k2.5, nemotron,
+# glm-*, mistral/ministral, gemma-3-*, nova-2-sonic).
+REASONING_CAPABILITIES: dict[str, ReasoningCapability] = {
+    # -- Anthropic (Messages on Mantle / Converse) ---------------------------
+    # Adaptive thinking: `thinking={"type": "adaptive"}` + output_config.effort.
+    # `high` is the documented default ("At the default effort level (high),
+    # Claude will almost always think").
+    "claude-opus-5": ReasoningCapability(
+        efforts=_EFFORT_ANTHROPIC_OPUS,
+        can_disable=True,
+        default_effort=ReasoningEffort.HIGH,
+    ),
+    "claude-opus-4-8": ReasoningCapability(
+        efforts=_EFFORT_ANTHROPIC_OPUS,
+        can_disable=True,
+        default_effort=ReasoningEffort.HIGH,
+    ),
+    "claude-opus-4-6": ReasoningCapability(
+        efforts=_EFFORT_ANTHROPIC_OPUS,
+        can_disable=True,
+        default_effort=ReasoningEffort.HIGH,
+    ),
+    # Sonnet is not an Opus: xhigh/max are documented as Opus-only.
+    # Sonnet 5's card states adaptive thinking is always on and cannot be
+    # disabled, so `can_disable` is False.
+    "claude-sonnet-5": ReasoningCapability(
+        efforts=_EFFORT_LMH,
+        can_disable=False,
+        default_effort=ReasoningEffort.HIGH,
+    ),
+    "claude-sonnet-4-6": ReasoningCapability(
+        efforts=_EFFORT_LMH,
+        can_disable=True,
+        default_effort=ReasoningEffort.HIGH,
+    ),
+    # -- OpenAI proprietary (Responses on /openai/v1) -----------------------
+    # Longer fragments first is not required (lookup is longest-match), but
+    # note "gpt-5." is a prefix of "gpt-5.6": the 6-level set must not leak to
+    # 5.4/5.5, which document only three.
+    "gpt-5.6": ReasoningCapability(efforts=_EFFORT_GPT_56, can_disable=True),
+    "gpt-5.5": ReasoningCapability(efforts=_EFFORT_LMH, can_disable=True),
+    "gpt-5.4": ReasoningCapability(efforts=_EFFORT_LMH, can_disable=True),
+    # -- OpenAI open-weights (Chat Completions on /v1) ----------------------
+    # The gpt-oss cards carry no Reasoning field; `reasoning_effort` support is
+    # documented in the AWS GovCloud launch blog. Confirmed live in T4.
+    "gpt-oss": ReasoningCapability(efforts=_EFFORT_LMH, can_disable=True),
+    # -- Google Gemma 4 (Chat Completions on /openai/v1) --------------------
+    # Reasoning is listed in the card's bedrock-mantle feature table.
+    "gemma-4-31b": ReasoningCapability(efforts=_EFFORT_LMH, can_disable=True),
+    "gemma-4-26b-a4b": ReasoningCapability(efforts=_EFFORT_LMH, can_disable=True),
+    # E2B over-reasons by default; the card *recommends* high to keep the
+    # reasoning in its own channel. A recommendation, not the provider default.
+    "gemma-4-e2b": ReasoningCapability(
+        efforts=_EFFORT_LMH,
+        can_disable=True,
+        recommended_effort=ReasoningEffort.HIGH,
+    ),
+    # -- xAI (Chat Completions on /openai/v1) -------------------------------
+    # "Reasoning is always active by default"; `none` is the only way off, and
+    # `low` is the documented default.
+    "grok-4.3": ReasoningCapability(
+        efforts=_EFFORT_LMH | {ReasoningEffort.NONE},
+        can_disable=True,
+        default_effort=ReasoningEffort.LOW,
+    ),
+    # -- Amazon Nova (Converse) ---------------------------------------------
+    # reasoningConfig={"type": "enabled", "maxReasoningEffort": ...}. Off by
+    # default, so there is no default effort to report.
+    "nova-2-lite": ReasoningCapability(efforts=_EFFORT_LMH, can_disable=True),
 }
+
+
+def reasoning_capability_for(model_id: str) -> Optional[ReasoningCapability]:
+    """Return the reasoning capability for ``model_id``, or None if unsupported.
+
+    Matches the **longest** ``REASONING_CAPABILITIES`` fragment contained in
+    ``model_id`` so a specific family entry beats a shorter prefix of itself:
+    ``"gpt-5.6-luna"`` contains both ``"gpt-5.6"`` and (via the shared prefix)
+    would match a hypothetical ``"gpt-5."`` entry, and the six-level set must
+    win. A ``None`` return means the model exposes no controllable reasoning —
+    callers must reject a reasoning budget rather than silently dropping it.
+
+    Args:
+        model_id (str): Model id as configured, verbatim — either a Mantle short
+            id (``"anthropic.claude-opus-4-8"``) or a Converse/inference-profile
+            form (``"us.amazon.nova-2-lite-v1:0"``).
+
+    Returns:
+        Optional[ReasoningCapability]: The capability, or None when the model
+            exposes no reasoning parameter.
+    """
+    matches = [frag for frag in REASONING_CAPABILITIES if frag in model_id]
+    if not matches:
+        return None
+    return REASONING_CAPABILITIES[max(matches, key=len)]
 
 
 class ModelConfiguration(BaseModel):
@@ -95,9 +245,11 @@ class ModelConfiguration(BaseModel):
     Attributes:
         modelId (str): Identifier for the model to be used
         parameters (InferenceConfig): Configuration parameters for model inference
-        reasoningBudget (Optional[ReasoningEffort]): Reasoning effort level
-            (low/medium/high) for reasoning-capable models. Default None, meaning
-            no reasoning enabled.
+        reasoningBudget (Optional[ReasoningEffort]): Reasoning effort level for
+            reasoning-capable models, validated per model against
+            ``REASONING_CAPABILITIES``. Default None, meaning the parameter is
+            omitted entirely — note that always-on models still reason when it
+            is omitted; use ``ReasoningEffort.NONE`` to disable explicitly.
     """
 
     modelId: str
@@ -106,12 +258,33 @@ class ModelConfiguration(BaseModel):
 
     @model_validator(mode="after")
     def validate_reasoning_budget(self) -> "ModelConfiguration":
+        """Reject a reasoning budget the model does not accept.
+
+        Two failure modes with distinct messages: the model exposes no reasoning
+        parameter at all, or it reasons but not at the requested effort level
+        (that message names the accepted set so the caller can self-correct).
+
+        Raises:
+            ValueError: On either failure mode.
+        """
         if self.reasoningBudget is None:
             return self
 
-        if not any(m in self.modelId for m in _EFFORT_BUDGET_MODELS):
+        capability = reasoning_capability_for(self.modelId)
+        if capability is None:
             raise ValueError(
                 f"reasoningBudget is not supported for model '{self.modelId}'"
+            )
+
+        if self.reasoningBudget not in capability.efforts:
+            accepted = ", ".join(
+                effort.value
+                for effort in ReasoningEffort
+                if effort in capability.efforts
+            )
+            raise ValueError(
+                f"reasoningBudget '{self.reasoningBudget.value}' is not accepted "
+                f"for model '{self.modelId}'. Accepted values: {accepted}."
             )
 
         return self
