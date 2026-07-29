@@ -404,6 +404,12 @@ class BaseAgentFactory:
         enabling thinking is itself the reason ``temperature`` must be omitted.
         Integer token budgets are not supported (see ``ReasoningEffort``).
 
+        The ``thinking`` block also sets ``display: "summarized"``. Without it
+        the Messages API defaults to ``"omitted"`` on the newest Claude models —
+        thinking blocks stream with empty ``text`` (signature only), so nothing
+        reaches the reasoning-capture path. ``"summarized"`` is visibility-only
+        (no cost/latency change); the raw chain of thought is never returned.
+
         MUST NOT pass any Converse-only arg (``cache_prompt``,
         ``additional_request_fields``, ``stop_sequences``, ``boto_session``).
 
@@ -430,9 +436,19 @@ class BaseAgentFactory:
         # thinking block + output_config effort (verified against anthropic SDK
         # 0.109.1 ThinkingConfigAdaptiveParam + OutputConfigParam). strands
         # spreads params verbatim into the request body.
+        #
+        # `display: "summarized"` is required to surface reasoning text. On the
+        # newest Claude models the Messages API defaults thinking display to
+        # "omitted" — thinking blocks stream with an empty `text` and only a
+        # signature, so downstream reasoning capture (accumulate_reasoning /
+        # _extract_reasoning) sees nothing. Opting into "summarized" makes the
+        # API emit thinking_delta chunks with summary text, which strands maps
+        # to reasoningContent.text. This is visibility-only: thinking runs and
+        # is billed identically either way, and the raw chain of thought is
+        # never returned (the summary is the ceiling on this effort path).
         params: dict[str, Any] = {}
         if reasoning_budget is not None:
-            params["thinking"] = {"type": "adaptive"}
+            params["thinking"] = {"type": "adaptive", "display": "summarized"}
             params["output_config"] = {"effort": reasoning_budget.value}
 
         # NOTE: static api_key minted at construction. The model is built per
