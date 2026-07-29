@@ -22,7 +22,7 @@ import {
     AgentsAsToolsConfiguration,
 } from "../types";
 import { AdditionalToolsSection, AgentConfigSection } from "../wizard-shared-components";
-import { STEP_MIN_HEIGHT, getReasoningType } from "../wizard-utils";
+import { STEP_MIN_HEIGHT, isReasoningEffortAccepted } from "../wizard-utils";
 import ReviewStep from "./review-step";
 
 export interface AgentsAsToolsStepsProps {
@@ -427,13 +427,12 @@ export function getAgentsAsToolsSteps({
                             modelId={agentsAsToolsConfig.modelInferenceParameters.modelId}
                             onModelChange={(modelId) =>
                                 setAgentsAsToolsConfig((prev) => {
-                                    const newReasoningType = getReasoningType(modelId);
-                                    const oldReasoningType = getReasoningType(
-                                        prev.modelInferenceParameters.modelId,
-                                    );
+                                    // Keep the effort only if the NEW model accepts the
+                                    // value already selected — see single-agent-steps.
+                                    const budget = prev.modelInferenceParameters.reasoningBudget;
                                     const keepBudget =
-                                        newReasoningType !== null &&
-                                        newReasoningType === oldReasoningType;
+                                        budget != null &&
+                                        isReasoningEffortAccepted(modelId, budget);
                                     return {
                                         ...prev,
                                         modelInferenceParameters: {
@@ -583,14 +582,13 @@ export function isAgentsAsToolsStepValid(
         const hasInstructions = agentsAsToolsConfig.instructions.trim() !== "";
         if (!hasModel || !hasInstructions) return false;
 
-        // Validate reasoning budget if enabled
+        // Validate the reasoning budget per model — see isSingleAgentStepValid.
         const budget = agentsAsToolsConfig.modelInferenceParameters.reasoningBudget;
         if (budget != null) {
-            const rType = getReasoningType(agentsAsToolsConfig.modelInferenceParameters.modelId);
-            if (rType === "effort") {
-                return ["low", "medium", "high"].includes(budget);
-            }
-            return false;
+            return isReasoningEffortAccepted(
+                agentsAsToolsConfig.modelInferenceParameters.modelId,
+                budget,
+            );
         }
         return true;
     }

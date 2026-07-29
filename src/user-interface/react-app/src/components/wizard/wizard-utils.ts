@@ -140,32 +140,147 @@ export function groupModelOptionsByProvider(
 }
 
 // ---------------------------------------------------------------------------
-// Reasoning budget helpers — keep in sync with backend _EFFORT_BUDGET_MODELS in
-// stream_types.py. Reasoning is expressed as an effort level (low/medium/high);
-// integer token budgets are no longer supported.
+// Reasoning capability mirror.
+//
+// Reasoning is expressed as an effort level; integer token budgets are no longer
+// supported. Which levels a model accepts differs per family — xhigh/max are
+// Opus-only, GPT-5.6 documents all six, Sonnet 5 cannot turn reasoning off at
+// all — so this is a per-model table rather than a membership list.
+//
+// MAINTENANCE: hand-mirrored from REASONING_CAPABILITIES in
+// src/agent-core/shared/stream_types.py, which is the source of truth (derived
+// from the AWS model cards; the Mantle /v1/models catalog exposes no reasoning
+// metadata). The frontend cannot import Python, so
+// src/agent-core/shared/tests/test_reasoning_capability.py parses THIS FILE and
+// fails when the two disagree — update both in the same commit.
 // ---------------------------------------------------------------------------
 
-/** Models that support a ReasoningEffort enum value (low / medium / high) */
-export const EFFORT_BUDGET_MODEL_FRAGMENTS = [
-    "nova-2-lite",
-    "claude-opus-4-6",
-    "claude-sonnet-4-6",
-    "claude-opus-5",
-    "claude-sonnet-5",
-];
+/**
+ * Effort values a model accepts, plus whether its reasoning can be disabled.
+ * Mirrors ReasoningCapability in src/agent-core/shared/stream_types.py.
+ */
+export interface ReasoningCapability {
+    /** Accepted effort values, ordered for display: "none" first, then low → max. */
+    efforts: string[];
+    /** False => the model card states reasoning is always on and cannot be disabled. */
+    canDisable: boolean;
+    /** The effort the provider applies when the parameter is omitted, only where AWS documents it. */
+    defaultEffort?: string;
+    /** A card *recommendation* that is not the provider default (gemma-4-e2b). */
+    recommendedEffort?: string;
+}
 
-export const REASONING_EFFORT_OPTIONS = [
-    { label: "Low", value: "low" },
-    { label: "Medium", value: "medium" },
-    { label: "High", value: "high" },
-];
+const EFFORT_LMH = ["low", "medium", "high"];
+// Anthropic's adaptive-thinking ladder. xhigh/max are documented Opus-only.
+const EFFORT_ANTHROPIC_OPUS = [...EFFORT_LMH, "xhigh", "max"];
+// GPT-5.6 (Sol/Terra/Luna) is the only family documenting the full six levels.
+const EFFORT_GPT_56 = ["none", ...EFFORT_ANTHROPIC_OPUS];
 
 /**
- * Determine whether a model supports reasoning.
- * Returns "effort" for low/medium/high models, or null if the model does not
- * support reasoning.
+ * Model-id fragment → capability. Keyed by fragment (substring match) so one
+ * entry covers a family and both the geo-prefixed and bare forms of the same id.
+ * Longest fragment wins — see getReasoningCapability.
+ */
+export const REASONING_CAPABILITIES: Record<string, ReasoningCapability> = {
+    // -- Anthropic (Messages) — adaptive thinking, `high` is the documented default
+    "claude-opus-5": {
+        efforts: EFFORT_ANTHROPIC_OPUS,
+        canDisable: true,
+        defaultEffort: "high",
+    },
+    "claude-opus-4-8": {
+        efforts: EFFORT_ANTHROPIC_OPUS,
+        canDisable: true,
+        defaultEffort: "high",
+    },
+    "claude-opus-4-6": {
+        efforts: EFFORT_ANTHROPIC_OPUS,
+        canDisable: true,
+        defaultEffort: "high",
+    },
+    // Sonnet is not an Opus: xhigh/max are Opus-only. Sonnet 5's card states
+    // adaptive thinking is always on and cannot be disabled.
+    "claude-sonnet-5": { efforts: EFFORT_LMH, canDisable: false, defaultEffort: "high" },
+    "claude-sonnet-4-6": { efforts: EFFORT_LMH, canDisable: true, defaultEffort: "high" },
+    // -- OpenAI proprietary (Responses). "gpt-5." is a prefix of "gpt-5.6": the
+    // six-level set must not leak to 5.4/5.5, which document only three.
+    "gpt-5.6": { efforts: EFFORT_GPT_56, canDisable: true },
+    "gpt-5.5": { efforts: EFFORT_LMH, canDisable: true },
+    "gpt-5.4": { efforts: EFFORT_LMH, canDisable: true },
+    // -- OpenAI open-weights (Chat Completions)
+    "gpt-oss": { efforts: EFFORT_LMH, canDisable: true },
+    // -- Google Gemma 4 (Chat Completions)
+    "gemma-4-31b": { efforts: EFFORT_LMH, canDisable: true },
+    "gemma-4-26b-a4b": { efforts: EFFORT_LMH, canDisable: true },
+    // E2B over-reasons by default; the card *recommends* high. A recommendation,
+    // not the provider default.
+    "gemma-4-e2b": { efforts: EFFORT_LMH, canDisable: true, recommendedEffort: "high" },
+    // -- xAI (Chat Completions) — reasons unless explicitly set to none
+    "grok-4.3": { efforts: ["none", ...EFFORT_LMH], canDisable: true, defaultEffort: "low" },
+    // -- Amazon Nova (Converse) — off by default, so no default effort to report
+    "nova-2-lite": { efforts: EFFORT_LMH, canDisable: true },
+};
+
+/** Display label per effort value. */
+const REASONING_EFFORT_LABELS: Record<string, string> = {
+    none: "None (disable reasoning)",
+    low: "Low",
+    medium: "Medium",
+    high: "High",
+    xhigh: "Extra high",
+    max: "Max",
+};
+
+/**
+ * Resolve the capability for a model id, or null when it has no controllable
+ * reasoning. Matches the LONGEST fragment contained in modelId so a specific
+ * family entry beats a prefix of itself ("gpt-5.6" over "gpt-5.").
+ */
+export function getReasoningCapability(modelId: string): ReasoningCapability | null {
+    const matches = Object.keys(REASONING_CAPABILITIES).filter((frag) => modelId.includes(frag));
+    if (matches.length === 0) return null;
+    const longest = matches.reduce((a, b) => (b.length > a.length ? b : a));
+    return REASONING_CAPABILITIES[longest];
+}
+
+/**
+ * Effort options for the given model, as Cloudscape select options.
+ * Returns [] when the model has no reasoning — callers use that to hide the
+ * control entirely rather than rendering an empty picker.
+ */
+export function getReasoningEffortOptions(modelId: string): { label: string; value: string }[] {
+    const capability = getReasoningCapability(modelId);
+    if (!capability) return [];
+    return capability.efforts.map((value) => ({
+        label: REASONING_EFFORT_LABELS[value] ?? value,
+        value,
+    }));
+}
+
+/**
+ * The effort to preselect when the user first enables reasoning for a model.
+ *
+ * Returns the model's documented default when there is one (Claude "high",
+ * Grok "low"), else its card-recommended value (gemma-4-e2b), else null —
+ * meaning no defensible preselection exists and the picker must open empty
+ * rather than inventing a level. AWS publishes accepted values but no default
+ * for openai.gpt-5.*, gpt-oss-* and gemma-4-31b/26b.
+ */
+export function getDefaultReasoningEffort(modelId: string): string | null {
+    const capability = getReasoningCapability(modelId);
+    if (!capability) return null;
+    return capability.defaultEffort ?? capability.recommendedEffort ?? null;
+}
+
+/** Whether `effort` is one of the values the model accepts. */
+export function isReasoningEffortAccepted(modelId: string, effort: string): boolean {
+    return getReasoningCapability(modelId)?.efforts.includes(effort) ?? false;
+}
+
+/**
+ * Retained for call sites that only branch on "does this model reason at all".
+ * Prefer getReasoningCapability when the accepted value set matters.
  */
 export function getReasoningType(modelId: string): "effort" | null {
-    if (EFFORT_BUDGET_MODEL_FRAGMENTS.some((frag) => modelId.includes(frag))) return "effort";
-    return null;
+    return getReasoningCapability(modelId) ? "effort" : null;
 }

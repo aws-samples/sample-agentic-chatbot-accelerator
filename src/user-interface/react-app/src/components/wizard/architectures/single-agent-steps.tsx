@@ -25,7 +25,7 @@ import { KnowledgeBase, McpServer, Tool } from "../../../API";
 import { listSkills as listSkillsQuery } from "../../../graphql/queries";
 import { AgentCoreRuntimeConfiguration } from "../types";
 import { AdditionalToolsSection, AgentConfigSection } from "../wizard-shared-components";
-import { PYTHON_TYPE_OPTIONS, STEP_MIN_HEIGHT, getReasoningType } from "../wizard-utils";
+import { PYTHON_TYPE_OPTIONS, STEP_MIN_HEIGHT, isReasoningEffortAccepted } from "../wizard-utils";
 import ReviewStep from "./review-step";
 
 interface SingleAgentStepsProps {
@@ -182,14 +182,14 @@ export function getSingleAgentSteps({
                             modelId={config.modelInferenceParameters.modelId}
                             onModelChange={(modelId) =>
                                 setConfig((prev) => {
-                                    const newReasoningType = getReasoningType(modelId);
-                                    const oldReasoningType = getReasoningType(
-                                        prev.modelInferenceParameters.modelId,
-                                    );
-                                    // Clear reasoning budget if model type changed
+                                    // Keep the effort only if the NEW model accepts the
+                                    // value already selected. Sharing a reasoning "type"
+                                    // is not enough: Opus 4.8's xhigh is rejected by
+                                    // Sonnet 5, which documents only low/medium/high.
+                                    const budget = prev.modelInferenceParameters.reasoningBudget;
                                     const keepBudget =
-                                        newReasoningType !== null &&
-                                        newReasoningType === oldReasoningType;
+                                        budget != null &&
+                                        isReasoningEffortAccepted(modelId, budget);
                                     return {
                                         ...prev,
                                         modelInferenceParameters: {
@@ -531,16 +531,14 @@ export function isSingleAgentStepValid(
             config.modelInferenceParameters.modelId.trim() !== "";
         if (!basicValid) return false;
 
-        // Validate reasoning budget if enabled
+        // Validate the reasoning budget per model: a value the selected model
+        // does not accept is rejected by the backend at config-parse time.
         const budget = config.modelInferenceParameters.reasoningBudget;
-        if (budget != null) {
-            const rType = getReasoningType(config.modelInferenceParameters.modelId);
-            if (rType === "effort") {
-                if (!["low", "medium", "high"].includes(budget)) return false;
-            } else {
-                // Model doesn't support reasoning but budget is set — invalid
-                return false;
-            }
+        if (
+            budget != null &&
+            !isReasoningEffortAccepted(config.modelInferenceParameters.modelId, budget)
+        ) {
+            return false;
         }
 
         // Validate structured output if enabled

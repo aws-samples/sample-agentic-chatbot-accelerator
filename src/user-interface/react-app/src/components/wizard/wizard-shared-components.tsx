@@ -17,10 +17,12 @@ import {
     Table,
     Textarea,
 } from "@cloudscape-design/components";
+import { useState } from "react";
 import {
     CONVERSATION_MANAGER_OPTIONS,
-    REASONING_EFFORT_OPTIONS,
-    getReasoningType,
+    getDefaultReasoningEffort,
+    getReasoningCapability,
+    getReasoningEffortOptions,
     groupModelOptionsByProvider,
 } from "./wizard-utils";
 
@@ -50,9 +52,9 @@ export interface AgentConfigSectionProps {
     onConversationManagerChange: (value: "null" | "sliding_window" | "summarizing") => void;
     useMemory: boolean;
     onUseMemoryChange: (checked: boolean) => void;
-    /** Optional reasoning effort level ("low"/"medium"/"high") */
+    /** Optional reasoning effort level; accepted values are per-model (see wizard-utils) */
     reasoningBudget?: string;
-    /** Callback when reasoning effort changes; undefined means disabled */
+    /** Callback when reasoning effort changes; undefined means "omit the parameter" */
     onReasoningBudgetChange?: (value: string | undefined) => void;
 }
 
@@ -77,8 +79,38 @@ export function AgentConfigSection({
     reasoningBudget,
     onReasoningBudgetChange,
 }: AgentConfigSectionProps) {
-    const reasoningType = getReasoningType(modelId);
-    const reasoningEnabled = reasoningBudget != null;
+    const capability = getReasoningCapability(modelId);
+    const effortOptions = getReasoningEffortOptions(modelId);
+    const documentedDefault = capability?.defaultEffort ?? null;
+    const recommendedEffort = capability?.recommendedEffort ?? null;
+    const canDisable = capability?.canDisable ?? false;
+
+    // Ticking the checkbox for a model AWS documents no default for leaves the
+    // config unset on purpose (see getDefaultReasoningEffort), so
+    // `reasoningBudget != null` alone cannot tell us the picker should be open.
+    // Keyed by model id so switching models collapses the control again.
+    const [effortRequestedFor, setEffortRequestedFor] = useState<string | null>(null);
+    const reasoningEnabled = reasoningBudget != null || effortRequestedFor === modelId;
+
+    // Always-on models get no off affordance, so their picker is always visible.
+    const showEffortPicker = capability !== null && (!canDisable || reasoningEnabled);
+
+    const effortDescription = !canDisable
+        ? `Reasoning is always active for this model and cannot be disabled. It runs at ` +
+          `${documentedDefault ?? "the provider's default"} unless you select a different level.`
+        : recommendedEffort
+          ? `The model card recommends ${recommendedEffort} for this model.`
+          : documentedDefault
+            ? `${documentedDefault} is this model's documented default.`
+            : "AWS documents no default for this model — pick the effort level explicitly.";
+
+    // Nothing saved: name the level the model will actually use, so the empty
+    // picker is not read as "reasoning off".
+    const effortPlaceholder = documentedDefault
+        ? `${documentedDefault} (model default)`
+        : recommendedEffort
+          ? `${recommendedEffort} (recommended)`
+          : "Select an effort level...";
 
     return (
         <SpaceBetween direction="vertical" size="l">
@@ -103,38 +135,57 @@ export function AgentConfigSection({
                                 />
                             </FormField>
 
-                            {reasoningType && onReasoningBudgetChange && (
+                            {capability && onReasoningBudgetChange && (
                                 <>
-                                    <Checkbox
-                                        checked={reasoningEnabled}
-                                        onChange={({ detail }) => {
-                                            if (detail.checked) {
-                                                onReasoningBudgetChange("medium");
-                                            } else {
-                                                onReasoningBudgetChange(undefined);
-                                            }
-                                        }}
-                                    >
-                                        Enable extended thinking
-                                    </Checkbox>
+                                    {canDisable ? (
+                                        <Checkbox
+                                            checked={reasoningEnabled}
+                                            onChange={({ detail }) => {
+                                                setEffortRequestedFor(
+                                                    detail.checked ? modelId : null,
+                                                );
+                                                // Preselect only where a default is
+                                                // documented; elsewhere leave it unset
+                                                // rather than inventing a level.
+                                                onReasoningBudgetChange(
+                                                    detail.checked
+                                                        ? (getDefaultReasoningEffort(modelId) ??
+                                                              undefined)
+                                                        : undefined,
+                                                );
+                                            }}
+                                        >
+                                            Enable extended thinking
+                                        </Checkbox>
+                                    ) : (
+                                        <Alert type="info">
+                                            This model always reasons — extended thinking cannot be
+                                            turned off. You can still choose how much effort it
+                                            spends.
+                                        </Alert>
+                                    )}
 
-                                    {reasoningEnabled && (
+                                    {showEffortPicker && (
                                         <FormField
                                             label="Reasoning Effort"
-                                            description="Select the reasoning effort level"
+                                            description={effortDescription}
                                         >
                                             <Select
+                                                placeholder={effortPlaceholder}
                                                 selectedOption={
-                                                    REASONING_EFFORT_OPTIONS.find(
+                                                    effortOptions.find(
                                                         (opt) => opt.value === reasoningBudget,
                                                     ) || null
                                                 }
+                                                // Clearing the selection reverts to the
+                                                // model's own default; it must not
+                                                // silently write a level of our choosing.
                                                 onChange={({ detail }) =>
                                                     onReasoningBudgetChange(
-                                                        detail.selectedOption?.value || "medium",
+                                                        detail.selectedOption?.value || undefined,
                                                     )
                                                 }
-                                                options={REASONING_EFFORT_OPTIONS}
+                                                options={effortOptions}
                                             />
                                         </FormField>
                                     )}
