@@ -354,6 +354,36 @@ def test_catalog_sweep_matches_the_real_region_catalog():
     )
 
 
+def test_capability_table_is_not_scoped_to_the_catalog():
+    """The table describes Bedrock capability; the catalog decides availability.
+
+    Pins the T1 decision that these are separate concerns. Several entries name
+    models no region currently offers — the Claude 4.6/Opus 5 line, and grok-4.3
+    (withdrawn over a tool-calling incompatibility, not a reasoning one). Pruning
+    the table to match availability would make validation claim "reasoningBudget
+    is not supported" for models that demonstrably support it.
+    """
+    catalog_ts = (
+        Path(__file__).resolve().parents[4] / "iac-cdk/lib/shared/supported-models.ts"
+    )
+    # Match against the offered *ids*, not the raw source: the file's comments
+    # mention withdrawn models by name, so a substring check over the text would
+    # count a "why this is absent" note as availability.
+    offered_ids = set(re.findall(r':\s*"([^"]+)"', catalog_ts.read_text()))
+    not_offered = [
+        fragment
+        for fragment in REASONING_CAPABILITIES
+        if not any(fragment in model_id for model_id in offered_ids)
+    ]
+
+    assert "grok-4.3" in not_offered, (
+        "grok-4.3 should still have a capability entry while absent from the "
+        "catalog — see strands-agents/harness-sdk#1340"
+    )
+    # Its reasoning is genuinely fine; only tool-calling is broken.
+    assert _config("xai.grok-4.3", "low").reasoningBudget is ReasoningEffort.LOW
+
+
 @pytest.mark.parametrize("model_id,expected_efforts", _US_EAST_1_CATALOG)
 def test_catalog_model_capability_matches_sweep(model_id: str, expected_efforts):
     capability = reasoning_capability_for(model_id)
