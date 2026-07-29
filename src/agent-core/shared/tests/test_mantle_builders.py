@@ -264,7 +264,11 @@ def test_build_anthropic_mantle_omits_temperature():
 
 
 def test_build_anthropic_mantle_maps_reasoning_effort():
-    """Effort reasoning maps to an adaptive thinking block + output_config effort."""
+    """Effort reasoning maps to an adaptive thinking block + output_config effort.
+
+    ``display: "summarized"`` is set so reasoning text is surfaced — the API
+    defaults to ``"omitted"`` (empty thinking text) on the newest Claude models.
+    """
     anthropic_cls = MagicMock(name="AnthropicModel")
     with _patched_model("AnthropicModel", anthropic_cls):
         with patch("shared.base_factory.mantle_support.mint_token", return_value="tok"):
@@ -276,7 +280,10 @@ def test_build_anthropic_mantle_maps_reasoning_effort():
             )
 
     _, kwargs = anthropic_cls.call_args
-    assert kwargs["params"]["thinking"] == {"type": "adaptive"}
+    assert kwargs["params"]["thinking"] == {
+        "type": "adaptive",
+        "display": "summarized",
+    }
     assert kwargs["params"]["output_config"] == {"effort": "high"}
 
 
@@ -303,7 +310,10 @@ def test_build_anthropic_mantle_maps_widened_efforts(model_id, effort):
             )
 
     _, kwargs = anthropic_cls.call_args
-    assert kwargs["params"]["thinking"] == {"type": "adaptive"}
+    assert kwargs["params"]["thinking"] == {
+        "type": "adaptive",
+        "display": "summarized",
+    }
     assert kwargs["params"]["output_config"] == {"effort": effort.value}
 
 
