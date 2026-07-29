@@ -68,7 +68,7 @@ const acaStack = new AcaStack(app, stackName, {
 });
 
 // Explicit dependency: AcaStack requires BuilderStack
-acaStack.addDependency(builderStack);
+acaStack.addStackDependency(builderStack);
 
 // Tags
 for (const stack of [builderStack, acaStack]) {
