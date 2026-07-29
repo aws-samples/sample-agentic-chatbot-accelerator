@@ -221,40 +221,61 @@ class ChatHistoryHandler:
             }
         ]
 
+        # Idempotent upsert: append to History, seeding an empty list on first
+        # write. if_not_exists() makes this safe whether or not the item already
+        # exists, so the first message of a new session no longer raises a
+        # ValidationException (list_append on a missing attribute) and there's no
+        # create/append race. Session metadata is set only on creation, never
+        # overwritten.
+        update_expr = (
+            "SET History = list_append(if_not_exists(History, :empty), :new_message), "
+            "StartTime = if_not_exists(StartTime, :now)"
+        )
+        expr_values: dict[str, Any] = {
+            ":empty": [],
+            ":new_message": to_add,
+            ":now": datetime.now(timezone.utc).isoformat(),
+        }
+        if bedrock_session_id:
+            update_expr += ", BedrockSessionId = if_not_exists(BedrockSessionId, :bedrock_session_id)"
+            expr_values[":bedrock_session_id"] = bedrock_session_id
+        if configuration_name:
+            update_expr += ", ConfigurationName = if_not_exists(ConfigurationName, :configuration_name)"
+            expr_values[":configuration_name"] = configuration_name
+        if inference_config_as_str:
+            update_expr += ", ConfigurationValue = if_not_exists(ConfigurationValue, :configuration_value)"
+            expr_values[":configuration_value"] = inference_config_as_str
+        if configuration_agent_mode:
+            update_expr += (
+                ", ExecutionMode = if_not_exists(ExecutionMode, :execution_mode)"
+            )
+            expr_values[":execution_mode"] = configuration_agent_mode.value
+        if runtime_id:
+            update_expr += ", RuntimeId = if_not_exists(RuntimeId, :runtime_id)"
+            expr_values[":runtime_id"] = runtime_id
+        if runtime_version:
+            update_expr += (
+                ", RuntimeVersion = if_not_exists(RuntimeVersion, :runtime_version)"
+            )
+            expr_values[":runtime_version"] = runtime_version
+        if endpoint_name:
+            update_expr += ", Endpoint = if_not_exists(Endpoint, :endpoint)"
+            expr_values[":endpoint"] = endpoint_name
+
         try:
             self._table.update_item(
                 Key={"SessionId": self._session_id, "UserId": self._user_id},
-                UpdateExpression="SET History = list_append(History, :new_message)",
-                ExpressionAttributeValues={":new_message": to_add},
+                UpdateExpression=update_expr,
+                ExpressionAttributeValues=expr_values,
             )
             self._logger.info(
-                f"Message added to history to session {self._session_id} - user {self._user_id}"
+                f"Message persisted to history for session {self._session_id} - user {self._user_id}"
             )
         except ClientError:
-            new_item_attributes = {
-                "SessionId": self._session_id,
-                "UserId": self._user_id,
-                "History": to_add,
-                "StartTime": datetime.now(timezone.utc).isoformat(),
-            }
-            if bedrock_session_id:
-                new_item_attributes["BedrockSessionId"] = bedrock_session_id
-            if configuration_name:
-                new_item_attributes["ConfigurationName"] = configuration_name
-            if inference_config_as_str:
-                new_item_attributes["ConfigurationValue"] = inference_config_as_str
-            if configuration_agent_mode:
-                new_item_attributes["ExecutionMode"] = configuration_agent_mode.value
-            if runtime_id:
-                new_item_attributes["RuntimeId"] = runtime_id
-            if runtime_version:
-                new_item_attributes["RuntimeVersion"] = runtime_version
-            if endpoint_name:
-                new_item_attributes["Endpoint"] = endpoint_name
-            self._table.put_item(Item=new_item_attributes)
-            self._logger.info(
-                f"New chat history created for session {self._session_id} - user {self._user_id}"
+            self._logger.exception(
+                f"Failed to persist message to session {self._session_id} - user {self._user_id}"
             )
+            raise
 
     def _get_attributes(self) -> Optional[dict]:
         response = None

@@ -101,34 +101,45 @@ def save_conversation_exchange(
 
     messages_to_add = [user_item, assistant_item]
 
+    # Idempotent upsert: append to History, seeding an empty list on first write.
+    # if_not_exists() makes this safe whether or not the item already exists, so
+    # the first message of a new session no longer raises a ValidationException
+    # (list_append on a missing attribute) and there's no create/append race.
+    update_expr = (
+        "SET History = list_append(if_not_exists(History, :empty), :new_messages), "
+        "StartTime = if_not_exists(StartTime, :now)"
+    )
+    expr_values: dict = {
+        ":empty": [],
+        ":new_messages": messages_to_add,
+        ":now": datetime.now(timezone.utc).isoformat(),
+    }
+    # Session metadata is only set on creation (if_not_exists), never overwritten.
+    if runtime_id:
+        update_expr += ", RuntimeId = if_not_exists(RuntimeId, :runtime_id)"
+        expr_values[":runtime_id"] = runtime_id
+    if runtime_version:
+        update_expr += (
+            ", RuntimeVersion = if_not_exists(RuntimeVersion, :runtime_version)"
+        )
+        expr_values[":runtime_version"] = runtime_version
+    if endpoint_name:
+        update_expr += ", Endpoint = if_not_exists(Endpoint, :endpoint)"
+        expr_values[":endpoint"] = endpoint_name
+
     try:
-        # Try to append to existing history
         table.update_item(
             Key={"SessionId": session_id, "UserId": user_id},
-            UpdateExpression="SET History = list_append(History, :new_messages)",
-            ExpressionAttributeValues={":new_messages": messages_to_add},
+            UpdateExpression=update_expr,
+            ExpressionAttributeValues=expr_values,
         )
         logger.info(
-            f"Messages appended to session {session_id}",
+            f"Messages persisted to session {session_id}",
             extra={"messageId": message_id},
         )
     except ClientError:
-        # Session doesn't exist yet — create it
-        new_item = {
-            "SessionId": session_id,
-            "UserId": user_id,
-            "History": messages_to_add,
-            "StartTime": datetime.now(timezone.utc).isoformat(),
-        }
-        if runtime_id:
-            new_item["RuntimeId"] = runtime_id
-        if runtime_version:
-            new_item["RuntimeVersion"] = runtime_version
-        if endpoint_name:
-            new_item["Endpoint"] = endpoint_name
-
-        table.put_item(Item=new_item)
-        logger.info(
-            f"New session created {session_id}",
+        logger.exception(
+            f"Failed to persist messages to session {session_id}",
             extra={"messageId": message_id},
         )
+        raise
