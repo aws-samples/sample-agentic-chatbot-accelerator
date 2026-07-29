@@ -14,9 +14,24 @@ variable "prefix" {
 }
 
 variable "aws_region" {
-  description = "AWS region to deploy resources into."
+  description = "AWS region to deploy resources into. Must be a region present in local.supported_models_by_region (see supported-models.tf)."
   type        = string
   default     = "us-east-1"
+
+  # Mirrors assertRegionSupported() in iac-cdk/lib/shared/supported-models.ts.
+  # Model availability is a region property, so an unsupported deploy target is a
+  # hard error at plan time rather than an empty model dropdown after apply.
+  #
+  # NOTE: keep this list in sync with local.supported_models_by_region in
+  # supported-models.tf. Terraform cannot reference a local from a variable
+  # validation block, so the duplication is unavoidable.
+  validation {
+    condition = contains([
+      "us-east-1", "us-east-2", "us-west-2",
+      "eu-central-1", "eu-north-1", "eu-west-1", "eu-west-2",
+    ], var.aws_region)
+    error_message = "Region has no supported models. Deploy to one of: us-east-1, us-east-2, us-west-2, eu-central-1, eu-north-1, eu-west-1, eu-west-2."
+  }
 }
 
 variable "aws_profile" {
@@ -123,11 +138,9 @@ variable "ecr_image_uri" {
 # User Interface Configuration
 # -----------------------------------------------------------------------------
 
-variable "supported_models" {
-  description = "Map of display name to model ID for supported Bedrock models. Key = display name, Value = model ID."
-  type        = map(string)
-  default     = {}
-}
+# NOTE: there is no `supported_models` variable. The selectable chat-model set is
+# region-keyed in supported-models.tf (local.supported_models) rather than an
+# operator input — see docs/adr/0004-region-scoped-model-catalog.md.
 
 variable "reranking_models" {
   description = "Map of display name to model ID for reranking models. Key = display name, Value = model ID."
@@ -241,11 +254,10 @@ variable "observability" {
 # -----------------------------------------------------------------------------
 
 variable "evaluator_config" {
-  description = "Optional evaluator configuration for agent evaluation. Defines supported models, pass thresholds, and default rubrics."
+  description = "Optional evaluator configuration for agent evaluation. Defines pass thresholds and default rubrics. Evaluation models come from local.supported_models (see supported-models.tf)."
   type = object({
-    supported_models = optional(map(string), {})
-    pass_threshold   = optional(number, 0.8)
-    default_rubrics  = optional(map(string), {})
+    pass_threshold  = optional(number, 0.8)
+    default_rubrics = optional(map(string), {})
   })
   default = null
 }
@@ -253,7 +265,7 @@ variable "evaluator_config" {
 # -----------------------------------------------------------------------------
 # Experiments Configuration (Optional)
 # Configures synthetic test case generation with AWS Batch (Fargate).
-# Uses supported_models from evaluator_config for model selection.
+# Uses local.supported_models (supported-models.tf) for model selection.
 #
 # Deployment modes:
 #   1. experiments_config = null                      → Feature disabled entirely

@@ -43,7 +43,7 @@ variable "graphql_url" {
 # -----------------------------------------------------------------------------
 
 variable "supported_models" {
-  description = "Map of display name to model ID for supported Bedrock models"
+  description = "Deploy region's flat display name -> literal model ID map, from local.supported_models in the root module (see supported-models.tf)."
   type        = map(string)
   default     = {}
 }
@@ -75,11 +75,10 @@ variable "data_bucket_name" {
 # -----------------------------------------------------------------------------
 
 variable "evaluator_config" {
-  description = "Evaluator configuration for the frontend (models, threshold, rubrics)"
+  description = "Evaluator configuration for the frontend (threshold, rubrics). Models come from var.supported_models."
   type = object({
-    supported_models = map(string)
-    pass_threshold   = number
-    default_rubrics  = map(string)
+    pass_threshold  = number
+    default_rubrics = map(string)
   })
   default = null
 }

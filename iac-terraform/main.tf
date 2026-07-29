@@ -367,7 +367,7 @@ module "user_interface" {
   graphql_url = module.appsync.graphql_url
 
   # Feature configuration
-  supported_models         = var.supported_models
+  supported_models         = local.supported_models
   reranking_models         = var.reranking_models
   knowledge_base_supported = var.knowledge_base != null && var.data_processing != null
 
