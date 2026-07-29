@@ -1,8 +1,12 @@
 # T<N> — <task title>
 
-**Status:** not-started
-**Depends on:** <T? or —>
-**DoD mapping:** "<the story Definition-of-Done checkbox this task satisfies>"
+| | |
+|---|---|
+| **Status** | not-started |
+| **Depends on** | <T? or —> |
+
+**Satisfies (story Definition of Done):**
+- "<the story Definition-of-Done checkbox this task satisfies — one bullet per checkbox, quoted verbatim>"
 
 ## Objective
 
