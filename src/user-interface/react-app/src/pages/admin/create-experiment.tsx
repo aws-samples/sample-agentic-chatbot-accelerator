@@ -21,6 +21,7 @@ import { AppContext } from "../../common/app-context";
 import { CHATBOT_NAME } from "../../common/constants";
 import useOnFollow from "../../common/hooks/use-on-follow";
 import BaseAppLayout from "../../components/base-app-layout";
+import { groupModelOptionsByProvider } from "../../components/wizard/wizard-utils";
 import * as mutations from "../../graphql/mutations";
 
 export default function CreateExperimentPage() {
@@ -252,7 +253,7 @@ export default function CreateExperimentPage() {
                                     onChange={({ detail }) =>
                                         setModelId(detail.selectedOption?.value || modelId)
                                     }
-                                    options={modelOptions}
+                                    options={groupModelOptionsByProvider(modelOptions)}
                                     placeholder="Select a model..."
                                 />
                             </FormField>

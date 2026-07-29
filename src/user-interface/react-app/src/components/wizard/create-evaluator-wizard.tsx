@@ -33,6 +33,7 @@ import {
     listAgentEndpoints as listAgentEndpointsQuery,
     listRuntimeAgents as listRuntimeAgentsQuery,
 } from "../../graphql/queries";
+import { groupModelOptionsByProvider } from "./wizard-utils";
 
 // Configuration for a single evaluator instance
 export interface EvaluatorConfig {
@@ -493,7 +494,7 @@ export default function CreateEvaluatorWizard({
                                             modelId: detail.selectedOption?.value || config.modelId,
                                         }))
                                     }
-                                    options={modelOptions}
+                                    options={groupModelOptionsByProvider(modelOptions)}
                                     placeholder="Select evaluation model..."
                                 />
                             </FormField>

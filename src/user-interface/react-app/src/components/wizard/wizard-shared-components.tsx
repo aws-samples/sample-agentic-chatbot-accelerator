@@ -21,6 +21,7 @@ import {
     CONVERSATION_MANAGER_OPTIONS,
     REASONING_EFFORT_OPTIONS,
     getReasoningType,
+    groupModelOptionsByProvider,
 } from "./wizard-utils";
 
 // -------------------------------------------------------------------
@@ -91,7 +92,7 @@ export function AgentConfigSection({
                             >
                                 <Select
                                     placeholder="Select a model..."
-                                    options={modelOptions}
+                                    options={groupModelOptionsByProvider(modelOptions)}
                                     selectedOption={
                                         modelOptions.find((opt) => opt.value === modelId) || null
                                     }
