@@ -37,7 +37,9 @@ USER bedrock_agentcore
 
 EXPOSE 8080
 
+# Probes the same /ping endpoint AgentCore's runtime uses. Uses the interpreter
+# already in the image — the slim base ships no curl/wget.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD curl -f  || exit 1
+  CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/ping', timeout=2)"]
 
 CMD ["opentelemetry-instrument", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]
