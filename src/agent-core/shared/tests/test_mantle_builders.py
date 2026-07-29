@@ -90,6 +90,67 @@ def test_build_openai_mantle_maps_reasoning_effort_enum():
     assert kwargs["params"]["reasoning_effort"] == "high"
 
 
+@pytest.mark.parametrize(
+    "effort",
+    [
+        ReasoningEffort.NONE,
+        ReasoningEffort.LOW,
+        ReasoningEffort.MEDIUM,
+        ReasoningEffort.HIGH,
+        ReasoningEffort.XHIGH,
+        ReasoningEffort.MAX,
+    ],
+)
+def test_build_openai_mantle_forwards_every_effort_verbatim(effort):
+    """Every widened level reaches params. Which levels a given model *accepts*
+    is ``ModelConfiguration``'s call (T1); the builder maps whatever it is given.
+    """
+    openai_cls = MagicMock(name="OpenAIModel")
+    with _patched_model("OpenAIModel", openai_cls):
+        BaseAgentFactory._build_openai_mantle(
+            model_id="openai.gpt-oss-20b",
+            max_tokens=512,
+            temperature=0.7,
+            reasoning_budget=effort,
+        )
+
+    _, kwargs = openai_cls.call_args
+    assert kwargs["params"]["reasoning_effort"] == effort.value
+
+
+def test_build_openai_mantle_sends_none_rather_than_omitting():
+    """``none`` must be *sent*: on the always-on families (grok-4.3) it is the
+    only way to disable reasoning, so omitting the key would leave it on.
+    """
+    openai_cls = MagicMock(name="OpenAIModel")
+    with _patched_model("OpenAIModel", openai_cls):
+        with patch("shared.base_factory.mantle_support.mint_token", return_value="tok"):
+            BaseAgentFactory._build_openai_mantle(
+                model_id="xai.grok-4.3",
+                max_tokens=512,
+                temperature=0.7,
+                reasoning_budget=ReasoningEffort.NONE,
+            )
+
+    _, kwargs = openai_cls.call_args
+    assert "reasoning_effort" in kwargs["params"]
+    assert kwargs["params"]["reasoning_effort"] == "none"
+
+
+def test_build_openai_mantle_omits_reasoning_when_unset():
+    """``reasoning_budget=None`` omits the key entirely — distinct from ``none``."""
+    openai_cls = MagicMock(name="OpenAIModel")
+    with _patched_model("OpenAIModel", openai_cls):
+        BaseAgentFactory._build_openai_mantle(
+            model_id="openai.gpt-oss-20b",
+            max_tokens=512,
+            temperature=0.7,
+        )
+
+    _, kwargs = openai_cls.call_args
+    assert "reasoning_effort" not in kwargs["params"]
+
+
 def test_build_openai_mantle_no_converse_only_kwargs():
     openai_cls = MagicMock(name="OpenAIModel")
     with _patched_model("OpenAIModel", openai_cls):
@@ -219,6 +280,33 @@ def test_build_anthropic_mantle_maps_reasoning_effort():
     assert kwargs["params"]["output_config"] == {"effort": "high"}
 
 
+@pytest.mark.parametrize(
+    "model_id, effort",
+    [
+        # xhigh/max are Opus-only per the adaptive-thinking page.
+        ("anthropic.claude-opus-4-8", ReasoningEffort.XHIGH),
+        ("anthropic.claude-opus-4-8", ReasoningEffort.MAX),
+        ("anthropic.claude-sonnet-5", ReasoningEffort.LOW),
+        ("anthropic.claude-sonnet-5", ReasoningEffort.MEDIUM),
+    ],
+)
+def test_build_anthropic_mantle_maps_widened_efforts(model_id, effort):
+    """The widened ladder reaches output_config.effort unchanged."""
+    anthropic_cls = MagicMock(name="AnthropicModel")
+    with _patched_model("AnthropicModel", anthropic_cls):
+        with patch("shared.base_factory.mantle_support.mint_token", return_value="tok"):
+            BaseAgentFactory._build_anthropic_mantle(
+                model_id=model_id,
+                max_tokens=1024,
+                temperature=0.5,
+                reasoning_budget=effort,
+            )
+
+    _, kwargs = anthropic_cls.call_args
+    assert kwargs["params"]["thinking"] == {"type": "adaptive"}
+    assert kwargs["params"]["output_config"] == {"effort": effort.value}
+
+
 def test_build_anthropic_mantle_omits_reasoning_when_unset():
     """No reasoning_budget → no thinking/output_config keys in params."""
     anthropic_cls = MagicMock(name="AnthropicModel")
@@ -299,6 +387,58 @@ def test_build_openai_responses_mantle_maps_reasoning_effort():
 
     _, kwargs = responses_cls.call_args
     assert kwargs["params"]["reasoning"] == {"effort": "high"}
+
+
+@pytest.mark.parametrize(
+    "effort",
+    [
+        ReasoningEffort.NONE,
+        ReasoningEffort.LOW,
+        ReasoningEffort.MEDIUM,
+        ReasoningEffort.HIGH,
+        ReasoningEffort.XHIGH,
+        ReasoningEffort.MAX,
+    ],
+)
+def test_build_openai_responses_mantle_maps_widened_efforts(effort):
+    """gpt-5.6 documents all six levels; each must reach params["reasoning"]."""
+    with patch(_RESPONSES_TARGET) as responses_cls:
+        BaseAgentFactory._build_openai_responses_mantle(
+            model_id="openai.gpt-5.6-luna",
+            max_tokens=512,
+            temperature=0.7,
+            reasoning_budget=effort,
+        )
+
+    _, kwargs = responses_cls.call_args
+    assert kwargs["params"]["reasoning"] == {"effort": effort.value}
+
+
+def test_build_openai_responses_mantle_sends_none_rather_than_omitting():
+    """gpt-5.6 reasons unless told otherwise, so ``none`` must be on the wire."""
+    with patch(_RESPONSES_TARGET) as responses_cls:
+        BaseAgentFactory._build_openai_responses_mantle(
+            model_id="openai.gpt-5.6-luna",
+            max_tokens=512,
+            temperature=0.7,
+            reasoning_budget=ReasoningEffort.NONE,
+        )
+
+    _, kwargs = responses_cls.call_args
+    assert kwargs["params"]["reasoning"] == {"effort": "none"}
+
+
+def test_build_openai_responses_mantle_omits_reasoning_when_unset():
+    """``None`` omits the key — distinct from ``none``, which disables."""
+    with patch(_RESPONSES_TARGET) as responses_cls:
+        BaseAgentFactory._build_openai_responses_mantle(
+            model_id="openai.gpt-5.6-luna",
+            max_tokens=512,
+            temperature=0.7,
+        )
+
+    _, kwargs = responses_cls.call_args
+    assert "reasoning" not in kwargs["params"]
 
 
 def test_build_openai_responses_mantle_no_converse_only_kwargs():
