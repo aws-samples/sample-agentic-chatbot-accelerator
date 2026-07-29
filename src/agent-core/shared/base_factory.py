@@ -22,7 +22,7 @@ from strands.models import BedrockModel, Model
 
 from . import mantle_support
 from .base_constants import RETRIEVE_FROM_KB_PREFIX
-from .stream_types import ReasoningEffort
+from .stream_types import ReasoningEffort, reasoning_capability_for
 
 _cross_account_logger = logging.getLogger(__name__)
 
@@ -56,24 +56,16 @@ _MANTLE_OPENAI_RESPONSES_PREFIXES = ("openai.gpt-5.",)
 # model cards as new families land on this path.
 _MANTLE_OPENAI_V1_CHAT_PREFIXES = ("google.gemma-4", "xai.grok-4.")
 
-# Anthropic models whose reasoning is expressed as an effort level. On the
-# Converse path this maps to a ``thinking`` adaptive block plus an
-# ``output_config`` effort; on the Mantle Messages path the same shape is sent
-# through ``params``. Integer token budgets are no longer supported — the newest
-# Claude models (Opus 5, Sonnet 5) take an effort level, and older token-budget
-# variants are out of scope. Superseded by ``REASONING_CAPABILITIES`` in
-# stream_types.py, which carries the per-model accepted-effort sets; T2 rewires
-# these branches onto it and deletes the two sets below.
-_EFFORT_BUDGET_MODELS_ANTHROPIC = {
-    "claude-sonnet-4-6",
-    "claude-opus-4-6",
-    "claude-opus-5",
-    "claude-sonnet-5",
-}
-
-_EFFORT_BUDGET_MODELS_NOVA = {
-    "nova-2-lite",
-}
+# Model-id fragments identifying which *request shape* a Converse-path reasoning
+# request takes. Whether a model reasons at all — and at which effort levels — is
+# owned by ``REASONING_CAPABILITIES`` in stream_types.py (the single capability
+# table); these fragments only answer "which wire format", the same way
+# ``_MANTLE_OPENAI_V1_CHAT_PREFIXES`` above only answers "which base path".
+#
+# Anthropic: adaptive ``thinking`` block + ``output_config.effort``.
+# Nova: ``reasoningConfig={"type": "enabled", "maxReasoningEffort": ...}``.
+_CONVERSE_ANTHROPIC_FRAGMENT = "claude"
+_CONVERSE_NOVA_FRAGMENT = "nova"
 
 
 class BaseAgentFactory:
@@ -133,6 +125,23 @@ class BaseAgentFactory:
         before this routing was introduced. The membership check reads a
         process-cached set, so it adds no per-call network round-trip.
 
+        Reasoning mapping per branch, all keyed off
+        ``stream_types.reasoning_capability_for`` rather than a local allowlist:
+
+        - Converse + Anthropic: ``thinking={"type": "adaptive"}`` plus
+          ``output_config={"effort": ...}`` in ``additional_request_fields``;
+          ``temperature`` is removed (thinking and sampling params are mutually
+          exclusive).
+        - Converse + Nova: ``reasoningConfig={"type": "enabled",
+          "maxReasoningEffort": ...}``; ``temperature`` is removed too, per the
+          Nova 2 card.
+        - Mantle branches: delegated to the three ``_build_*_mantle`` helpers.
+
+        A ``reasoning_budget`` for a model with no capability entry is a
+        programming error by this point — ``ModelConfiguration`` rejects it
+        upstream — so this method does not re-validate; it has no branch to apply
+        and does not attach the parameter to an unrelated request field.
+
         Args:
             model_id (str): The configured model id (Converse-form or Mantle id).
             max_tokens (int): Maximum tokens for generation.
@@ -142,8 +151,10 @@ class BaseAgentFactory:
                 to None.
             enable_caching (bool): Converse-only prompt caching, applied when the
                 model supports it. Defaults to True.
-            reasoning_budget (ReasoningEffort | None): Reasoning effort level
-                (low/medium/high), mapped per branch. Defaults to None.
+            reasoning_budget (ReasoningEffort | None): Reasoning effort level,
+                mapped per branch. ``None`` omits the parameter entirely;
+                ``ReasoningEffort.NONE`` is sent as ``"none"`` and explicitly
+                disables reasoning. Defaults to None.
 
         Returns:
             Model: An ``OpenAIModel`` (Mantle non-Anthropic), ``AnthropicModel``
@@ -166,28 +177,42 @@ class BaseAgentFactory:
         ):
             model_args["cache_prompt"] = "default"
 
-        if reasoning_budget is not None:
-            reasoning_cfg: dict = {"type": "enabled"}
+        # Reasoning on the Converse path. Capability (does this model reason, and
+        # at which levels?) is owned by ``reasoning_capability_for``; a budget for
+        # a model with no entry is a programming error by this point because
+        # ``ModelConfiguration`` already rejected it, so we do not re-validate —
+        # we simply have no request shape to apply and MUST NOT attach the value
+        # to an unrelated field. ``ReasoningEffort.NONE`` is a real value that has
+        # to reach the provider (it is the only way to silence always-on models),
+        # so there is deliberately no "skip when none" shortcut here.
+        if (
+            reasoning_budget is not None
+            and reasoning_capability_for(model_id) is not None
+        ):
             reasoning_val = reasoning_budget.value
+            extra_fields: dict[str, Any] = {}
 
-            set_additional_args = True
-            temp_add_args = {}
-            if any(m in model_id for m in _EFFORT_BUDGET_MODELS_ANTHROPIC):
-                reasoning_key = "thinking"
-                reasoning_cfg["type"] = "adaptive"
-                temp_add_args["output_config"] = {"effort": reasoning_val}
-                del model_args["temperature"]
-                # If thinking is enabled with Anthropic models, temperature cannot be set
-            elif any(m in model_id for m in _EFFORT_BUDGET_MODELS_NOVA):
-                reasoning_key = "reasoningConfig"
-                reasoning_cfg["maxReasoningEffort"] = reasoning_val
-            else:
-                set_additional_args = False
-
-            if set_additional_args:
-                model_args["additional_request_fields"] = temp_add_args | {
-                    reasoning_key: reasoning_cfg
+            if _CONVERSE_ANTHROPIC_FRAGMENT in model_id:
+                # Adaptive thinking + an effort level. Sampling params are
+                # mutually exclusive with thinking, so temperature is dropped.
+                extra_fields["thinking"] = {"type": "adaptive"}
+                extra_fields["output_config"] = {"effort": reasoning_val}
+                model_args.pop("temperature", None)
+            elif _CONVERSE_NOVA_FRAGMENT in model_id:
+                extra_fields["reasoningConfig"] = {
+                    "type": "enabled",
+                    "maxReasoningEffort": reasoning_val,
                 }
+                # The Nova 2 card states temperature/topP/topK cannot be combined
+                # with maxReasoningEffort (it errors). The card scopes that to
+                # `high`; we drop temperature at *every* effort level anyway — a
+                # knowing simplification that keeps this branch uniform with the
+                # Anthropic one above, and a request opting into reasoning has
+                # already traded away sampling control.
+                model_args.pop("temperature", None)
+
+            if extra_fields:
+                model_args["additional_request_fields"] = extra_fields
         # Use cross-account session if a Bedrock access role ARN is configured
         bedrock_access_role_arn = os.environ.get("bedrockAccessRoleArn")
         if bedrock_access_role_arn:
@@ -244,8 +269,10 @@ class BaseAgentFactory:
             max_tokens (int): Maximum tokens for generation.
             temperature (float): Sampling temperature.
             reasoning_budget (ReasoningEffort | None): When set, mapped to
-                ``params["reasoning_effort"]`` as an OpenAI-style enum string
-                (``low``/``medium``/``high``). Defaults to None.
+                ``params["reasoning_effort"]`` as an OpenAI-style enum string.
+                Accepted levels are per-model (see ``REASONING_CAPABILITIES``);
+                ``"none"`` is sent, not omitted — it is the only way to disable
+                reasoning on the always-on families. Defaults to None.
 
         Returns:
             OpenAIModel: Model configured for the Mantle Chat Completions surface.
@@ -314,8 +341,9 @@ class BaseAgentFactory:
             temperature (float): Sampling temperature. Accepted for a uniform
                 builder signature but intentionally not sent (see above).
             reasoning_budget (ReasoningEffort | None): When set, mapped to
-                ``params["reasoning"] = {"effort": <low|medium|high>}``. Defaults
-                to None.
+                ``params["reasoning"] = {"effort": <level>}``. Accepted levels are
+                per-model (GPT-5.6 documents all six, 5.4/5.5 only low/medium/
+                high); ``"none"`` is sent, not omitted. Defaults to None.
 
         Returns:
             OpenAIResponsesModel: Model configured for the Mantle Responses surface.
@@ -359,11 +387,12 @@ class BaseAgentFactory:
 
         Reasoning is expressed as an **effort level** on the newest Claude
         models: the Messages API takes an adaptive ``thinking`` block paired with
-        an ``output_config`` effort (``low``/``medium``/``high``) — the same shape
-        the Converse path assembles for ``_EFFORT_BUDGET_MODELS_ANTHROPIC``. Both
-        keys are forwarded through ``params``; enabling thinking is itself the
-        reason ``temperature`` must be omitted. Integer token budgets are not
-        supported (see ``ReasoningEffort``).
+        an ``output_config`` effort — the same shape the Converse path assembles
+        for Claude ids. Accepted levels are per-model (``xhigh``/``max`` are
+        Opus-only) and enforced upstream by ``ModelConfiguration`` against
+        ``REASONING_CAPABILITIES``. Both keys are forwarded through ``params``;
+        enabling thinking is itself the reason ``temperature`` must be omitted.
+        Integer token budgets are not supported (see ``ReasoningEffort``).
 
         MUST NOT pass any Converse-only arg (``cache_prompt``,
         ``additional_request_fields``, ``stop_sequences``, ``boto_session``).
