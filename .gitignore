@@ -16,6 +16,7 @@ cache
 local/
 .vscode
 .env
+.zed
 *.DS_Store*
 
 # agent-creator plugin: cached endpoint discovery (never commit resolved IDs)

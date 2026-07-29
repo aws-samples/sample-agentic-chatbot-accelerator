@@ -77,6 +77,7 @@ Two Lambdas share a `graphql.ts` utility. The Makefile target `copy-graphql-util
 
 ## Coding standards
 - **Python**: PEP 8, type hints, Black (line length 88 via isort/black profile — `pyproject.toml` says 120 in CONTRIBUTING.md but tooling enforces 88), Ruff (E, F; E501 ignored). Use AWS Lambda Powertools for logging/tracing.
+- **Docstrings**: Google style (`Args:` / `Returns:` / `Raises:` sections, with `name (type): description` for args). Match the existing convention in `src/agent-core/shared/`.
 - **TypeScript**: Prettier + ESLint. CDK in TS. React app uses functional components + Cloudscape Design System.
 - **Comments**: explain *why*, not *what*.
 
