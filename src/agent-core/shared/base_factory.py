@@ -211,6 +211,16 @@ class BaseAgentFactory:
                 # already traded away sampling control.
                 model_args.pop("temperature", None)
 
+                # Nova additionally rejects `maxTokens` at `high`:
+                #   "`maxTokens` must be unset when reasoningConfig type is
+                #    'enabled' and maxReasoningEffort is 'high'"
+                # (ValidationException, verified live 2026-07-29). Unbounded
+                # output is the provider's own requirement for this combination,
+                # not a choice we get to make, so honour it rather than surface a
+                # 400. Lower efforts keep max_tokens.
+                if reasoning_budget is ReasoningEffort.HIGH:
+                    model_args.pop("max_tokens", None)
+
             if extra_fields:
                 model_args["additional_request_fields"] = extra_fields
         # Use cross-account session if a Bedrock access role ARN is configured

@@ -121,20 +121,44 @@ class ReasoningCapability(BaseModel):
 _EFFORT_LMH = frozenset(
     {ReasoningEffort.LOW, ReasoningEffort.MEDIUM, ReasoningEffort.HIGH}
 )
-# Anthropic's adaptive-thinking effort ladder. xhigh/max are Opus-only.
-_EFFORT_ANTHROPIC_OPUS = _EFFORT_LMH | {ReasoningEffort.XHIGH, ReasoningEffort.MAX}
-# GPT-5.6 (Sol/Terra/Luna) is the only family documenting the full six levels.
-_EFFORT_GPT_56 = _EFFORT_ANTHROPIC_OPUS | {ReasoningEffort.NONE}
+# Anthropic adaptive thinking: the full ladder minus ``none`` (the Messages API
+# rejects it — "unknown variant `none`, expected one of `low`, `medium`, `high`,
+# `xhigh`, `max`", which is the authoritative enum). Applies to Sonnet as well as
+# Opus: the Bedrock adaptive-thinking page calls xhigh/max "Opus only", but
+# claude-sonnet-5 accepts both (verified live 2026-07-29).
+_EFFORT_ANTHROPIC = _EFFORT_LMH | {ReasoningEffort.XHIGH, ReasoningEffort.MAX}
+# The five levels most OpenAI-surface families accept: everything except ``max``.
+_EFFORT_NO_MAX = _EFFORT_LMH | {ReasoningEffort.NONE, ReasoningEffort.XHIGH}
+# GPT-5.6 (Sol/Terra/Luna) is the only family that accepts all six.
+_EFFORT_ALL = _EFFORT_NO_MAX | {ReasoningEffort.MAX}
+# Nova 2 on Converse: only low/medium are usable as-is. ``high`` is accepted by
+# the model but requires ``maxTokens`` to be unset, which ``create_model``
+# handles by dropping it (see base_factory). ``none``/``xhigh``/``max`` are not
+# in Nova's enum at all.
+_EFFORT_NOVA = frozenset(
+    {ReasoningEffort.LOW, ReasoningEffort.MEDIUM, ReasoningEffort.HIGH}
+)
 
 
 # Model-id fragment -> reasoning capability. Keyed by fragment (substring match)
 # so one entry covers a family and both the geo-prefixed and unprefixed forms of
 # the same id (``us.amazon.nova-2-lite-v1:0`` / ``amazon.nova-2-lite-v1:0``).
 #
-# MAINTENANCE: derived from the AWS model cards, NOT discoverable at runtime —
-# the Mantle ``/v1/models`` catalog exposes no reasoning metadata (only id,
-# created, object, owned_by, data_retention, status). Same necessity as
-# ``_MANTLE_OPENAI_V1_CHAT_PREFIXES`` in base_factory.py. Re-check the cards
+# PROVENANCE: the accepted-effort sets are **empirically verified**, not taken
+# from the docs. A live enumeration in us-east-1 (2026-07-29 — every effort value
+# against every family, `cache/t4_enumerate.py`) found the AWS model cards and the
+# adaptive-thinking page wrong or incomplete for 7 of 12 families, always in the
+# too-strict direction. Where the two disagree, the live result wins. Notably:
+#   * xhigh/max are NOT Opus-only — claude-sonnet-5 takes both.
+#   * gpt-5.4/5.5 take none+xhigh (but reject max); only 5.6 takes all six.
+#   * gemma-4-* and grok-4.3 take none+xhigh, undocumented on their cards.
+#   * gpt-oss reasons at all, which its card omits entirely.
+# Re-run that script when adding a family rather than trusting a card.
+#
+# NOT discoverable at runtime — the Mantle ``/v1/models`` catalog exposes no
+# reasoning metadata (only id, created, object, owned_by, data_retention,
+# status). Same necessity as ``_MANTLE_OPENAI_V1_CHAT_PREFIXES`` in
+# base_factory.py. Re-check the cards
 # when adding a model to the region catalog (iac-cdk/lib/shared/supported-
 # models.ts). Mirrored in the frontend as REASONING_CAPABILITIES in
 # wizard-utils.ts; tests assert the two agree.
@@ -150,67 +174,72 @@ REASONING_CAPABILITIES: dict[str, ReasoningCapability] = {
     # `high` is the documented default ("At the default effort level (high),
     # Claude will almost always think").
     "claude-opus-5": ReasoningCapability(
-        efforts=_EFFORT_ANTHROPIC_OPUS,
+        efforts=_EFFORT_ANTHROPIC,
         can_disable=True,
         default_effort=ReasoningEffort.HIGH,
     ),
     "claude-opus-4-8": ReasoningCapability(
-        efforts=_EFFORT_ANTHROPIC_OPUS,
+        efforts=_EFFORT_ANTHROPIC,
         can_disable=True,
         default_effort=ReasoningEffort.HIGH,
     ),
     "claude-opus-4-6": ReasoningCapability(
-        efforts=_EFFORT_ANTHROPIC_OPUS,
+        efforts=_EFFORT_ANTHROPIC,
         can_disable=True,
         default_effort=ReasoningEffort.HIGH,
     ),
-    # Sonnet is not an Opus: xhigh/max are documented as Opus-only.
-    # Sonnet 5's card states adaptive thinking is always on and cannot be
-    # disabled, so `can_disable` is False.
+    # Sonnet takes the same five levels as Opus, contra the adaptive-thinking
+    # page's "Opus only" claim about xhigh/max (verified live). Sonnet 5's card
+    # states thinking is always on and cannot be disabled, so `can_disable` is
+    # False — consistent with the Messages API rejecting `none` outright.
     "claude-sonnet-5": ReasoningCapability(
-        efforts=_EFFORT_LMH,
+        efforts=_EFFORT_ANTHROPIC,
         can_disable=False,
         default_effort=ReasoningEffort.HIGH,
     ),
     "claude-sonnet-4-6": ReasoningCapability(
-        efforts=_EFFORT_LMH,
+        efforts=_EFFORT_ANTHROPIC,
         can_disable=True,
         default_effort=ReasoningEffort.HIGH,
     ),
     # -- OpenAI proprietary (Responses on /openai/v1) -----------------------
-    # Longer fragments first is not required (lookup is longest-match), but
-    # note "gpt-5." is a prefix of "gpt-5.6": the 6-level set must not leak to
-    # 5.4/5.5, which document only three.
-    "gpt-5.6": ReasoningCapability(efforts=_EFFORT_GPT_56, can_disable=True),
-    "gpt-5.5": ReasoningCapability(efforts=_EFFORT_LMH, can_disable=True),
-    "gpt-5.4": ReasoningCapability(efforts=_EFFORT_LMH, can_disable=True),
+    # "gpt-5." is a prefix of "gpt-5.6", so the lookup's longest-match is what
+    # keeps `max` from leaking to 5.4/5.5 — they accept none+xhigh but 400 on
+    # `max` ("not supported with the 'openai.gpt-5.5' model").
+    "gpt-5.6": ReasoningCapability(efforts=_EFFORT_ALL, can_disable=True),
+    "gpt-5.5": ReasoningCapability(efforts=_EFFORT_NO_MAX, can_disable=True),
+    "gpt-5.4": ReasoningCapability(efforts=_EFFORT_NO_MAX, can_disable=True),
     # -- OpenAI open-weights (Chat Completions on /v1) ----------------------
-    # The gpt-oss cards carry no Reasoning field; `reasoning_effort` support is
-    # documented in the AWS GovCloud launch blog. Confirmed live in T4.
+    # The gpt-oss cards carry no Reasoning field at all; support is documented
+    # only in the AWS GovCloud launch blog, and confirmed live. Genuinely
+    # three-level: none/xhigh/max all 400.
     "gpt-oss": ReasoningCapability(efforts=_EFFORT_LMH, can_disable=True),
     # -- Google Gemma 4 (Chat Completions on /openai/v1) --------------------
-    # Reasoning is listed in the card's bedrock-mantle feature table.
-    "gemma-4-31b": ReasoningCapability(efforts=_EFFORT_LMH, can_disable=True),
-    "gemma-4-26b-a4b": ReasoningCapability(efforts=_EFFORT_LMH, can_disable=True),
+    # Reasoning is listed in the card's bedrock-mantle feature table; the
+    # none+xhigh support below is undocumented and live-verified.
+    "gemma-4-31b": ReasoningCapability(efforts=_EFFORT_NO_MAX, can_disable=True),
+    "gemma-4-26b-a4b": ReasoningCapability(efforts=_EFFORT_NO_MAX, can_disable=True),
     # E2B over-reasons by default; the card *recommends* high to keep the
     # reasoning in its own channel. A recommendation, not the provider default.
     "gemma-4-e2b": ReasoningCapability(
-        efforts=_EFFORT_LMH,
+        efforts=_EFFORT_NO_MAX,
         can_disable=True,
         recommended_effort=ReasoningEffort.HIGH,
     ),
     # -- xAI (Chat Completions on /openai/v1) -------------------------------
     # "Reasoning is always active by default"; `none` is the only way off, and
-    # `low` is the documented default.
+    # `low` is the documented default. `xhigh` is accepted but undocumented.
     "grok-4.3": ReasoningCapability(
-        efforts=_EFFORT_LMH | {ReasoningEffort.NONE},
+        efforts=_EFFORT_NO_MAX,
         can_disable=True,
         default_effort=ReasoningEffort.LOW,
     ),
     # -- Amazon Nova (Converse) ---------------------------------------------
     # reasoningConfig={"type": "enabled", "maxReasoningEffort": ...}. Off by
-    # default, so there is no default effort to report.
-    "nova-2-lite": ReasoningCapability(efforts=_EFFORT_LMH, can_disable=True),
+    # default, so there is no default effort to report. `high` additionally
+    # requires maxTokens to be unset — create_model drops it (see base_factory).
+    # `none`/`xhigh`/`max` are not in Nova's enum.
+    "nova-2-lite": ReasoningCapability(efforts=_EFFORT_NOVA, can_disable=True),
 }
 
 
