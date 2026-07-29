@@ -44,7 +44,10 @@ USER bedrock_agentcore
 # image serves both — entrypoint.sh selects via `agentcoreServerProtocol`.
 EXPOSE 8080 9000
 
+# Probes the same /ping endpoint AgentCore's runtime uses. The port must track
+# entrypoint.sh's protocol switch, hence the env lookup. Uses the interpreter
+# already in the image — the slim base ships no curl/wget.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD curl -f  || exit 1
+  CMD ["python", "-c", "import os,urllib.request; p=9000 if os.environ.get('agentcoreServerProtocol','').upper()=='A2A' else 8080; urllib.request.urlopen(f'http://localhost:{p}/ping', timeout=2)"]
 
 CMD ["./entrypoint.sh"]
