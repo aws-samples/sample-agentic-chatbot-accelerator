@@ -13,7 +13,7 @@ from opentelemetry import baggage
 from opentelemetry.context import attach
 from shared.mcp_client import MCPClientManager
 from shared.session_history import save_conversation_exchange
-from shared.utils import get_uvicorn_host
+from shared.utils import get_uvicorn_host, silence_health_probe_logs
 from src.data_source import parse_configuration
 from src.factory import create_swarm
 from src.registry import AVAILABLE_MCPS
@@ -23,6 +23,8 @@ from strands_evals.extractors import swarm_extractor
 
 logger = logging.getLogger("agentcore.app")
 logger.setLevel(logging.INFO)
+
+silence_health_probe_logs()
 
 app = FastAPI()
 
