@@ -61,8 +61,9 @@ _MANTLE_OPENAI_V1_CHAT_PREFIXES = ("google.gemma-4", "xai.grok-4.")
 # ``output_config`` effort; on the Mantle Messages path the same shape is sent
 # through ``params``. Integer token budgets are no longer supported — the newest
 # Claude models (Opus 5, Sonnet 5) take an effort level, and older token-budget
-# variants are out of scope. Keep in sync with ``_EFFORT_BUDGET_MODELS`` in
-# stream_types.py.
+# variants are out of scope. Superseded by ``REASONING_CAPABILITIES`` in
+# stream_types.py, which carries the per-model accepted-effort sets; T2 rewires
+# these branches onto it and deletes the two sets below.
 _EFFORT_BUDGET_MODELS_ANTHROPIC = {
     "claude-sonnet-4-6",
     "claude-opus-4-6",
