@@ -21,12 +21,235 @@ export type RegionKeyedModels = Record<string, Record<string, string>>;
  * INVARIANT: every value is a literal Bedrock/Mantle model id (no prefix token).
  */
 export const SUPPORTED_MODELS: RegionKeyedModels = {
-    // Seed — operator extends with the real exhaustive per-region availability.
-    // A display name may map to a different literal id per region.
+    // N. Virginia
     "us-east-1": {
-        "Claude Sonnet 4.6": "us.anthropic.claude-sonnet-4-6", // Converse, geo prefix
-        "Claude Haiku 4.5": "us.anthropic.claude-haiku-4-5-20251001-v1:0", // Converse, geo prefix
-        "Nova 2 Lite": "us.amazon.nova-2-lite-v1:0", // Converse, geo prefix
+        // OpenAI
+        "GPT-5.6 Luna": "openai.gpt-5.6-luna",
+        "GPT-5.6 Sol": "openai.gpt-5.6-sol",
+        "GPT-5.6 Terra": "openai.gpt-5.6-terra",
+        "GPT-5.5": "openai.gpt-5.5",
+        "GPT-5.4": "openai.gpt-5.4",
+        "GPT OSS 20B": "openai.gpt-oss-20b",
+        "GPT OSS 120B": "openai.gpt-oss-120b",
+        // Anthropic
+        "Claude Sonnet 5": "anthropic.claude-sonnet-5",
+        "Claude Opus 4.8": "anthropic.claude-opus-4-8",
+        // Amazon
+        "Nova 2 Lite": "us.amazon.nova-2-lite-v1:0",
+        "Nova 2 Sonic": "amazon.nova-2-sonic-v1:0",
+        // Deepseek
+        "DeepSeek V3.2": "deepseek.v3.2",
+        // Google
+        "Gemma 4 31B": "google.gemma-4-31b",
+        "Gemma 4 E2B": "google.gemma-4-e2b",
+        "Gemma 4 26B-A4B": "google.gemma-4-26b-a4b",
+        "Gemma 3 4B IT": "google.gemma-3-4b-it",
+        // MiniMax
+        "MiniMax M2.5": "minimax.minimax-m2.5",
+        // Mistral
+        "Mistral Large 3": "mistral.mistral-large-3-675b-instruct",
+        "Ministral 14B 3.0": "mistral.ministral-3-14b-instruct",
+        "Ministral 3 8B": "mistral.ministral-3-8b-instruct",
+        "Ministral 3B": "mistral.ministral-3-3b-instruct",
+        // Moonshot AI
+        "Kimi K2.5": "moonshotai.kimi-k2.5",
+        // nVIDIA
+        "NVIDIA Nemotron 3 Super 120B": "nvidia.nemotron-super-3-120b",
+        // Qwen
+        "Qwen3 Next 80B A3B": "qwen.qwen3-next-80b-a3b-instruct",
+        "Qwen3 32B": "qwen.qwen3-32b",
+        "Qwen3 235B A22B 2507": "qwen.qwen3-235b-a22b-2507",
+        // "xAI"
+        "Grok 4.3": "xai.grok-4.3",
+        // Z.AI
+        "GLM 5": "zai.glm-5",
+        "GLM 4.7 Flash": "zai.glm-4.7-flash",
+    },
+    // Ohio
+    "us-east-2": {
+        // OpenAI
+        "GPT-5.6 Luna": "openai.gpt-5.6-luna",
+        "GPT-5.6 Sol": "openai.gpt-5.6-sol",
+        "GPT-5.6 Terra": "openai.gpt-5.6-terra",
+        "GPT-5.5": "openai.gpt-5.5",
+        "GPT-5.4": "openai.gpt-5.4",
+        "GPT OSS 20B": "openai.gpt-oss-20b",
+        "GPT OSS 120B": "openai.gpt-oss-120b",
+        // Amazon
+        "Nova 2 Lite": "us.amazon.nova-2-lite-v1:0",
+        // Deepseek
+        "DeepSeek V3.2": "deepseek.v3.2",
+        // Google
+        "Gemma 4 31B": "google.gemma-4-31b",
+        "Gemma 4 E2B": "google.gemma-4-e2b",
+        "Gemma 4 26B-A4B": "google.gemma-4-26b-a4b",
+        "Gemma 3 4B IT": "google.gemma-3-4b-it",
+        // MiniMax
+        "MiniMax M2.5": "minimax.minimax-m2.5",
+        // Mistral
+        "Mistral Large 3": "mistral.mistral-large-3-675b-instruct",
+        "Ministral 14B 3.0": "mistral.ministral-3-14b-instruct",
+        "Ministral 3 8B": "mistral.ministral-3-8b-instruct",
+        "Ministral 3B": "mistral.ministral-3-3b-instruct",
+        // Moonshot AI
+        "Kimi K2.5": "moonshotai.kimi-k2.5",
+        // nVIDIA
+        "NVIDIA Nemotron 3 Super 120B": "nvidia.nemotron-super-3-120b",
+        // Qwen
+        "Qwen3 Next 80B A3B": "qwen.qwen3-next-80b-a3b-instruct",
+        "Qwen3 32B": "qwen.qwen3-32b",
+        "Qwen3 235B A22B 2507": "qwen.qwen3-235b-a22b-2507",
+        // "xAI"
+        "Grok 4.3": "xai.grok-4.3",
+        // Z.AI
+        "GLM 5": "zai.glm-5",
+        "GLM 4.7 Flash": "zai.glm-4.7-flash",
+    },
+    // Oregon
+    "us-west-2": {
+        // OpenAI
+        "GPT-5.6 Luna": "openai.gpt-5.6-luna",
+        "GPT-5.6 Terra": "openai.gpt-5.6-terra",
+        "GPT-5.4": "openai.gpt-5.4",
+        "GPT OSS Safeguard 20B": "openai.gpt-oss-safeguard-20b",
+        "GPT OSS 20B": "openai.gpt-oss-20b",
+        "GPT OSS 120B": "openai.gpt-oss-120b",
+        // Amazon
+        "Nova 2 Lite": "us.amazon.nova-2-lite-v1:0",
+        "Nova 2 Sonic": "amazon.nova-2-sonic-v1:0",
+        // Deepseek
+        "DeepSeek V3.2": "deepseek.v3.2",
+        // Google
+        "Gemma 4 31B": "google.gemma-4-31b",
+        "Gemma 4 E2B": "google.gemma-4-e2b",
+        "Gemma 4 26B-A4B": "google.gemma-4-26b-a4b",
+        "Gemma 3 4B IT": "google.gemma-3-4b-it",
+        // MiniMax
+        "MiniMax M2.5": "minimax.minimax-m2.5",
+        // Mistral
+        "Mistral Large 3": "mistral.mistral-large-3-675b-instruct",
+        "Ministral 14B 3.0": "mistral.ministral-3-14b-instruct",
+        "Ministral 3 8B": "mistral.ministral-3-8b-instruct",
+        "Ministral 3B": "mistral.ministral-3-3b-instruct",
+        // Moonshot AI
+        "Kimi K2.5": "moonshotai.kimi-k2.5",
+        // nVIDIA
+        "NVIDIA Nemotron 3 Super 120B": "nvidia.nemotron-super-3-120b",
+        // Qwen
+        "Qwen3 Next 80B A3B": "qwen.qwen3-next-80b-a3b-instruct",
+        "Qwen3 32B": "qwen.qwen3-32b",
+        "Qwen3 235B A22B 2507": "qwen.qwen3-235b-a22b-2507",
+        // "xAI"
+        "Grok 4.3": "xai.grok-4.3",
+        // Z.AI
+        "GLM 5": "zai.glm-5",
+        "GLM 4.7 Flash": "zai.glm-4.7-flash",
+    },
+    // Frankfurt
+    "eu-central-1": {
+        // OpenAI
+        "GPT OSS Safeguard 20B": "openai.gpt-oss-safeguard-20b",
+        "GPT OSS 20B": "openai.gpt-oss-20b",
+        "GPT OSS 120B": "openai.gpt-oss-120b",
+        // Amazon
+        "Nova 2 Lite": "eu.amazon.nova-2-lite-v1:0",
+        // Google
+        "Gemma 4 31B": "google.gemma-4-31b",
+        "Gemma 4 E2B": "google.gemma-4-e2b",
+        "Gemma 4 26B-A4B": "google.gemma-4-26b-a4b",
+        "Gemma 3 4B IT": "google.gemma-3-4b-it",
+        // MiniMax
+        "MiniMax M2.5": "minimax.minimax-m2.5",
+        // Mistral
+        "Ministral 14B 3.0": "mistral.ministral-3-14b-instruct",
+        "Ministral 3 8B": "mistral.ministral-3-8b-instruct",
+        "Ministral 3B": "mistral.ministral-3-3b-instruct",
+        // Qwen
+        "Qwen3 32B": "qwen.qwen3-32b",
+        "Qwen3 235B A22B 2507": "qwen.qwen3-235b-a22b-2507",
+        // Z.AI
+        "GLM 4.7 Flash": "zai.glm-4.7-flash",
+    },
+    // Stockholm
+    "eu-north-1": {
+        // OpenAI
+        "GPT OSS 20B": "openai.gpt-oss-20b",
+        "GPT OSS 120B": "openai.gpt-oss-120b",
+        // Anthropic
+        "Claude Opus 4.8": "anthropic.claude-opus-4-8",
+        // Amazon
+        "Nova 2 Lite": "eu.amazon.nova-2-lite-v1:0",
+        "Nova 2 Sonic": "amazon.nova-2-sonic-v1:0",
+        // Deepseek
+        "DeepSeek V3.2": "deepseek.v3.2",
+        // MiniMax
+        "MiniMax M2.5": "minimax.minimax-m2.5",
+        // Mistral
+        "Mistral Large 3": "mistral.mistral-large-3-675b-instruct",
+        "Ministral 14B 3.0": "mistral.ministral-3-14b-instruct",
+        "Ministral 3 8B": "mistral.ministral-3-8b-instruct",
+        "Ministral 3B": "mistral.ministral-3-3b-instruct",
+        // Moonshot AI
+        "Kimi K2.5": "moonshotai.kimi-k2.5",
+        // Qwen
+        "Qwen3 32B": "qwen.qwen3-32b",
+        "Qwen3 235B A22B 2507": "qwen.qwen3-235b-a22b-2507",
+        // Z.AI
+        "GLM 5": "zai.glm-5",
+        "GLM 4.7 Flash": "zai.glm-4.7-flash",
+    },
+    // Ireland
+    "eu-west-1": {
+        // OpenAI
+        "GPT OSS 20B": "openai.gpt-oss-20b",
+        "GPT OSS 120B": "openai.gpt-oss-120b",
+        // Anthropic
+        "Claude Sonnet 5": "anthropic.claude-sonnet-5",
+        "Claude Opus 4.8": "anthropic.claude-opus-4-8",
+        // Amazon
+        "Nova 2 Lite": "eu.amazon.nova-2-lite-v1:0",
+        // MiniMax
+        "MiniMax M2.5": "minimax.minimax-m2.5",
+        // Mistral
+        "Ministral 14B 3.0": "mistral.ministral-3-14b-instruct",
+        "Ministral 3 8B": "mistral.ministral-3-8b-instruct",
+        "Ministral 3B": "mistral.ministral-3-3b-instruct",
+        // nVIDIA
+        "NVIDIA Nemotron 3 Super 120B": "nvidia.nemotron-super-3-120b",
+        // Qwen
+        "Qwen3 Next 80B A3B": "qwen.qwen3-next-80b-a3b-instruct",
+        "Qwen3 32B": "qwen.qwen3-32b",
+        "Qwen3 235B A22B 2507": "qwen.qwen3-235b-a22b-2507",
+        // Z.AI
+        "GLM 4.7 Flash": "zai.glm-4.7-flash",
+    },
+    // London
+    "eu-west-2": {
+        // OpenAI
+        "GPT OSS 20B": "openai.gpt-oss-20b",
+        "GPT OSS 120B": "openai.gpt-oss-120b",
+        // Amazon
+        "Nova 2 Lite": "eu.amazon.nova-2-lite-v1:0",
+        // Deepseek
+        "DeepSeek V3.2": "deepseek.v3.2",
+        // MiniMax
+        "MiniMax M2.5": "minimax.minimax-m2.5",
+        // Mistral
+        "Mistral Large 3": "mistral.mistral-large-3-675b-instruct",
+        "Ministral 14B 3.0": "mistral.ministral-3-14b-instruct",
+        "Ministral 3 8B": "mistral.ministral-3-8b-instruct",
+        "Ministral 3B": "mistral.ministral-3-3b-instruct",
+        // Moonshot AI
+        "Kimi K2.5": "moonshotai.kimi-k2.5",
+        // nVIDIA
+        "NVIDIA Nemotron 3 Super 120B": "nvidia.nemotron-super-3-120b",
+        // Qwen
+        "Qwen3 Next 80B A3B": "qwen.qwen3-next-80b-a3b-instruct",
+        "Qwen3 32B": "qwen.qwen3-32b",
+        "Qwen3 235B A22B 2507": "qwen.qwen3-235b-a22b-2507",
+        // Z.AI
+        "GLM 5": "zai.glm-5",
+        "GLM 4.7 Flash": "zai.glm-4.7-flash",
     },
 };
 
