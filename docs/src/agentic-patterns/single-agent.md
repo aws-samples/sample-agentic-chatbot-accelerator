@@ -6,7 +6,7 @@ This guide explains how to create and test a single agent using the Agentic Chat
 
 A single agent configuration consists of:
 
-- **Model & Inference Parameters**: The LLM model, temperature, max tokens, stop sequences, and optional reasoning budget for extended thinking
+- **Model & Inference Parameters**: The LLM model, temperature, max tokens, stop sequences, and optional reasoning effort for extended thinking
 - **Instructions**: A system prompt defining the agent's role and behavior
 - **Description**: A short capability blurb published on the agent's A2A agent card; orchestrators and graph nodes read it to decide whether to delegate to this agent
 - **Tools**: Function-based or object-based tools registered in the tool registry
@@ -24,7 +24,7 @@ The single agent is built on [Strands Agents](https://strandsagents.com/) and ru
 Before creating a single agent, you need:
 
 1. **The accelerator deployed** (CDK or Terraform stack)
-2. **At least one model** available in Amazon Bedrock in your region (e.g. Claude Sonnet 4.6, Claude Haiku 4.5, Nova 2 Lite)
+2. **At least one model** available in Amazon Bedrock in your region (e.g. Claude Sonnet 5, GPT-5.6, Nova 2 Lite)
 3. **Tools or MCP servers** registered (optional — agents can work without tools)
 
 ## Step-by-Step: Creating a Single Agent
@@ -38,10 +38,10 @@ Go to **Agent Factory** → **Create Agent** and select **Single Agent** as the 
 In the **Agent Configuration** step:
 
 1. **Agent Name**: Enter a unique name for your agent (e.g. `aws_expert`)
-2. **Model**: Select the LLM model (e.g. Claude Sonnet 4.6, Claude Haiku 4.5)
+2. **Model**: Select the LLM model (e.g. Claude Sonnet 5, GPT-5.6, Nova 2 Lite). The dropdown offers only the models served in your deploy region — see [Bedrock Mantle Models](../mantle-models.md)
 3. **Temperature**: Controls randomness (0–1). Lower values (0.1–0.3) for factual tasks, higher (0.7–0.9) for creative tasks
 4. **Max Tokens**: Maximum output tokens (e.g. 3000)
-5. **Extended Thinking** (optional): Enable for models that support reasoning. When enabled, select a **Reasoning Effort** level (Low, Medium, High)
+5. **Extended Thinking** (optional): Enable for models that support reasoning. When enabled, select a **Reasoning Effort** level — the available levels depend on the model (see [Extended Thinking](#extended-thinking) below)
 6. **Agent Instructions**: Write a system prompt that defines the agent's role, behavior, and how it should use its tools
 
 ### 3. Add an agent description
@@ -118,7 +118,7 @@ A single agent that uses the AWS Knowledge MCP server to answer questions about 
 2. **Create the agent**:
    - **Agent Factory** → **Create Agent** → **Single Agent**
    - **Name**: `aws_expert`
-   - **Model**: Claude Sonnet 4.6 (or Nova 2 Lite for faster responses)
+   - **Model**: Claude Sonnet 5 (or Nova 2 Lite for faster responses)
    - **Temperature**: 0.2
    - **Max Tokens**: 3000
    - **Extended Thinking**: Enabled, Reasoning Effort: Medium
@@ -186,8 +186,11 @@ When enabled, the agent uses the model's reasoning capabilities to think through
 | **Low** | Simple, factual questions |
 | **Medium** | Multi-step reasoning, analysis |
 | **High** | Complex problem-solving, architecture design |
+| **xHigh** / **Max** | Deepest reasoning — accepted only by some families (e.g. Anthropic thinking, GPT-5.6) |
 
-The agent's reasoning process is captured and can be displayed alongside the final response. Extended thinking requires a model that supports it (e.g. Claude Sonnet 4.6).
+The **effort levels offered depend on the selected model**, not a fixed list — the wizard shows only the levels that model actually accepts (verified against each model's behavior, not just its card). Some models expose only Low/Medium/High; the Anthropic thinking models add xHigh/Max; GPT-5.6 accepts all levels. A few models (e.g. Claude Sonnet 5) have reasoning **always on** and cannot disable it, while others fall back to a per-model default effort when omitted. This capability map is maintained in `REASONING_CAPABILITIES` (`src/user-interface/react-app/src/components/wizard/wizard-utils.ts`, mirrored in `src/agent-core/shared/stream_types.py`).
+
+The agent's reasoning process is captured and can be displayed alongside the final response. Extended thinking requires a model that supports it (e.g. Claude Sonnet 5, GPT-5.6).
 
 ### Structured Output
 
@@ -285,7 +288,7 @@ To update an agent's configuration:
 | Tools not appearing | Tool/MCP not registered | Check the tool registry in DynamoDB or register via the UI |
 | MCP server connection fails | Wrong auth type or endpoint | Verify the MCP server configuration (SigV4 vs. NONE, correct Runtime/Gateway ID) |
 | Structured output parsing fails | Field types don't match agent output | Adjust field descriptions to guide the model, or simplify field types |
-| Extended thinking not working | Model doesn't support reasoning | Use a model that supports extended thinking (e.g. Claude Sonnet 4.6) |
+| Extended thinking not working | Model doesn't support reasoning | Use a model that supports extended thinking (e.g. Claude Sonnet 5, GPT-5.6) |
 | Session state lost | Memory not enabled | Enable AgentCore Memory in the agent configuration |
 | Slow responses | High reasoning effort or many tools | Reduce reasoning effort, limit tool count, or use a faster model |
 | "Configuration not found" error | DynamoDB item missing | Verify the agent was created successfully and check CloudWatch logs |

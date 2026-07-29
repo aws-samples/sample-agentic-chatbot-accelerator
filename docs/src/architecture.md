@@ -81,14 +81,17 @@ Browser → SigV4 presigned URL → wss://bedrock-agentcore.<region>.amazonaws.c
 
 ## Amazon Bedrock — Foundation Models
 
-The default configuration (`iac-cdk/bin/config.ts`) ships the three text models below. Add any other Bedrock model — including the voice model — to `supportedModels` in your `config.yaml`; see [How to Deploy](./how-to-deploy.md).
+The selectable model set is a **region-scoped platform fact** hard-coded in [`iac-cdk/lib/shared/supported-models.ts`](../../iac-cdk/lib/shared/supported-models.ts), keyed by deploy region — not a `config.yaml` knob. It spans Bedrock **Converse** models (Claude, Nova) and the **Bedrock Mantle** tail (OSS models, the newest OpenAI/Anthropic); `create_model` routes each id to its native protocol automatically. To change the offered set, edit `SUPPORTED_MODELS` and redeploy. See [Bedrock Mantle Models](./mantle-models.md) for the full catalog and routing, and [ADR-0004](../adr/0004-region-scoped-model-catalog.md) for why it moved out of configuration.
+
+A representative slice of what a US region offers:
 
 | Model | Use Case |
 |-------|----------|
-| Claude Sonnet 4.6 | Balanced performance/cost, extended thinking |
-| Claude Haiku 4.5 | Fast responses, cost-efficient |
+| Claude Sonnet 5 | Balanced performance/cost, extended thinking |
+| Claude Opus 4.8 | Highest-capability reasoning |
+| GPT-5.6 / GPT OSS | OpenAI proprietary (Responses API) and open-weights (Chat Completions) via Mantle |
 | Amazon Nova 2 Lite | Fast text inference |
-| Amazon Nova 2 Sonic | Voice-to-voice bidirectional streaming (BidiAgent) — add to enable voice |
+| Amazon Nova 2 Sonic | Voice-to-voice bidirectional streaming (BidiAgent) — required for voice |
 
 ## Data Processing *(optional)*
 

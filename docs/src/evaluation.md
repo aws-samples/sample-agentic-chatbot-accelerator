@@ -15,14 +15,10 @@ The evaluation system enables you to:
 
 The evaluation system is configured through `evaluatorConfig` in your `config.yaml` (or `config.ts` for defaults):
 
+> The evaluator model dropdown is **not** configured here. It draws from the same region-scoped catalog as the chat and experiments surfaces (`iac-cdk/lib/shared/supported-models.ts`), not from `evaluatorConfig`. See [How to Deploy](./how-to-deploy.md#configuration-structure).
+
 ```yaml
 evaluatorConfig:
-    # Models available for LLM-based evaluations
-    supportedModels:
-        Claude Haiku 4.5: "[REGION-PREFIX].anthropic.claude-haiku-4-5-20251001-v1:0"
-        Claude Sonnet 4.6: "[REGION-PREFIX].anthropic.claude-sonnet-4-6"
-        Nova 2 Lite: "[REGION-PREFIX].amazon.nova-2-lite-v1:0"
-
     # Score threshold (0.0-1.0) above which a test case is considered passed
     passThreshold: 0.8
 
