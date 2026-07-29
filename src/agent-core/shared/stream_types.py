@@ -163,6 +163,14 @@ _EFFORT_NOVA = frozenset(
 # models.ts). Mirrored in the frontend as REASONING_CAPABILITIES in
 # wizard-utils.ts; tests assert the two agree.
 #
+# SCOPE: this table answers "what does Bedrock support", NOT "what do we offer".
+# Availability is the region catalog's job (iac-cdk/lib/shared/supported-models.ts
+# + the Terraform mirror), so entries here may name models no region currently
+# lists — claude-opus-5, claude-opus-4-6, claude-sonnet-4-6 and grok-4.3 are all
+# in that position today. Keeping them is deliberate: an entry removed to reflect
+# *our* availability would make validation report "reasoningBudget is not
+# supported" for a model that does in fact support it.
+#
 # Deliberately absent: qwen3-* report "Reasoning: Supported" but the control is
 # a ``/no_think`` token appended to the prompt, with no API parameter — an
 # effort level there would be silently ignored. Also absent: every model whose
@@ -229,6 +237,15 @@ REASONING_CAPABILITIES: dict[str, ReasoningCapability] = {
     # -- xAI (Chat Completions on /openai/v1) -------------------------------
     # "Reasoning is always active by default"; `none` is the only way off, and
     # `low` is the documented default. `xhigh` is accepted but undocumented.
+    #
+    # NOT CURRENTLY OFFERED: grok-4.3 is absent from the region catalog because
+    # its *tool-calling* is incompatible with the Strands streaming contract
+    # (strands-agents/harness-sdk#1340) — unrelated to reasoning, which works
+    # (measured: 1494 reasoning tokens unset, 0 at `none`). This entry stays
+    # because the table describes what Bedrock supports, while the catalog
+    # decides what is offerable; dropping it would report "reasoningBudget is
+    # not supported" for a model that plainly does support it. Re-adding the
+    # catalog line is the only change needed once #1340 lands.
     "grok-4.3": ReasoningCapability(
         efforts=_EFFORT_NO_MAX,
         can_disable=True,
