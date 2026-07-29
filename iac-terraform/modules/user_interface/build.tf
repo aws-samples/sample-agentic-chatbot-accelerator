@@ -49,7 +49,9 @@ resource "local_file" "aws_exports" {
     # Add evaluator config if provided (models, threshold, rubrics for evaluation wizard)
     var.evaluator_config != null ? {
       evaluatorConfig = {
-        supportedModels = var.evaluator_config.supported_models
+        # Region slice injected here (not read from evaluator_config) so chat,
+        # evaluator, and experiments all offer the same model set.
+        supportedModels = var.supported_models
         passThreshold   = var.evaluator_config.pass_threshold
         defaultRubrics  = var.evaluator_config.default_rubrics
       }

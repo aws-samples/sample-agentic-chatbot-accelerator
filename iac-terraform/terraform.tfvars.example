@@ -184,17 +184,12 @@ mcp_server_registry = []
 # }
 
 # =============================================================================
-# Supported Models Configuration
-# Bedrock models available in the UI model selector
-# Format: "Display Name" = "model-id"
-# Use [REGION-PREFIX] placeholder for cross-region inference (replaced at runtime)
+# Supported Models — NOT CONFIGURABLE HERE
+# The selectable chat-model set is region-keyed in supported-models.tf. Edit
+# local.supported_models_by_region there and re-apply; deploying to a region
+# absent from that map fails `terraform plan`.
+# See docs/adr/0004-region-scoped-model-catalog.md.
 # =============================================================================
-
-# supported_models = {
-#   "Claude Sonnet 4.6" = "[REGION-PREFIX].anthropic.claude-sonnet-4-6"
-#   "Claude Haiku 4.5"  = "[REGION-PREFIX].anthropic.claude-haiku-4-5-20251001-v1:0"
-#   "Nova 2 Lite"       = "[REGION-PREFIX].amazon.nova-2-lite-v1:0"
-# }
 
 # =============================================================================
 # ECR Image Configuration
@@ -299,14 +294,8 @@ ecr_image_tag = "latest"
 
 # Uncomment to configure evaluation settings:
 # evaluator_config = {
-#   # Models available for LLM-based evaluations
-#   # Key = display name, Value = Bedrock model ID
-#   # Use [REGION-PREFIX] for cross-region inference profiles
-#   supported_models = {
-#     "Claude Haiku 4.5"  = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
-#     "Claude Sonnet 4.5" = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
-#     "Nova 2 Lite"       = "us.amazon.nova-2-lite-v1:0"
-#   }
+#   # Evaluation models are NOT set here — they come from the region catalog in
+#   # supported-models.tf, shared with the chat and experiments surfaces.
 #
 #   # Score threshold (0.0-1.0) above which a test case is considered passed
 #   pass_threshold = 0.8
