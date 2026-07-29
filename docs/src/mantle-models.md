@@ -2,7 +2,7 @@
 
 The accelerator can run any model served on the AWS **`bedrock-mantle`** endpoint — the fast-moving open-source tail (Gemma, Qwen, DeepSeek, GLM, Kimi, …) plus the newest OpenAI and Anthropic models — in addition to the Bedrock **Converse** models it has always supported. This page lists which models work and how routing picks the protocol for each.
 
-You do **not** configure a protocol. You put a model id in `supportedModels` (see [How to Deploy](./how-to-deploy.md)) or pick one in the Agent Factory, and `BaseAgentFactory.create_model` routes it automatically. The mechanism is [ADR-0003](../adr/0003-mantle-provider-dispatch.md); this page is the model-by-model companion.
+You do **not** configure a protocol. You add a model id to the region-scoped catalog in `iac-cdk/lib/shared/supported-models.ts` (see [How to Deploy](./how-to-deploy.md) and [ADR-0004](../adr/0004-region-scoped-model-catalog.md)) or pick one in the Agent Factory, and `BaseAgentFactory.create_model` routes it automatically. The routing mechanism is [ADR-0003](../adr/0003-mantle-provider-dispatch.md); this page is the model-by-model companion.
 
 ## How routing works
 

@@ -161,7 +161,7 @@ The [AWS Knowledge MCP Server](https://github.com/awslabs/mcp/tree/main/src/aws-
 Once the AWS Knowledge MCP server is registered (see example above), create a **single agent** in the Agent Factory with the following instructions to test it end-to-end.
 
 **Recommended settings:**
-- **Model:** Nova 2 Lite (or Sonnet 4.6 for more detailed answers)
+- **Model:** Nova 2 Lite (or Claude Sonnet 5 for more detailed answers)
 - **Temperature:** 0.2
 - **Max Tokens:** 3000
 - **MCP Servers:** select `aws-knowledge` in the Additional Tools step

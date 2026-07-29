@@ -47,6 +47,8 @@ Use the [Agent Factory](./docs/src/agent-factory.md) to create agents with any o
 - [Swarm](./docs/src/agentic-patterns/swarm-agents.md) – Coordinate a swarm of collaborative agents
 - [Graph](./docs/src/agentic-patterns/graph-agents.md) – Define agent workflows as directed graphs
 
+Pick from a broad model catalog: Bedrock **Converse** models (Claude, Nova) alongside the fast-moving **[Bedrock Mantle](./docs/src/mantle-models.md)** tail — the open-source families (Gemma, Qwen, DeepSeek, GLM, Kimi, Mistral, …) plus the newest OpenAI and Anthropic frontier models. You just select a model; the runtime routes each id to its native protocol (Converse, Anthropic Messages, OpenAI Responses, or Chat Completions) and exposes per-model reasoning-effort controls automatically. The offered set is scoped to the models actually served in your deploy region.
+
 Register and manage MCP servers to extend your agents with external capabilities. The MCP Server Registry lets you connect agents to tools like AWS documentation search, biomedical literature APIs, and custom services. See [Expanding AI Tools](./docs/src/expanding-ai-tools.md) for details on adding MCP servers and custom tools.
 
 ![MCP Server Registry](./docs/imgs/mcp-manager.png)

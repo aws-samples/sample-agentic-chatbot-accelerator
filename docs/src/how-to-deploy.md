@@ -49,16 +49,17 @@ The CDK stack is configured through the `SystemConfig` interface defined in [`ia
 - **allowedGeoRegions**: Array of allowed geographic regions when restrictions are enabled
 - **dataProcessingParameters**: *(Optional)* Configuration for data processing workflows including file prefixes and language settings. If omitted, the data processing pipeline will not be deployed.
 - **knowledgeBaseParameters**: *(Optional)* Knowledge base configuration including chunking strategies (FIXED_SIZE, HIERARCHICAL, SEMANTIC, NONE), embedding models, descriptions, and the optional `vectorStoreType` (`OPENSEARCH_SERVERLESS` (default) or `S3_VECTORS`). See [Vector Store Backend](./kb-management.md#vector-store-backend) for tradeoffs. If omitted, the Knowledge Base feature will not be deployed.
-- **supportedModels**: Map of foundation model names to Bedrock model identifiers used by agents, with [REGION-PREFIX] placeholder for cross-region inference profiles
 - **rerankingModels**: *(Optional)* Map of reranking model names to Bedrock model identifiers for improving knowledge base retrieval relevance. Supported models include Cohere Rerank 3.5 and Amazon Rerank 1.0.
 - **toolRegistry**: Array of available tools with name, description, and sub-agent invocation flags
 - **mcpServerRegistry**: Array of available mcp servers with name, description, and URL
 - **ingestionLambdaProps**: Lambda function configuration for chatbot message ingestion including timeout in minutes and reserved concurrency (optional)
 - **agentCoreObservability**: *(Optional)* Configuration for X-Ray distributed tracing of agent invocations, including transaction search and trace indexing percentage. If omitted, observability features are not enabled. See [Observability & Insights](./observability-insights.md).
 - **agentRuntimeConfig**: *(Optional)* Default agent runtime configuration to deploy via CDK. If provided, an AgentCore runtime will be automatically created during deployment with the specified settings. If omitted, agent runtimes must be created manually through the Agent Factory UI.
-- **evaluatorConfig**: *(Optional)* Configuration for the LLM-based evaluation framework, including supported models, pass threshold, and default rubrics. Defaults are provided in `config.ts`.
-- **experimentsConfig**: *(Optional)* Configuration for synthetic data generation, including supported models, VPC settings, and Batch infrastructure toggle. See [Experiments Configuration](#experiments-configuration-vpc--batch) for details. Defaults are provided in `config.ts`.
+- **evaluatorConfig**: *(Optional)* Configuration for the LLM-based evaluation framework, including pass threshold and default rubrics. Defaults are provided in `config.ts`.
+- **experimentsConfig**: *(Optional)* Configuration for synthetic data generation, including VPC settings and Batch infrastructure toggle. See [Experiments Configuration](#experiments-configuration-vpc--batch) for details. Defaults are provided in `config.ts`.
 - **bedrockAccessRoleArn**: *(Optional)* IAM role ARN for cross-account Amazon Bedrock access.
+
+> **Selectable models are not configured here.** The set of foundation models offered in the chat, evaluator, and experiments surfaces is a **region-scoped platform fact**, hard-coded in [`iac-cdk/lib/shared/supported-models.ts`](../../iac-cdk/lib/shared/supported-models.ts) and keyed by deploy region — it is **not** a `config.yaml` knob. Deploying to an unsupported (or unset) region **fails at synth** with the list of supported regions. To add a model or region, edit `SUPPORTED_MODELS` and redeploy. See [ADR-0004](../adr/0004-region-scoped-model-catalog.md) for the rationale and [Bedrock Mantle Models](./mantle-models.md) for the model catalog and protocol routing. Model ids are **literal** — the old `[REGION-PREFIX]` template no longer exists.
 
 ### Example of Configuration File
 
@@ -85,11 +86,6 @@ knowledgeBaseParameters:
         vectorDimension: 1024
     dataSourcePrefix: knowledge-base-data-source
     description: Knowledge Base that contains resources on AWS services.
-supportedModels:
-    Claude Sonnet 4.6: "[REGION-PREFIX].anthropic.claude-sonnet-4-6"
-    Claude Haiku 4.5: "[REGION-PREFIX].anthropic.claude-haiku-4-5-20251001-v1:0"
-    Nova 2 Lite: "[REGION-PREFIX].amazon.nova-2-lite-v1:0"
-    GPT OSS 20B: "openai.gpt-oss-20b-1:0"
 rerankingModels:
     Cohere Rerank 3.5: cohere.rerank-v3-5:0
     Amazon Rerank 1.0: amazon.rerank-v1:0
@@ -151,9 +147,6 @@ enableGeoRestrictions: false
 allowedGeoRegions: []
 # dataProcessingParameters: omitted
 # knowledgeBaseParameters: omitted
-supportedModels:
-    Claude Haiku 4.5: "[REGION-PREFIX].anthropic.claude-haiku-4-5-20251001-v1:0"
-    # ... other models
 toolRegistry:
   - name: "get_current_time"
     description: "Get the current date and time"
@@ -180,7 +173,7 @@ Include `agentRuntimeConfig` in your configuration to automatically deploy an ag
 ```yaml
 agentRuntimeConfig:
     modelInferenceParameters:
-        modelId: "[REGION-PREFIX].anthropic.claude-haiku-4-5-20251001-v1:0"
+        modelId: "us.anthropic.claude-haiku-4-5-20251001-v1:0"
         parameters:
             temperature: 0.5
             maxTokens: 4096
@@ -225,8 +218,6 @@ The experiments feature uses AWS Batch (Fargate) to run synthetic test case gene
 
 ```yaml
 experimentsConfig:
-    supportedModels:
-        Claude Haiku 4.5: "[REGION-PREFIX].anthropic.claude-haiku-4-5-20251001-v1:0"
     vpcId: "vpc-0123456789abcdef0"
 ```
 
@@ -236,8 +227,6 @@ experimentsConfig:
 
 ```yaml
 experimentsConfig:
-    supportedModels:
-        Claude Haiku 4.5: "[REGION-PREFIX].anthropic.claude-haiku-4-5-20251001-v1:0"
     deployBatchInfrastructure: false
 ```
 
