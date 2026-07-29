@@ -13,7 +13,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from opentelemetry import baggage
 from opentelemetry.context import attach
 from shared.session_history import save_conversation_exchange
-from shared.utils import get_uvicorn_host
+from shared.utils import get_uvicorn_host, silence_health_probe_logs
 from src.data_source import parse_configuration
 from src.factory import (
     compile_graph,
@@ -23,6 +23,8 @@ from src.factory import (
 
 logger = logging.getLogger("agentcore.app")
 logger.setLevel(logging.INFO)
+
+silence_health_probe_logs()
 
 app = FastAPI()
 

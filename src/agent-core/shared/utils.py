@@ -5,11 +5,50 @@
 #
 # Shared utilities for agent implementations.
 # ---------------------------------------------------------------------------- #
+import logging
 import os
 import re
 from typing import Optional
 
 from pydantic import BaseModel, ValidationError
+
+
+class _HealthProbeFilter(logging.Filter):
+    """Drop uvicorn access-log records for AgentCore's liveness probe.
+
+    The AgentCore Runtime sidecar polls ``GET /ping`` on loopback every two
+    seconds for the whole life of a microVM, and uvicorn logs each hit at INFO
+    — roughly 30 CloudWatch lines per minute per live session, which buries the
+    agent's own logs and bills ingestion for nothing.
+
+    Attached to ``uvicorn.access`` rather than disabling access logs wholesale,
+    so genuine traffic (``/invocations``, the ``/ws`` upgrade) still shows up.
+    """
+
+    # uvicorn formats access records as
+    # '%s - "%s %s HTTP/%s" %d' % (client_addr, method, path, http_version, status)
+    # so args[1:3] are the method and path. Both the httptools and h11 HTTP
+    # implementations share this shape; WebSocket lines use `uvicorn.error`
+    # and so never reach this filter.
+    _PROBE = ("GET", "/ping")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        if isinstance(args, tuple) and len(args) >= 3:
+            return tuple(args[1:3]) != self._PROBE
+        return True
+
+
+def silence_health_probe_logs() -> None:
+    """Stop the two-second ``/ping`` liveness probe from flooding the logs.
+
+    Call once at import time in each agent pattern's ``app.py``. Idempotent —
+    re-registering is skipped so repeated calls (or a module reimport) don't
+    stack duplicate filters onto the logger.
+    """
+    access_logger = logging.getLogger("uvicorn.access")
+    if not any(isinstance(f, _HealthProbeFilter) for f in access_logger.filters):
+        access_logger.addFilter(_HealthProbeFilter())
 
 
 def get_uvicorn_host() -> str:

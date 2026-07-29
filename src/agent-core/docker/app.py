@@ -21,7 +21,7 @@ from shared.agentcore_a2a import (
 from shared.agentcore_memory import create_session_manager
 from shared.mcp_client import MCPClientManager
 from shared.session_history import save_conversation_exchange
-from shared.utils import enrich_trajectory
+from shared.utils import enrich_trajectory, silence_health_probe_logs
 from src.data_source import parse_configuration
 from src.factory import create_agent
 from src.registry import AVAILABLE_MCPS
@@ -39,6 +39,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("agentcore.app")
 logger.setLevel(logging.INFO)
+
+silence_health_probe_logs()
 
 app = FastAPI()
 
