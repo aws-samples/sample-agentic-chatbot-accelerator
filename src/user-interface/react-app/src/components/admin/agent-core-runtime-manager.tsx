@@ -339,6 +339,29 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
         return JSON.parse(result.data.getRuntimeConfigurationByVersion);
     };
 
+    // Refresh the list once the control plane reports an update for `agentName`.
+    // Deletes go through a Step Function, so the row lingers in "Deleting" until
+    // the notification arrives; we resync then and tear the subscription down.
+    const subscribeToAgentUpdate = (agentName: string) => {
+        const subscription = apiClient
+            .graphql({
+                query: receiveUpdateNotification,
+                variables: { agentName },
+            })
+            .subscribe({
+                next: (data) => {
+                    if (data.data?.receiveUpdateNotification?.agentName === agentName) {
+                        fetchAgents();
+                        subscription.unsubscribe();
+                    }
+                },
+                error: (error) => {
+                    console.error("Subscription error:", error);
+                    subscription.unsubscribe();
+                },
+            });
+    };
+
     const handleDelete = async (deleteMode: "all" | "specific", selectedQualifiers?: string[]) => {
         // Re-validate at confirm time: a background fetchAgents() can flip the
         // selection to a transient status while the modal is open. Never fire a
@@ -350,7 +373,39 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
 
         setIsDeleting(true);
         try {
-            if (selectedItems.length === 1) {
+            // Multi-select deletes entire agents (no endpoint picker); the
+            // single-select flow keeps the "all" | "specific" endpoint choice.
+            if (selectedItems.length > 1) {
+                const favoriteResult = await apiClient.graphql({ query: getFavoriteRuntimeQuery });
+                const currentFavorite = favoriteResult.data.getFavoriteRuntime;
+
+                // Reset the favorite if any agent being deleted currently owns it.
+                if (
+                    currentFavorite &&
+                    selectedItems.some((a) => a.agentRuntimeId === currentFavorite.agentRuntimeId)
+                ) {
+                    await apiClient.graphql({ query: resetFavoriteRuntimeMut });
+                }
+
+                // Fire whole-agent deletes in parallel, then refresh once.
+                await Promise.all(
+                    selectedItems.map((agent) =>
+                        apiClient.graphql({
+                            query: deleteAgentRuntimeMut,
+                            variables: {
+                                agentName: agent.agentName,
+                                agentRuntimeId: agent.agentRuntimeId,
+                            },
+                        }),
+                    ),
+                );
+
+                await new Promise((resolve) => setTimeout(resolve, 2000));
+                setShowDeleteModal(false);
+                await fetchAgents();
+
+                selectedItems.forEach((agent) => subscribeToAgentUpdate(agent.agentName));
+            } else if (selectedItems.length === 1) {
                 const agent = selectedItems[0];
 
                 const favoriteResult = await apiClient.graphql({ query: getFavoriteRuntimeQuery });
@@ -391,27 +446,7 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
                     // Fetch agents to show "Deleting" status
                     await fetchAgents();
 
-                    // Subscribe to deletion notification
-                    const subscription = apiClient
-                        .graphql({
-                            query: receiveUpdateNotification,
-                            variables: { agentName: agent.agentName },
-                        })
-                        .subscribe({
-                            next: (data) => {
-                                if (
-                                    data.data?.receiveUpdateNotification?.agentName ===
-                                    agent.agentName
-                                ) {
-                                    fetchAgents(); // Refresh the list when deletion completes
-                                    subscription.unsubscribe();
-                                }
-                            },
-                            error: (error) => {
-                                console.error("Subscription error:", error);
-                                subscription.unsubscribe();
-                            },
-                        });
+                    subscribeToAgentUpdate(agent.agentName);
                 } else if (deleteMode === "specific" && selectedQualifiers) {
                     // Delete specific endpoints
                     await apiClient.graphql({
@@ -429,27 +464,7 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
 
                     await fetchAgents();
 
-                    // Subscribe to deletion notification for refresh only
-                    const subscription = apiClient
-                        .graphql({
-                            query: receiveUpdateNotification,
-                            variables: { agentName: agent.agentName },
-                        })
-                        .subscribe({
-                            next: (data) => {
-                                if (
-                                    data.data?.receiveUpdateNotification?.agentName ===
-                                    agent.agentName
-                                ) {
-                                    fetchAgents(); // Just refresh the list
-                                    subscription.unsubscribe();
-                                }
-                            },
-                            error: (error) => {
-                                console.error("Subscription error:", error);
-                                subscription.unsubscribe();
-                            },
-                        });
+                    subscribeToAgentUpdate(agent.agentName);
                 }
             }
         } catch (error) {
@@ -618,8 +633,8 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
                                         iconName="remove"
                                         variant="inline-link"
                                         disabled={
-                                            selectedItems.length !== 1 ||
-                                            isTransientStatus(selectedItems[0].status)
+                                            selectedItems.length === 0 ||
+                                            selectedItems.some((a) => isTransientStatus(a.status))
                                         }
                                         onClick={() => setShowDeleteModal(true)}
                                     >
@@ -794,11 +809,11 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
                     onVersionSelect={handleVersionSelect}
                 />
             )}
-            {showDeleteModal && selectedItems.length === 1 && (
+            {showDeleteModal && selectedItems.length >= 1 && (
                 <DeleteAgentModal
                     visible={showDeleteModal}
                     onDismiss={() => setShowDeleteModal(false)}
-                    selectedItem={selectedItems[0]}
+                    selectedItems={selectedItems}
                     onDelete={handleDelete}
                     isDeleting={isDeleting}
                 />
