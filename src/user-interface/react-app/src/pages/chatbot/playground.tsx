@@ -5,7 +5,7 @@
 // ----------------------------------------------------------------------
 import { Header, HelpPanel, SpaceBetween } from "@cloudscape-design/components";
 import { useTranslation } from "react-i18next";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { v4 as uuidv4 } from "uuid";
 import BaseAppLayout from "../../components/base-app-layout";
 import Chat from "../../components/chatbot/chat";
@@ -13,8 +13,13 @@ import ConversationHistory from "../../components/chatbot/conversation-history";
 
 export default function Playground() {
     const { sessionId } = useParams();
+    const [searchParams] = useSearchParams();
     const { t } = useTranslation("ACA");
     const navigate = useNavigate();
+
+    // Hand-off from the Runtime Manager's "Start a session" action: pre-select
+    // this agent for a fresh session (chat forces DEFAULT). Undefined otherwise.
+    const initialAgentRuntimeId = searchParams.get("agentRuntimeId") ?? undefined;
 
     return (
         <BaseAppLayout
@@ -75,7 +80,7 @@ export default function Playground() {
             ]}
             toolsWidth={300}
             maxContentWidth={10000}
-            content={<Chat sessionId={sessionId} />}
+            content={<Chat sessionId={sessionId} initialAgentRuntimeId={initialAgentRuntimeId} />}
         />
     );
 }

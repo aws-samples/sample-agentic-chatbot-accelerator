@@ -25,6 +25,7 @@ import {
 import CopyToClipboard from "@cloudscape-design/components/copy-to-clipboard";
 import { useCallback, useContext, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { v4 as uuidv4 } from "uuid";
 
 import { generateClient } from "aws-amplify/api";
 import { RuntimeSummary } from "../../API";
@@ -182,6 +183,13 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
         navigate(`/agent-core/create?from=${encodeURIComponent(agent.agentName)}`);
     };
 
+    // Start a session: mint a fresh session id and open the chat route with the
+    // agent id as a query param. The chat pre-selects this agent and pins the
+    // qualifier to DEFAULT (implied by not passing one). Mirrors the ?from= idiom.
+    const handleStartSession = (agent: RuntimeSummary) => {
+        navigate(`/${uuidv4()}?agentRuntimeId=${encodeURIComponent(agent.agentRuntimeId)}`);
+    };
+
     // Central dispatch for the per-row `⋯` action menu. Modals below read
     // selectedItems[0], so pin the selection to the acted-on row before
     // delegating to the (agent-taking) handlers. start-session and
@@ -205,8 +213,10 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
                 setShowDeleteModal(true);
                 break;
             case "start-session":
+                handleStartSession(agent);
+                break;
             case "update-container":
-                // Wired in T5 / T6.
+                // Wired in T6.
                 break;
         }
     };
