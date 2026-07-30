@@ -351,9 +351,9 @@ class BaseAgentFactory:
             temperature (float): Sampling temperature. Accepted for a uniform
                 builder signature but intentionally not sent (see above).
             reasoning_budget (ReasoningEffort | None): When set, mapped to
-                ``params["reasoning"] = {"effort": <level>}``. Accepted levels are
-                per-model (GPT-5.6 documents all six, 5.4/5.5 only low/medium/
-                high); ``"none"`` is sent, not omitted. Defaults to None.
+                ``params["reasoning"] = {"effort": <level>, "summary": "auto"}``.
+                Accepted levels are per-model (GPT-5.6 documents all six);
+                ``"none"`` is sent, not omitted. Defaults to None.
 
         Returns:
             OpenAIResponsesModel: Model configured for the Mantle Responses surface.
@@ -366,8 +366,16 @@ class BaseAgentFactory:
         params: dict[str, Any] = {
             "max_output_tokens": max_tokens,
         }
+        # `summary: "auto"` is required to surface reasoning text. The Responses
+        # API reasons privately by default and emits no reasoning events; opting
+        # into a summary makes it stream `response.reasoning_summary_text.delta`
+        # chunks, which the strands adapter maps to reasoningContent.text and the
+        # AfterModelCallEvent hook (accumulate_reasoning) then captures. This is
+        # the Responses-surface analogue of the Anthropic branch's
+        # `display: "summarized"`: visibility-only (no cost/latency change), and
+        # the raw chain of thought is never returned — the summary is the ceiling.
         if reasoning_budget is not None:
-            params["reasoning"] = {"effort": reasoning_budget.value}
+            params["reasoning"] = {"effort": reasoning_budget.value, "summary": "auto"}
 
         return OpenAIResponsesModel(
             model_id=model_id,
