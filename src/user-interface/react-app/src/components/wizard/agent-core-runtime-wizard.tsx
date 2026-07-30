@@ -534,9 +534,17 @@ export default function AgentCoreRuntimeCreatorWizard({
                 cancelButton: "Cancel",
                 previousButton: "Previous",
                 nextButton: "Next",
-                submitButton: isCreating ? "Creating..." : "Create Runtime",
+                submitButton: "Create Runtime",
             }}
-            onNavigate={({ detail }) => setActiveStepIndex(detail.requestedStepIndex)}
+            // Gate progression here rather than via isLoadingNextStep: accept
+            // backward/same navigation freely, but only allow moving forward when
+            // the current step is valid. This keeps the Next button geometry stable
+            // (no validity-driven spinner) while still blocking an invalid step.
+            onNavigate={({ detail }) => {
+                const movingForward = detail.requestedStepIndex > activeStepIndex;
+                if (movingForward && !isStepValid(activeStepIndex)) return;
+                setActiveStepIndex(detail.requestedStepIndex);
+            }}
             activeStepIndex={activeStepIndex}
             onCancel={onCancel}
             onSubmit={() =>
@@ -552,7 +560,9 @@ export default function AgentCoreRuntimeCreatorWizard({
                 title: step.title,
                 content: step.content,
             }))}
-            isLoadingNextStep={!isStepValid(activeStepIndex) || isCreating}
+            // Reflect ONLY the in-flight create; never step validity (a
+            // validity-driven spinner is what resized the button between steps).
+            isLoadingNextStep={isCreating}
         />
     );
 
