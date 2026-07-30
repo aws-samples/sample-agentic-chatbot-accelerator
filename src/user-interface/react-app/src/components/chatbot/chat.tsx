@@ -61,6 +61,10 @@ const STARTER_PROMPTS: { id: string; key: string }[] = [
  * @param {string} [props.sessionId] - Optional session ID to restore an existing chat session.
  *                                     If provided, loads message history from backend.
  *                                     If not provided, creates a new session with UUID.
+ * @param {string} [props.initialAgentRuntimeId] - Optional agent runtime id to pre-select for a
+ *                                     fresh session (e.g. the Runtime Manager's "Start a session"
+ *                                     hand-off). Pins the qualifier to DEFAULT and takes precedence
+ *                                     over the favorite-runtime effect. Ignored for loaded sessions.
  *
  * @returns {JSX.Element} A grid-based chat interface with message history and input panel
  *
@@ -84,7 +88,7 @@ const STARTER_PROMPTS: { id: string; key: string }[] = [
  * - Main chat area contains message history and input panel
  * - Optional annex panel for additional content (documents, references, etc.)
  */
-export default function Chat(props: { sessionId?: string }) {
+export default function Chat(props: { sessionId?: string; initialAgentRuntimeId?: string }) {
     const appContext = useContext(AppContext);
     const [running, setRunning] = useState<boolean>(false);
     const [session, setSession] = useState<{
@@ -194,9 +198,28 @@ export default function Chat(props: { sessionId?: string }) {
 
     const refreshAgents = () => setRefreshTrigger((prev) => prev + 1);
 
+    // Pre-select an agent handed off from the Runtime Manager ("Start a session").
+    // Runs before the favorite effect below so its `!agentRuntimeId` guard
+    // short-circuits — the passed agent wins over the user's favorite. Pin the
+    // qualifier to DEFAULT via the ref so the endpoint-resolution effect lands on
+    // DEFAULT rather than the QUALIFIER/endpointOptions[0] fallback. Fresh
+    // sessions only: a loaded session (runtimeId set) is left untouched.
+    useEffect(() => {
+        if (session.loading || session.runtimeId) return;
+
+        if (props.initialAgentRuntimeId && messageHistory.length === 0 && !agentRuntimeId) {
+            favoriteQualifierRef.current = "DEFAULT";
+            setAgentRuntimeId(props.initialAgentRuntimeId);
+            setQualifier("DEFAULT");
+        }
+    }, [props.initialAgentRuntimeId, messageHistory.length, agentRuntimeId, session.loading, session.runtimeId]);
+
     // Load favorite runtime for new sessions
     useEffect(() => {
         if (session.loading || session.runtimeId) return;
+        // A "Start a session" hand-off pins the agent; don't let the favorite's
+        // async load resolve and override it (both effects see agentRuntimeId="").
+        if (props.initialAgentRuntimeId) return;
 
         if (messageHistory.length === 0 && !agentRuntimeId) {
             const loadFavoriteRuntime = async () => {
@@ -214,7 +237,7 @@ export default function Chat(props: { sessionId?: string }) {
             };
             loadFavoriteRuntime();
         }
-    }, [messageHistory.length, agentRuntimeId, session.loading, session.runtimeId]);
+    }, [messageHistory.length, agentRuntimeId, session.loading, session.runtimeId, props.initialAgentRuntimeId]);
 
     // Restore agent/endpoint from session (loaded sessions — text or voice)
     useEffect(() => {
