@@ -9,8 +9,8 @@ import { StorageHelper } from "../../../common/helpers/storage-helper";
 
 import { Dispatch, SetStateAction } from "react";
 import ReactMarkdown, { Components } from "react-markdown";
-import Prism from "react-syntax-highlighter/dist/cjs/prism";
-import { vs, vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
+import Prism from "react-syntax-highlighter/dist/esm/prism";
+import { vs, vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import rehypeRaw from "rehype-raw";
 import remarkGfm from "remark-gfm";
 import styles from "../../../styles/chat.module.scss";
