@@ -4,6 +4,7 @@ SPDX-License-Identifier: MIT-0
 ----------------------------------------------------------------------
 
 */
+import { CopyToClipboard } from "@cloudscape-design/components";
 import { Mode } from "@cloudscape-design/global-styles";
 import { StorageHelper } from "../../../common/helpers/storage-helper";
 
@@ -33,19 +34,38 @@ export default function MarkdownContent(props: MarkdownContentProps) {
                     // Custom rendering for code blocks
                     code: ({ node, inline, className, children, ...props }: any) => {
                         const match = /language-(\w+)/.exec(className || "");
-                        return !inline && match ? (
-                            <Prism
-                                style={StorageHelper.getTheme() === Mode.Dark ? vscDarkPlus : vs}
-                                language={match[1]}
-                                PreTag="div"
-                                {...props}
-                            >
-                                {String(children).replace(/\n$/, "")}
-                            </Prism>
-                        ) : (
-                            <code className={className} {...props}>
-                                {children}
-                            </code>
+                        if (inline || !match) {
+                            return (
+                                <code className={className} {...props}>
+                                    {children}
+                                </code>
+                            );
+                        }
+                        // Strip the trailing newline the fence adds so it neither
+                        // renders as an extra blank line nor gets copied.
+                        const codeText = String(children).replace(/\n$/, "");
+                        return (
+                            <div className={styles.codeBlockContainer}>
+                                <div className={styles.codeBlockCopy}>
+                                    <CopyToClipboard
+                                        variant="icon"
+                                        textToCopy={codeText}
+                                        copyButtonAriaLabel="Copy code"
+                                        copySuccessText="Code copied"
+                                        copyErrorText="Failed to copy code"
+                                    />
+                                </div>
+                                <Prism
+                                    style={
+                                        StorageHelper.getTheme() === Mode.Dark ? vscDarkPlus : vs
+                                    }
+                                    language={match[1]}
+                                    PreTag="div"
+                                    {...props}
+                                >
+                                    {codeText}
+                                </Prism>
+                            </div>
                         );
                     },
                     // Custom table rendering
