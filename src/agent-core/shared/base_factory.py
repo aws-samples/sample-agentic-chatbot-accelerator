@@ -223,18 +223,22 @@ class BaseAgentFactory:
 
             if extra_fields:
                 model_args["additional_request_fields"] = extra_fields
-        # Use cross-account session if a Bedrock access role ARN is configured
-        bedrock_access_role_arn = os.environ.get("bedrockAccessRoleArn")
-        if bedrock_access_role_arn:
-            boto_session = BaseAgentFactory._get_cross_account_boto_session(
-                bedrock_access_role_arn
-            )
-            model_args["boto_session"] = boto_session
 
         # Route by provider on an exact-id membership test. Non-Mantle ids take
         # the Converse path with the model_args assembled above; Mantle ids are
         # built from the caller inputs directly (Converse-only args do not apply).
         if not mantle_support.is_on_mantle(model_id):
+            # Cross-account session is Converse-only: BedrockModel is the sole
+            # branch that consumes boto_session, so assume the role here rather
+            # than up front — the Mantle builders would discard it, and an
+            # unassumable role must not fail a Mantle model that never needs it.
+            bedrock_access_role_arn = os.environ.get("bedrockAccessRoleArn")
+            if bedrock_access_role_arn:
+                model_args[
+                    "boto_session"
+                ] = BaseAgentFactory._get_cross_account_boto_session(
+                    bedrock_access_role_arn
+                )
             return BedrockModel(**model_args)
         if model_id.startswith("anthropic."):
             return BaseAgentFactory._build_anthropic_mantle(
