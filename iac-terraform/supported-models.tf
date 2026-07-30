@@ -34,8 +34,6 @@ locals {
       "GPT-5.6 Luna"  = "openai.gpt-5.6-luna"
       "GPT-5.6 Sol"   = "openai.gpt-5.6-sol"
       "GPT-5.6 Terra" = "openai.gpt-5.6-terra"
-      "GPT-5.5"       = "openai.gpt-5.5"
-      "GPT-5.4"       = "openai.gpt-5.4"
       "GPT OSS 20B"   = "openai.gpt-oss-20b"
       "GPT OSS 120B"  = "openai.gpt-oss-120b"
       # Anthropic
@@ -76,8 +74,6 @@ locals {
       "GPT-5.6 Luna"  = "openai.gpt-5.6-luna"
       "GPT-5.6 Sol"   = "openai.gpt-5.6-sol"
       "GPT-5.6 Terra" = "openai.gpt-5.6-terra"
-      "GPT-5.5"       = "openai.gpt-5.5"
-      "GPT-5.4"       = "openai.gpt-5.4"
       "GPT OSS 20B"   = "openai.gpt-oss-20b"
       "GPT OSS 120B"  = "openai.gpt-oss-120b"
       # Amazon
@@ -111,12 +107,10 @@ locals {
     # Oregon
     "us-west-2" = {
       # OpenAI
-      "GPT-5.6 Luna"          = "openai.gpt-5.6-luna"
-      "GPT-5.6 Terra"         = "openai.gpt-5.6-terra"
-      "GPT-5.4"               = "openai.gpt-5.4"
-      "GPT OSS Safeguard 20B" = "openai.gpt-oss-safeguard-20b"
-      "GPT OSS 20B"           = "openai.gpt-oss-20b"
-      "GPT OSS 120B"          = "openai.gpt-oss-120b"
+      "GPT-5.6 Luna"  = "openai.gpt-5.6-luna"
+      "GPT-5.6 Terra" = "openai.gpt-5.6-terra"
+      "GPT OSS 20B"   = "openai.gpt-oss-20b"
+      "GPT OSS 120B"  = "openai.gpt-oss-120b"
       # Amazon
       "Nova 2 Lite"  = "us.amazon.nova-2-lite-v1:0"
       "Nova 2 Sonic" = "amazon.nova-2-sonic-v1:0"
@@ -149,9 +143,8 @@ locals {
     # Frankfurt
     "eu-central-1" = {
       # OpenAI
-      "GPT OSS Safeguard 20B" = "openai.gpt-oss-safeguard-20b"
-      "GPT OSS 20B"           = "openai.gpt-oss-20b"
-      "GPT OSS 120B"          = "openai.gpt-oss-120b"
+      "GPT OSS 20B"  = "openai.gpt-oss-20b"
+      "GPT OSS 120B" = "openai.gpt-oss-120b"
       # Amazon
       "Nova 2 Lite" = "eu.amazon.nova-2-lite-v1:0"
       # Google
