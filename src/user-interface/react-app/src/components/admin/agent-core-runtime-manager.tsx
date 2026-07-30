@@ -46,6 +46,7 @@ import {
 } from "../../graphql/queries";
 import { receiveUpdateNotification } from "../../graphql/subscriptions";
 import DeleteAgentModal from "./agent-core/delete-agent-modal";
+import RowActions, { RowActionId } from "./agent-core/row-actions";
 import TagVersionModal from "./agent-core/tag-version-modal";
 import ViewVersionModal, { VersionInfo } from "./agent-core/view-version-modal";
 
@@ -136,20 +137,17 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
         fetchFavoriteRuntime();
     }, [props.toolsOpen]);
 
-    const handleSetFavorite = async () => {
-        if (selectedItems.length === 1) {
-            const agent = selectedItems[0];
-            const qualifierToVersion = JSON.parse(agent.qualifierToVersion);
-            const endpoints = Object.keys(qualifierToVersion);
+    const handleSetFavorite = async (agent: RuntimeSummary) => {
+        const qualifierToVersion = JSON.parse(agent.qualifierToVersion);
+        const endpoints = Object.keys(qualifierToVersion);
 
-            if (endpoints.length === 1) {
-                // Only one endpoint, set it as favorite directly
-                await defineFavoriteRuntime(agent.agentRuntimeId, endpoints[0]);
-            } else {
-                // Multiple endpoints, show modal to select
-                setAvailableEndpoints(endpoints);
-                setShowFavoriteModal(true);
-            }
+        if (endpoints.length === 1) {
+            // Only one endpoint, set it as favorite directly
+            await defineFavoriteRuntime(agent.agentRuntimeId, endpoints[0]);
+        } else {
+            // Multiple endpoints, show modal to select
+            setAvailableEndpoints(endpoints);
+            setShowFavoriteModal(true);
         }
     };
 
@@ -179,10 +177,36 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
         }
     };
 
-    const handleCreateNewVersion = () => {
-        if (selectedItems.length === 1) {
-            const agent = selectedItems[0];
-            navigate(`/agent-core/create?from=${encodeURIComponent(agent.agentName)}`);
+    const handleCreateNewVersion = (agent: RuntimeSummary) => {
+        navigate(`/agent-core/create?from=${encodeURIComponent(agent.agentName)}`);
+    };
+
+    // Central dispatch for the per-row `⋯` action menu. Modals below read
+    // selectedItems[0], so pin the selection to the acted-on row before
+    // delegating to the (agent-taking) handlers. start-session and
+    // update-container land in T5/T6.
+    const handleRowAction = (id: RowActionId, agent: RuntimeSummary) => {
+        setSelectedItems([agent]);
+        switch (id) {
+            case "new-version":
+                handleCreateNewVersion(agent);
+                break;
+            case "tag-version":
+                handleTagVersion(agent);
+                break;
+            case "set-favorite":
+                handleSetFavorite(agent);
+                break;
+            case "view":
+                handleViewAgent(agent);
+                break;
+            case "delete":
+                setShowDeleteModal(true);
+                break;
+            case "start-session":
+            case "update-container":
+                // Wired in T5 / T6.
+                break;
         }
     };
 
@@ -223,22 +247,19 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
         }
     }, [searchParams, setSearchParams, apiClient, fetchAgents]);
 
-    const handleTagVersion = async () => {
-        if (selectedItems.length === 1) {
-            setShowTagModal(true);
-            const agent = selectedItems[0];
-            try {
-                const result = await apiClient.graphql({
-                    query: listAgentVersionsQuery,
-                    variables: { agentRuntimeId: agent.agentRuntimeId },
-                });
-                setAvailableVersions(
-                    (result.data.listAgentVersions || []).filter((v): v is string => v !== null),
-                );
-            } catch (error) {
-                console.error("Failed to fetch agent versions:", error);
-                setShowTagModal(false);
-            }
+    const handleTagVersion = async (agent: RuntimeSummary) => {
+        setShowTagModal(true);
+        try {
+            const result = await apiClient.graphql({
+                query: listAgentVersionsQuery,
+                variables: { agentRuntimeId: agent.agentRuntimeId },
+            });
+            setAvailableVersions(
+                (result.data.listAgentVersions || []).filter((v): v is string => v !== null),
+            );
+        } catch (error) {
+            console.error("Failed to fetch agent versions:", error);
+            setShowTagModal(false);
         }
     };
 
@@ -272,37 +293,34 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
         }
     };
 
-    const handleViewAgent = async () => {
-        if (selectedItems.length === 1) {
-            const agent = selectedItems[0];
-            try {
-                // Refresh agent data to get latest qualifiers
-                await apiClient.graphql({ query: listRuntimeAgentsQuery });
+    const handleViewAgent = async (agent: RuntimeSummary) => {
+        try {
+            // Refresh agent data to get latest qualifiers
+            await apiClient.graphql({ query: listRuntimeAgentsQuery });
 
-                // List the full history of the agent's configuration bundle. Config
-                // lives in bundles now, so a "version" is a bundle versionId; the
-                // resolver annotates each with the qualifiers pointing at it and its
-                // creation time, so the modal can list every historical version with
-                // a meaningful label — not just the qualifier-mapped current ones.
-                const result = await apiClient.graphql({
-                    query: listAgentBundleVersionsQuery,
-                    variables: { agentName: agent.agentName },
-                });
+            // List the full history of the agent's configuration bundle. Config
+            // lives in bundles now, so a "version" is a bundle versionId; the
+            // resolver annotates each with the qualifiers pointing at it and its
+            // creation time, so the modal can list every historical version with
+            // a meaningful label — not just the qualifier-mapped current ones.
+            const result = await apiClient.graphql({
+                query: listAgentBundleVersionsQuery,
+                variables: { agentName: agent.agentName },
+            });
 
-                const versions = (result.data.listAgentBundleVersions || [])
-                    .filter((v): v is NonNullable<typeof v> => v !== null)
-                    .map((v) => ({
-                        version: v.versionId,
-                        qualifiers: (v.qualifiers ?? []).filter((q): q is string => q !== null),
-                        createdAt: v.createdAt,
-                        commitMessage: v.commitMessage,
-                    }));
+            const versions = (result.data.listAgentBundleVersions || [])
+                .filter((v): v is NonNullable<typeof v> => v !== null)
+                .map((v) => ({
+                    version: v.versionId,
+                    qualifiers: (v.qualifiers ?? []).filter((q): q is string => q !== null),
+                    createdAt: v.createdAt,
+                    commitMessage: v.commitMessage,
+                }));
 
-                setViewVersions(versions);
-                setShowViewModal(true);
-            } catch (error) {
-                console.error("Failed to fetch agent versions:", error);
-            }
+            setViewVersions(versions);
+            setShowViewModal(true);
+        } catch (error) {
+            console.error("Failed to fetch agent versions:", error);
         }
     };
 
@@ -588,51 +606,6 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
                                         Manage Skills
                                     </Button>
                                     <Button
-                                        disabled={
-                                            selectedItems.length !== 1 ||
-                                            selectedItems[0].status.toLowerCase() !== "ready"
-                                        }
-                                        iconName="copy"
-                                        variant="inline-link"
-                                        onClick={handleCreateNewVersion}
-                                    >
-                                        New version
-                                    </Button>
-                                    <Button
-                                        disabled={
-                                            selectedItems.length !== 1 ||
-                                            selectedItems[0].status.toLowerCase() !== "ready"
-                                        }
-                                        iconName="flag"
-                                        variant="inline-link"
-                                        onClick={handleTagVersion}
-                                    >
-                                        Tag version
-                                    </Button>
-                                    <Button
-                                        disabled={
-                                            selectedItems.length !== 1 ||
-                                            selectedItems[0].status.toLowerCase() !== "ready"
-                                        }
-                                        iconName="star"
-                                        variant="inline-link"
-                                        onClick={handleSetFavorite}
-                                        loading={isSettingFavorite}
-                                    >
-                                        Set as Favorite
-                                    </Button>
-                                    <Button
-                                        disabled={
-                                            selectedItems.length !== 1 ||
-                                            selectedItems[0].status.toLowerCase() !== "ready"
-                                        }
-                                        iconName="zoom-in"
-                                        variant="inline-link"
-                                        onClick={handleViewAgent}
-                                    >
-                                        View
-                                    </Button>
-                                    <Button
                                         iconName="remove"
                                         variant="inline-link"
                                         disabled={
@@ -779,6 +752,14 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
                             ),
                             sortingField: "status",
                             width: "auto",
+                        },
+                        {
+                            id: "actions",
+                            header: "Actions",
+                            cell: (item) => (
+                                <RowActions item={item} onAction={handleRowAction} />
+                            ),
+                            width: 100,
                         },
                     ]}
                 />
