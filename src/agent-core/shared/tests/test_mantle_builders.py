@@ -396,7 +396,9 @@ def test_build_openai_responses_mantle_maps_reasoning_effort():
         )
 
     _, kwargs = responses_cls.call_args
-    assert kwargs["params"]["reasoning"] == {"effort": "high"}
+    # `summary: "auto"` is sent alongside the effort so the Responses adapter
+    # emits reasoning-summary deltas (else reasoning text never surfaces).
+    assert kwargs["params"]["reasoning"] == {"effort": "high", "summary": "auto"}
 
 
 @pytest.mark.parametrize(
@@ -421,7 +423,7 @@ def test_build_openai_responses_mantle_maps_widened_efforts(effort):
         )
 
     _, kwargs = responses_cls.call_args
-    assert kwargs["params"]["reasoning"] == {"effort": effort.value}
+    assert kwargs["params"]["reasoning"] == {"effort": effort.value, "summary": "auto"}
 
 
 def test_build_openai_responses_mantle_sends_none_rather_than_omitting():
@@ -435,7 +437,7 @@ def test_build_openai_responses_mantle_sends_none_rather_than_omitting():
         )
 
     _, kwargs = responses_cls.call_args
-    assert kwargs["params"]["reasoning"] == {"effort": "none"}
+    assert kwargs["params"]["reasoning"] == {"effort": "none", "summary": "auto"}
 
 
 def test_build_openai_responses_mantle_omits_reasoning_when_unset():
