@@ -16,6 +16,7 @@ import {
 } from "@cloudscape-design/components";
 import { useEffect, useState } from "react";
 import { RuntimeSummary } from "../../../API";
+import { isTransientStatus } from "./runtime-status";
 
 interface DeleteAgentModalProps {
     visible: boolean;
@@ -41,7 +42,13 @@ export default function DeleteAgentModal({
         onDismiss();
     };
 
+    // A control-plane op may start (e.g. a background refresh flips the row to
+    // Deleting/Updating) while this modal is open — re-check on every render so
+    // confirm is blocked the moment the selection goes transient.
+    const isTransient = isTransientStatus(selectedItem.status);
+
     const handleDeleteConfirm = async () => {
+        if (isTransient) return;
         await onDelete(deleteMode, selectedQualifiersToDelete);
         handleDismiss();
     };
@@ -74,7 +81,9 @@ export default function DeleteAgentModal({
                             onClick={handleDeleteConfirm}
                             loading={isDeleting}
                             disabled={
-                                deleteMode === "specific" && selectedQualifiersToDelete.length === 0
+                                isTransient ||
+                                (deleteMode === "specific" &&
+                                    selectedQualifiersToDelete.length === 0)
                             }
                         >
                             Delete
@@ -84,9 +93,16 @@ export default function DeleteAgentModal({
             }
         >
             <SpaceBetween size="m">
-                <Alert type="warning">
-                    This action cannot be undone. Please confirm what you want to delete.
-                </Alert>
+                {isTransient ? (
+                    <Alert type="warning">
+                        This agent is currently <strong>{selectedItem.status}</strong>. Wait for the
+                        operation to finish before deleting.
+                    </Alert>
+                ) : (
+                    <Alert type="warning">
+                        This action cannot be undone. Please confirm what you want to delete.
+                    </Alert>
+                )}
 
                 <Box>
                     <SpaceBetween size="m">
