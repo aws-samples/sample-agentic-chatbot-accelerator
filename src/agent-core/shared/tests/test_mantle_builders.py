@@ -194,7 +194,7 @@ def test_build_openai_mantle_openai_v1_models_use_passthrough_client_args(model_
     _, kwargs = openai_cls.call_args
     assert kwargs["client_args"] == {
         "base_url": "https://bedrock-mantle.us-west-2.api.aws/openai/v1",
-        "api_key": "tok",
+        "api_key": "tok",  # pragma: allowlist secret  # mock minted token, not real
     }
     assert "bedrock_mantle_config" not in kwargs
     assert kwargs["model_id"] == model_id
@@ -238,7 +238,7 @@ def test_build_anthropic_mantle_wires_client_args_and_max_tokens():
     anthropic_cls.assert_called_once_with(
         client_args={
             "base_url": "https://bedrock-mantle.us-west-2.api.aws/anthropic",
-            "api_key": "tok",
+            "api_key": "tok",  # pragma: allowlist secret  # mock minted token, not real
         },
         model_id="anthropic.claude-sonnet-5",
         max_tokens=1024,

@@ -177,5 +177,5 @@ def test_fetch_model_ids_wires_openai_client(monkeypatch):
     mint.assert_called_once_with("us-west-2")
     openai_cls.assert_called_once_with(
         base_url="https://bedrock-mantle.us-west-2.api.aws/v1",
-        api_key="tok",
+        api_key="tok",  # pragma: allowlist secret  # mock minted token, not real
     )
