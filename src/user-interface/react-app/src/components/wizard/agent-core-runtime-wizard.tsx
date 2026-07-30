@@ -31,6 +31,7 @@ import {
     listKnowledgeBases as listKnowledgeBasesQuery,
     listRuntimeAgents as listRuntimeAgentsQuery,
 } from "../../graphql/queries";
+import ArchitectureDiagram from "./architectures/architecture-diagram";
 import {
     getAgentsAsToolsSteps,
     isAgentsAsToolsStepValid,
@@ -413,24 +414,28 @@ export default function AgentCoreRuntimeCreatorWizard({
                                         label: "Single Agent",
                                         description:
                                             "A single agent with tools, knowledge bases, and MCP servers",
+                                        image: <ArchitectureDiagram kind="single" />,
                                     },
                                     {
                                         value: "AGENTS_AS_TOOLS",
                                         label: "Agents as Tools",
                                         description:
                                             "An orchestrator agent that delegates to existing agents exposed as tools",
+                                        image: <ArchitectureDiagram kind="agents-as-tools" />,
                                     },
                                     {
                                         value: "SWARM",
                                         label: "Swarm",
                                         description:
                                             "Multiple specialized agents that collaborate via handoffs",
+                                        image: <ArchitectureDiagram kind="swarm" />,
                                     },
                                     {
                                         value: "GRAPH",
                                         label: "Graph",
                                         description:
                                             "Compose existing agents into a stateful LangGraph workflow with directed edges and conditional routing",
+                                        image: <ArchitectureDiagram kind="graph" />,
                                     },
                                 ]}
                             />
