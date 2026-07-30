@@ -28,10 +28,11 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { v4 as uuidv4 } from "uuid";
 
 import { generateClient } from "aws-amplify/api";
-import { RuntimeSummary } from "../../API";
+import { ArchitectureType, RuntimeSummary } from "../../API";
 import { AppContext } from "../../common/app-context";
 import { Utils } from "../../common/utils";
 import {
+    createAgentCoreRuntime as createAgentCoreRuntimeMut,
     deleteAgentRuntimeEndpoints as deleteAgentRuntimeEndpointsMut,
     deleteAgentRuntime as deleteAgentRuntimeMut,
     resetFavoriteRuntime as resetFavoriteRuntimeMut,
@@ -39,6 +40,7 @@ import {
     updateFavoriteRuntime as updateFavoriteRuntimeMut,
 } from "../../graphql/mutations";
 import {
+    getDefaultRuntimeConfiguration as getDefaultRuntimeConfigurationQuery,
     getFavoriteRuntime as getFavoriteRuntimeQuery,
     getRuntimeConfigurationByVersion as getRuntimeConfigurationByVersionQuery,
     listAgentBundleVersions as listAgentBundleVersionsQuery,
@@ -73,6 +75,8 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
     const [viewVersions, setViewVersions] = useState<VersionInfo[]>([]);
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [showUpdateContainerModal, setShowUpdateContainerModal] = useState(false);
+    const [isUpdatingContainer, setIsUpdatingContainer] = useState(false);
     const [showFavoriteModal, setShowFavoriteModal] = useState(false);
     const [availableEndpoints, setAvailableEndpoints] = useState<string[]>([]);
     const [isSettingFavorite, setIsSettingFavorite] = useState(false);
@@ -190,6 +194,48 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
         navigate(`/${uuidv4()}?agentRuntimeId=${encodeURIComponent(agent.agentRuntimeId)}`);
     };
 
+    // Update container: re-version the agent against the currently-deployed image
+    // URI without touching its configuration. We fetch the current default config
+    // and re-submit it unchanged through createAgentCoreRuntime; because the name
+    // matches an existing runtime, the backend calls update_agent_runtime with the
+    // Lambda's current CONTAINER_URI, minting a new version on the deployed image.
+    // This does NOT rebuild from source (see ADR 0005) and does NOT open the wizard.
+    const handleUpdateContainer = async (agent: RuntimeSummary) => {
+        // Re-validate at confirm time: a background refresh can flip the row to a
+        // transient status while the modal is open.
+        if (isTransientStatus(agent.status)) {
+            console.warn("Skipping update: runtime is in a transient status.");
+            return;
+        }
+
+        setIsUpdatingContainer(true);
+        try {
+            const configResult = await apiClient.graphql({
+                query: getDefaultRuntimeConfigurationQuery,
+                variables: { agentName: agent.agentName },
+            });
+            const configValue = configResult.data.getDefaultRuntimeConfiguration;
+
+            await apiClient.graphql({
+                query: createAgentCoreRuntimeMut,
+                variables: {
+                    agentName: agent.agentName,
+                    configValue,
+                    architectureType: (agent.architectureType ?? "SINGLE") as ArchitectureType,
+                },
+            });
+
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+            setShowUpdateContainerModal(false);
+            await fetchAgents(); // surface the "Updating" status
+            subscribeToAgentUpdate(agent.agentName);
+        } catch (error) {
+            console.error("Failed to update container:", error);
+        } finally {
+            setIsUpdatingContainer(false);
+        }
+    };
+
     // Central dispatch for the per-row `⋯` action menu. Modals below read
     // selectedItems[0], so pin the selection to the acted-on row before
     // delegating to the (agent-taking) handlers. start-session and
@@ -216,7 +262,7 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
                 handleStartSession(agent);
                 break;
             case "update-container":
-                // Wired in T6.
+                setShowUpdateContainerModal(true);
                 break;
         }
     };
@@ -827,6 +873,46 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
                     onDelete={handleDelete}
                     isDeleting={isDeleting}
                 />
+            )}
+            {showUpdateContainerModal && selectedItems.length === 1 && (
+                <Modal
+                    visible={showUpdateContainerModal}
+                    onDismiss={() => setShowUpdateContainerModal(false)}
+                    header="Update container"
+                    footer={
+                        <Box float="right">
+                            <SpaceBetween direction="horizontal" size="xs">
+                                <Button
+                                    variant="link"
+                                    onClick={() => setShowUpdateContainerModal(false)}
+                                >
+                                    Cancel
+                                </Button>
+                                <Button
+                                    variant="primary"
+                                    onClick={() => handleUpdateContainer(selectedItems[0])}
+                                    loading={isUpdatingContainer}
+                                    disabled={isTransientStatus(selectedItems[0].status)}
+                                >
+                                    Update container
+                                </Button>
+                            </SpaceBetween>
+                        </Box>
+                    }
+                >
+                    <SpaceBetween size="m">
+                        <Box>
+                            This mints a new version of{" "}
+                            <strong>{selectedItems[0].agentName}</strong> using the currently
+                            deployed container image, keeping its configuration unchanged.
+                        </Box>
+                        <Box variant="small" color="text-status-inactive">
+                            This does not rebuild from source. New source code is picked up only by a
+                            redeploy; this action adopts an already-deployed image update on this
+                            runtime.
+                        </Box>
+                    </SpaceBetween>
+                </Modal>
             )}
             {showFavoriteModal && selectedItems.length === 1 && (
                 <SetFavoriteModal
