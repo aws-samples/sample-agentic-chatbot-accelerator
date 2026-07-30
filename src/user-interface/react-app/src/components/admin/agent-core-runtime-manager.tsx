@@ -47,6 +47,7 @@ import {
 import { receiveUpdateNotification } from "../../graphql/subscriptions";
 import DeleteAgentModal from "./agent-core/delete-agent-modal";
 import RowActions, { RowActionId } from "./agent-core/row-actions";
+import { isTransientStatus } from "./agent-core/runtime-status";
 import TagVersionModal from "./agent-core/tag-version-modal";
 import ViewVersionModal, { VersionInfo } from "./agent-core/view-version-modal";
 
@@ -339,6 +340,14 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
     };
 
     const handleDelete = async (deleteMode: "all" | "specific", selectedQualifiers?: string[]) => {
+        // Re-validate at confirm time: a background fetchAgents() can flip the
+        // selection to a transient status while the modal is open. Never fire a
+        // delete against a runtime with a control-plane op in flight.
+        if (selectedItems.some((a) => isTransientStatus(a.status))) {
+            console.warn("Skipping delete: a selected runtime is in a transient status.");
+            return;
+        }
+
         setIsDeleting(true);
         try {
             if (selectedItems.length === 1) {
@@ -610,7 +619,7 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
                                         variant="inline-link"
                                         disabled={
                                             selectedItems.length !== 1 ||
-                                            selectedItems[0].status.toLowerCase() !== "ready"
+                                            isTransientStatus(selectedItems[0].status)
                                         }
                                         onClick={() => setShowDeleteModal(true)}
                                     >
