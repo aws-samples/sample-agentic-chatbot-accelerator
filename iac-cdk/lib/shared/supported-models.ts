@@ -36,8 +36,6 @@ export const SUPPORTED_MODELS: RegionKeyedModels = {
         "GPT-5.6 Luna": "openai.gpt-5.6-luna",
         "GPT-5.6 Sol": "openai.gpt-5.6-sol",
         "GPT-5.6 Terra": "openai.gpt-5.6-terra",
-        "GPT-5.5": "openai.gpt-5.5",
-        "GPT-5.4": "openai.gpt-5.4",
         "GPT OSS 20B": "openai.gpt-oss-20b",
         "GPT OSS 120B": "openai.gpt-oss-120b",
         // Anthropic
@@ -78,8 +76,6 @@ export const SUPPORTED_MODELS: RegionKeyedModels = {
         "GPT-5.6 Luna": "openai.gpt-5.6-luna",
         "GPT-5.6 Sol": "openai.gpt-5.6-sol",
         "GPT-5.6 Terra": "openai.gpt-5.6-terra",
-        "GPT-5.5": "openai.gpt-5.5",
-        "GPT-5.4": "openai.gpt-5.4",
         "GPT OSS 20B": "openai.gpt-oss-20b",
         "GPT OSS 120B": "openai.gpt-oss-120b",
         // Amazon
@@ -115,8 +111,6 @@ export const SUPPORTED_MODELS: RegionKeyedModels = {
         // OpenAI
         "GPT-5.6 Luna": "openai.gpt-5.6-luna",
         "GPT-5.6 Terra": "openai.gpt-5.6-terra",
-        "GPT-5.4": "openai.gpt-5.4",
-        "GPT OSS Safeguard 20B": "openai.gpt-oss-safeguard-20b",
         "GPT OSS 20B": "openai.gpt-oss-20b",
         "GPT OSS 120B": "openai.gpt-oss-120b",
         // Amazon
@@ -151,7 +145,6 @@ export const SUPPORTED_MODELS: RegionKeyedModels = {
     // Frankfurt
     "eu-central-1": {
         // OpenAI
-        "GPT OSS Safeguard 20B": "openai.gpt-oss-safeguard-20b",
         "GPT OSS 20B": "openai.gpt-oss-20b",
         "GPT OSS 120B": "openai.gpt-oss-120b",
         // Amazon
