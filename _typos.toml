@@ -1,7 +1,9 @@
 # Configuration for the `typos` pre-commit hook.
 #
-# Crate and library names that the spell checker mistakes for typos. `ratatui`
-# in particular gets "corrected" to `ratatouille`, which silently breaks
-# cli/Cargo.toml.
+# Identifiers that are spelled this way on the wire, so "fixing" them breaks
+# real code rather than correcting prose.
 [default.extend-words]
+# Gets "corrected" to `ratatouille`, which silently breaks cli/Cargo.toml.
 ratatui = "ratatui"
+# The JWT header field name (RFC 7519), not a truncated `type`.
+typ = "typ"

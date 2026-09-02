@@ -8,6 +8,13 @@
 //! unreconnectable: re-presigning needs credentials, and getting credentials
 //! needs a live ID token.
 
+pub mod login;
+
+pub use login::{
+    Identity, LoginError, NewPasswordPrompt, Tokens, identity_from_id_token, login,
+    sdk_config_without_credentials,
+};
+
 use crate::telemetry::Secret;
 
 /// Temporary AWS credentials from the Cognito Identity Pool (~1h).
