@@ -23,18 +23,10 @@ pub fn install_crypto_provider() -> Result<(), TlsSetupError> {
         .map_err(|_| TlsSetupError::AlreadyInstalled)
 }
 
-/// Temporary smoke check proving one TLS stack works end to end.
-///
-/// Folded into T4's config fetch once that lands; it exists so T1 has an
-/// observable acceptance criterion for the crypto-provider risk. Any HTTP status
-/// counts as success — reaching a status at all means the handshake completed.
-pub async fn smoke_check(url: &str) -> anyhow::Result<u16> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()?;
-    let response = client.get(url).send().await?;
-    Ok(response.status().as_u16())
-}
+// T1's throwaway `smoke_check` lived here to give the crypto-provider risk an
+// observable acceptance criterion. It is gone: `config::fetch_exports` (T4) is
+// now the first TLS connection the process makes over the same reqwest/rustls
+// path, so the risk is covered by real work instead of a second HTTPS GET.
 
 #[cfg(test)]
 mod tests {

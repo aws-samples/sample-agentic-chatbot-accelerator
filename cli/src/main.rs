@@ -4,10 +4,6 @@
 use aca_cli::{args, telemetry, tls};
 use clap::Parser;
 
-/// Default target for the TLS smoke check — a stable, unauthenticated AWS
-/// endpoint, so the check exercises the same TLS path the real calls will.
-const SMOKE_URL: &str = "https://sts.amazonaws.com/";
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tls::install_crypto_provider()?;
@@ -28,17 +24,6 @@ async fn main() -> anyhow::Result<()> {
     // Printing is the whole behaviour for now: the flags are a settled contract
     // (T2), everything behind them lands in later tasks.
     println!("{cli:#?}");
-
-    let status = tls::smoke_check(SMOKE_URL).await?;
-    // URLs reach the log only through the redactor. Nothing is signed yet, but
-    // routing this one through it keeps the habit — and the call site — in place
-    // for T6, where the URL is a bearer credential.
-    tracing::info!(
-        url = %telemetry::redact_presigned_url(SMOKE_URL),
-        status,
-        "tls smoke check completed"
-    );
-    println!("TLS smoke check: {SMOKE_URL} -> HTTP {status}");
 
     Ok(())
 }
