@@ -1,0 +1,7 @@
+# Configuration for the `typos` pre-commit hook.
+#
+# Crate and library names that the spell checker mistakes for typos. `ratatui`
+# in particular gets "corrected" to `ratatouille`, which silently breaks
+# cli/Cargo.toml.
+[default.extend-words]
+ratatui = "ratatui"

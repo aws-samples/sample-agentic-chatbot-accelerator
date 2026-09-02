@@ -1,0 +1,68 @@
+[package]
+name = "aca-cli"
+version = "0.1.0"
+edition = "2024"
+# Floor is set by the AWS SDK crates (aws-config / aws-sigv4 / aws-sdk-* all
+# declare 1.94.1), not by ratatui 0.30's 1.88.
+rust-version = "1.94.1"
+description = "Terminal client for chatting with a deployed AgentCore agent"
+publish = false
+
+[dependencies]
+# --- TUI (used in T11) ---------------------------------------------------
+# crossterm_0_29 pins ratatui's backend to the same crossterm we depend on
+# directly, so terminal event types are interchangeable rather than duplicated.
+ratatui = { version = "0.30", features = ["crossterm_0_29"] }
+crossterm = { version = "0.29", features = ["event-stream"] }
+
+# --- transport -----------------------------------------------------------
+# connect_async takes the presigned URL verbatim; nothing here may rewrite it.
+tokio-tungstenite = { version = "0.30", features = ["connect", "handshake", "rustls-tls-native-roots"] }
+
+# --- AWS -----------------------------------------------------------------
+aws-sigv4 = { version = "1.5", features = ["sign-http", "http1"] }
+# `default-features = false` is load-bearing on all three: the SDK's default
+# `rustls` feature selects aws-smithy-http-client's *legacy* stack (rustls 0.21 +
+# ring + hyper 0.14), which would put a second crypto library in the graph.
+# `default-https-client` is the modern rustls 0.23 + aws-lc-rs path instead.
+# Dropping aws-config's `sso`/`credentials-process` defaults is free here: every
+# Cognito call uses a `no_credentials()` loader (T7).
+aws-sdk-cognitoidentityprovider = { version = "1.132", default-features = false, features = [
+  "default-https-client",
+  "rt-tokio",
+  "behavior-version-latest",
+] }
+aws-sdk-cognitoidentity = { version = "1.110", default-features = false, features = [
+  "default-https-client",
+  "rt-tokio",
+  "behavior-version-latest",
+] }
+aws-config = { version = "1.11", default-features = false, features = [
+  "default-https-client",
+  "rt-tokio",
+  "behavior-version-latest",
+] }
+aws-credential-types = "1.2"
+
+# --- runtime & HTTP ------------------------------------------------------
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "signal"] }
+# `rustls` (not `default-tls`) keeps the graph on rustls + aws-lc-rs, matching
+# the AWS SDK and tokio-tungstenite. See cli/README.md and ADR-0009.
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "charset", "http2"] }
+
+# --- CLI, logging, plumbing ---------------------------------------------
+clap = { version = "4", features = ["derive", "env"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
+anyhow = "1"
+thiserror = "2"
+rpassword = "7"
+zeroize = "1"
+# Explicit, non-default feature set: `aws_lc_rs` is the one crypto provider this
+# process installs, and naming it here means a graph change that drops it breaks
+# the build instead of panicking at the first TLS connect.
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std", "logging", "tls12"] }

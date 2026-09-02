@@ -11,6 +11,9 @@ cdk.out
 .venv
 *__pycache__*
 
+# Rust (scoped to the CLI crate so a future crate is not silently ignored)
+cli/target/
+
 # MISC
 cache
 local/

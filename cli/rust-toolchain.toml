@@ -1,0 +1,5 @@
+[toolchain]
+# Pinned so a contributor on an older toolchain gets "toolchain not installed"
+# rather than a wall of confusing type errors from the AWS SDK (MSRV 1.94.1).
+channel = "1.95.0"
+components = ["rustfmt", "clippy"]

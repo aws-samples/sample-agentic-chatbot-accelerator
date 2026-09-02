@@ -16,7 +16,8 @@ repos:
     rev: v1.31.1
     hooks:
       - id: typos
-        exclude: '.*\.svg$'
+        # Cargo.lock is crate names and 64-hex checksums, not prose.
+        exclude: '(.*\.svg$|^cli/Cargo\.lock$)'
 
   - repo: https://github.com/psf/black
     rev: 23.12.1
@@ -48,6 +49,29 @@ repos:
         language: system
         files: ^iac-terraform/.*\.tf$
         pass_filenames: false
+      - id: rust-fmt
+        name: Rust format
+        entry: cargo fmt --manifest-path cli/Cargo.toml --
+        language: system
+        files: ^cli/.*\.rs$
+        pass_filenames: false
+      # clippy and cargo-audit are manual-stage: a cold AWS-SDK + ratatui + tokio
+      # build takes minutes, which would make every commit painful.
+      # Run with: pre-commit run --hook-stage manual rust-clippy
+      - id: rust-clippy
+        name: Rust clippy
+        entry: cargo clippy --manifest-path cli/Cargo.toml --all-targets -- -D warnings
+        language: system
+        files: ^cli/.*\.(rs|toml)$
+        pass_filenames: false
+        stages: [manual]
+      - id: cargo-audit
+        name: cargo audit
+        entry: cargo audit --file cli/Cargo.lock
+        language: system
+        files: ^cli/Cargo\.lock$
+        pass_filenames: false
+        stages: [manual]
 
   - repo: https://github.com/bridgecrewio/checkov.git
     rev: 3.2.484
