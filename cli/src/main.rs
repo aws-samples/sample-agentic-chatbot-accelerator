@@ -4,6 +4,10 @@
 //! rustls stack works end to end. Auth, presigning and the WebSocket arrive in
 //! later tasks.
 
+mod args;
+mod telemetry;
+
+use clap::Parser;
 use std::time::Duration;
 
 /// Default target for the TLS smoke check — a stable, unauthenticated AWS
@@ -50,7 +54,30 @@ pub async fn tls_smoke_check(url: &str) -> anyhow::Result<u16> {
 async fn main() -> anyhow::Result<()> {
     install_crypto_provider()?;
 
+    // Before anything that could log, so no module can leak to stdout. Bound to
+    // a named local, not bare `_`: `_log_guard` lives to the end of `main`,
+    // whereas `_` would drop at once and discard every buffered line.
+    let _log_guard = telemetry::init(None)?;
+    // No-op `restore` until T11 owns the alternate screen and has something to
+    // tear down; installed now so the hook itself is never forgotten later.
+    telemetry::install_panic_hook(|| {});
+    tracing::info!(version = env!("CARGO_PKG_VERSION"), "aca-cli starting");
+
+    // Parsed before any network work so `--help` and `--version` exit without
+    // reaching out. Printing is the whole behaviour for now: the flags are a
+    // settled contract (T2), everything behind them lands in later tasks.
+    let cli = args::Cli::parse();
+    println!("{cli:#?}");
+
     let status = tls_smoke_check(SMOKE_URL).await?;
+    // URLs reach the log only through the redactor. Nothing is signed yet, but
+    // routing this one through it keeps the habit — and the call site — in place
+    // for T6, where the URL is a bearer credential.
+    tracing::info!(
+        url = %telemetry::redact_presigned_url(SMOKE_URL),
+        status,
+        "tls smoke check completed"
+    );
     println!("TLS smoke check: {SMOKE_URL} -> HTTP {status}");
 
     Ok(())
