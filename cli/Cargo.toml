@@ -31,6 +31,9 @@ crossterm = { version = "0.29", features = ["event-stream"] }
 # --- transport -----------------------------------------------------------
 # connect_async takes the presigned URL verbatim; nothing here may rewrite it.
 tokio-tungstenite = { version = "0.30", features = ["connect", "handshake", "rustls-tls-native-roots"] }
+# Already in the graph via tokio-tungstenite; named explicitly because transport
+# needs `StreamExt::split` and `SinkExt::send` to read and write concurrently.
+futures-util = { version = "0.3", default-features = false, features = ["std", "sink"] }
 
 # --- AWS -----------------------------------------------------------------
 aws-sigv4 = { version = "1.5", features = ["sign-http", "http1"] }

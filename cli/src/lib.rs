@@ -23,3 +23,4 @@ pub mod presign;
 pub mod protocol;
 pub mod telemetry;
 pub mod tls;
+pub mod transport;
