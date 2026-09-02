@@ -29,7 +29,11 @@ const LOG_ENV: &str = "ACA_CLI_LOG";
 ///
 /// `info` across the whole graph would drown the file in rustls/hyper/AWS-SDK
 /// chatter and make the one line that matters unfindable.
-const DEFAULT_FILTER: &str = "warn,aca_cli=info";
+///
+/// Both our targets are named: library code logs under `aca_cli`, but the thin
+/// `main.rs` is its own crate and logs under `aca`, so listing only the former
+/// would silently drop every line the binary itself emits.
+const DEFAULT_FILTER: &str = "warn,aca_cli=info,aca=info";
 
 /// Query parameters worth keeping when redacting a presigned URL.
 ///
@@ -241,21 +245,23 @@ pub struct Secret<T: zeroize::Zeroize>(T);
 
 impl<T: zeroize::Zeroize> Secret<T> {
     /// Wrap a value, taking ownership so it can be zeroized on drop.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "first wrapped values land in T7 and T8")
-    )]
     pub fn new(value: T) -> Self {
         Self(value)
     }
 
     /// Borrow the secret. Every call site is a potential leak — justify it.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "first wrapped values land in T7 and T8")
-    )]
     pub fn expose(&self) -> &T {
         &self.0
+    }
+}
+
+/// Hand-written rather than derived so the `Clone` bound lands on `T`, not on
+/// `Secret<T>` as a whole: `auth::AwsCreds` must be cloneable to be handed to the
+/// signer on every re-presign, and a token that cannot be copied out of the
+/// broker would have to be re-fetched instead.
+impl<T: zeroize::Zeroize + Clone> Clone for Secret<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
     }
 }
 

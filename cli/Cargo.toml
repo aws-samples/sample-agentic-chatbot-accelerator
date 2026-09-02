@@ -8,6 +8,19 @@ rust-version = "1.94.1"
 description = "Terminal client for chatting with a deployed AgentCore agent"
 publish = false
 
+# Library plus a thin binary. The lib target is what makes `cli/tests/*.rs`
+# integration tests possible (T4 and T6 load golden fixtures) and stops every
+# not-yet-wired module from needing a `dead_code` exemption under `-D warnings`.
+[lib]
+name = "aca_cli"
+path = "src/lib.rs"
+
+# Named `aca`, not `aca-cli`: clap's `name` is overridden at runtime by argv[0],
+# so without this the usage line in `--help` contradicts the documented command.
+[[bin]]
+name = "aca"
+path = "src/main.rs"
+
 [dependencies]
 # --- TUI (used in T11) ---------------------------------------------------
 # crossterm_0_29 pins ratatui's backend to the same crossterm we depend on
