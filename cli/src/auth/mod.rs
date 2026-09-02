@@ -8,8 +8,10 @@
 //! unreconnectable: re-presigning needs credentials, and getting credentials
 //! needs a live ID token.
 
+pub mod credentials;
 pub mod login;
 
+pub use credentials::{CredentialBroker, CredentialError, REFRESH_BUFFER};
 pub use login::{
     Identity, LoginError, NewPasswordPrompt, Tokens, identity_from_id_token, login,
     sdk_config_without_credentials,
