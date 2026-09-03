@@ -5,14 +5,17 @@
 //! diagnostic needed to tell them apart, so chat is proven on a sink whose output
 //! survives being redirected to a file.
 
-use std::io::{BufRead, IsTerminal, Write};
+use std::io::{IsTerminal, Write};
 use std::process::ExitCode;
 
 use tokio::sync::mpsc::Receiver;
 
 use crate::protocol::AgentEvent;
+use crate::session::{Session, SessionControl};
 use crate::telemetry::Secret;
 use crate::transport::AgentConnection;
+
+use super::{Submission, parse_submission};
 
 /// How a single turn ended.
 #[derive(Debug, PartialEq, Eq)]
@@ -31,26 +34,37 @@ enum TurnOutcome {
 /// connection across turns: same session id, one socket. Reconnecting per turn
 /// would trigger the 409 retry path for no reason and lose the conversation
 /// context the second-prompt acceptance check depends on.
-pub async fn run(mut conn: AgentConnection, one_shot: Option<String>) -> ExitCode {
+///
+/// `manager` is here only for `/session` and `/agent`. The commands are supported
+/// in this sink as well as the TUI because the alternative is worse than not
+/// having them: a user who types `/session` at a plain prompt would otherwise
+/// have it sent to the agent as a question.
+pub async fn run(
+    session: Session,
+    manager: &mut dyn SessionControl,
+    one_shot: Option<String>,
+) -> ExitCode {
+    let Session {
+        mut connection,
+        mut target,
+    } = session;
     let mut stdout = std::io::stdout();
     tracing::info!(
-        session_id = conn.session_id().as_str(),
+        session_id = connection.session_id().as_str(),
         "starting plain chat"
     );
 
     if let Some(text) = one_shot {
-        let code = match send_and_render(&mut conn, &text, &mut stdout).await {
+        let code = match send_and_render(&mut connection, &text, &mut stdout).await {
             Ok(outcome) => outcome_to_code(outcome, &mut std::io::stderr()),
             Err(code) => code,
         };
         // Best-effort: a failed close cannot change what already happened.
-        let _ = conn.close().await;
+        let _ = connection.close().await;
         return code;
     }
 
-    let stdin = std::io::stdin();
-    let interactive = stdin.is_terminal();
-    let mut lines = stdin.lock().lines();
+    let interactive = std::io::stdin().is_terminal();
 
     loop {
         if interactive {
@@ -59,45 +73,102 @@ pub async fn run(mut conn: AgentConnection, one_shot: Option<String>) -> ExitCod
             let _ = write!(stdout, "> ");
             let _ = stdout.flush();
         }
-        let Some(line) = lines.next() else {
-            break; // EOF: a piped script ran out of input, which is a clean exit.
-        };
-        let text = match line {
-            Ok(text) => text,
+        // Read a line at a time rather than holding a `StdinLock` for the whole
+        // loop: `/agent` prompts through the same stdin, and a held lock would
+        // deadlock the moment the picker asked a question.
+        let mut line = String::new();
+        match std::io::stdin().read_line(&mut line) {
+            // EOF: a piped script ran out of input, which is a clean exit.
+            Ok(0) => break,
+            Ok(_) => {}
             Err(err) => {
                 eprintln!("aca: could not read stdin: {err}");
                 break;
             }
-        };
-        let text = text.trim();
+        }
+        let text = line.trim().to_string();
         if text.is_empty() {
             continue;
         }
-        if text == "/quit" || text == "/exit" {
-            break;
-        }
+
+        let text = match parse_submission(&text) {
+            Submission::Turn(text) => text,
+            Submission::Quit => break,
+            Submission::Help => {
+                for (name, description) in super::COMMANDS {
+                    // stderr: the commands are not part of the transcript, and a
+                    // redirected run should not collect them.
+                    eprintln!("  {name:<10} {description}");
+                }
+                continue;
+            }
+            Submission::Unknown(name) => {
+                eprintln!("aca: {name} is not a command — /help lists them");
+                continue;
+            }
+            command @ (Submission::NewSession | Submission::ChooseAgent) => {
+                let switching = command == Submission::ChooseAgent;
+                match reconnect(manager, &target, switching).await {
+                    Ok(session) => {
+                        let previous = std::mem::replace(&mut connection, session.connection);
+                        let _ = previous.close().await;
+                        target = session.target;
+                        // The agent has none of the conversation above, and in a
+                        // linear transcript that boundary is otherwise invisible.
+                        let _ = writeln!(
+                            stdout,
+                            "-- new session on {} / {} (the agent does not have the conversation above) --",
+                            target.agent_runtime_id, target.qualifier
+                        );
+                        let _ = stdout.flush();
+                    }
+                    Err(err) => eprintln!("aca: {err}"),
+                }
+                continue;
+            }
+        };
+
         if !interactive {
             // Echo, so a piped transcript shows what was asked. Skipped when
             // interactive because the terminal already echoed it.
             let _ = writeln!(stdout, "> {text}");
         }
 
-        match send_and_render(&mut conn, text, &mut stdout).await {
+        match send_and_render(&mut connection, &text, &mut stdout).await {
             Ok(TurnOutcome::Complete) => continue,
             Ok(outcome) => {
                 let code = outcome_to_code(outcome, &mut std::io::stderr());
-                let _ = conn.close().await;
+                let _ = connection.close().await;
                 return code;
             }
             Err(code) => {
-                let _ = conn.close().await;
+                let _ = connection.close().await;
                 return code;
             }
         }
     }
 
-    let _ = conn.close().await;
+    let _ = connection.close().await;
     ExitCode::SUCCESS
+}
+
+/// Open a new session: the same agent, or one the user picks.
+///
+/// The picker is [`crate::discovery::TerminalChooser`], the same two-step prompt
+/// the startup path uses — line mode has no overlay to draw, and reusing it means
+/// the selection rules cannot differ between starting up and switching.
+async fn reconnect(
+    manager: &mut dyn SessionControl,
+    current: &crate::discovery::Target,
+    switching: bool,
+) -> Result<Session, crate::session::SessionError> {
+    let target = if switching {
+        let agents = manager.agents().await?;
+        crate::discovery::select_target(&agents, None, &crate::discovery::TerminalChooser)?
+    } else {
+        current.clone()
+    };
+    manager.open(target).await
 }
 
 /// Send one turn and render until it ends.
@@ -284,7 +355,116 @@ impl crate::auth::NewPasswordPrompt for TerminalPasswordPrompt {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::discovery::{RuntimeSummary, Target};
     use crate::protocol::FinalResponse;
+    use crate::session::SessionError;
+
+    /// Records what it was asked for and hands back a recording connection.
+    struct FakeControl {
+        agents: Vec<RuntimeSummary>,
+        opened: Vec<Target>,
+        listings: usize,
+    }
+
+    impl SessionControl for FakeControl {
+        fn open(
+            &mut self,
+            target: Target,
+        ) -> std::pin::Pin<Box<dyn Future<Output = Result<Session, SessionError>> + Send + '_>>
+        {
+            self.opened.push(target.clone());
+            Box::pin(async move {
+                Ok(Session {
+                    connection: crate::transport::test_connection().connection,
+                    target,
+                })
+            })
+        }
+
+        fn agents(
+            &mut self,
+        ) -> std::pin::Pin<
+            Box<dyn Future<Output = Result<Vec<RuntimeSummary>, SessionError>> + Send + '_>,
+        > {
+            self.listings += 1;
+            let agents = self.agents.clone();
+            Box::pin(async move { Ok(agents) })
+        }
+    }
+
+    fn current() -> Target {
+        Target {
+            agent_runtime_id: "weather_agent-AbCdEf1234".to_string(),
+            qualifier: "DEFAULT".to_string(),
+            runtime_version: "3".to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_new_session_reuses_the_current_agent_without_asking_appsync() {
+        // `/session` means "same agent, new conversation". Listing agents here
+        // would be a round-trip and a prompt for a choice already made.
+        let mut manager = FakeControl {
+            agents: Vec::new(),
+            opened: Vec::new(),
+            listings: 0,
+        };
+        let session = reconnect(&mut manager, &current(), false)
+            .await
+            .expect("reconnect");
+
+        assert_eq!(session.target, current());
+        assert_eq!(manager.opened, vec![current()]);
+        assert_eq!(manager.listings, 0, "/session must not query AppSync");
+    }
+
+    #[tokio::test]
+    async fn switching_agents_lists_and_opens_the_chosen_one() {
+        // One agent with one endpoint, so the selection is silent and the test
+        // does not depend on a terminal prompt.
+        let mut manager = FakeControl {
+            agents: vec![RuntimeSummary {
+                agent_name: "research_swarm".to_string(),
+                agent_runtime_id: "research_swarm-Zz9988".to_string(),
+                qualifier_to_version: Some(r#"{"DEFAULT":"1"}"#.to_string()),
+                status: Some("Ready".to_string()),
+                architecture_type: Some("SWARM".to_string()),
+            }],
+            opened: Vec::new(),
+            listings: 0,
+        };
+        let session = reconnect(&mut manager, &current(), true)
+            .await
+            .expect("reconnect");
+
+        assert_eq!(manager.listings, 1);
+        assert_eq!(
+            session.target,
+            Target {
+                agent_runtime_id: "research_swarm-Zz9988".to_string(),
+                qualifier: "DEFAULT".to_string(),
+                // Resolved from the listing rather than left blank.
+                runtime_version: "1".to_string(),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn switching_with_nothing_deployed_fails_without_opening_anything() {
+        let mut manager = FakeControl {
+            agents: Vec::new(),
+            opened: Vec::new(),
+            listings: 0,
+        };
+        // `Session` holds a live socket and so has no `Debug`; matching keeps the
+        // assertion without demanding one.
+        let Err(err) = reconnect(&mut manager, &current(), true).await else {
+            panic!("switching with nothing deployed must fail");
+        };
+
+        assert!(err.to_string().contains("no agents"), "{err}");
+        assert!(manager.opened.is_empty(), "nothing may be dialled");
+    }
 
     /// Build a receiver pre-loaded with `events`, as if a runtime had sent them.
     fn channel_of(events: Vec<AgentEvent>) -> Receiver<AgentEvent> {

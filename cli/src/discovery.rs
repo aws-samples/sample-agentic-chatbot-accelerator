@@ -408,6 +408,50 @@ pub fn select_target(
     })
 }
 
+/// One selectable row for an in-chat picker: a label and the target it means.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Selectable {
+    pub label: String,
+    pub target: Target,
+}
+
+/// Flatten a listing into one row per (agent, endpoint) pair.
+///
+/// The two-step prompt [`select_target`] uses suits a command line, where each
+/// question can be answered before the next is asked. A picker inside a running
+/// chat has one list and one keypress, so agent and endpoint are pre-combined
+/// here — which also means an agent with two endpoints is visibly two choices
+/// rather than a choice that silently asks a second question.
+///
+/// Agents with no endpoints are omitted: there is nothing to connect to, and
+/// offering the row would only produce a handshake failure.
+pub fn selectable_targets(agents: &[RuntimeSummary]) -> Vec<Selectable> {
+    let mut rows = Vec::new();
+    for agent in agents {
+        for (qualifier, version) in agent.qualifiers() {
+            let architecture = agent.architecture_type.as_deref().unwrap_or("unknown");
+            let status = agent.status.as_deref().unwrap_or("unknown status");
+            let shown_version = if version.is_empty() {
+                "version unknown".to_string()
+            } else {
+                format!("v{version}")
+            };
+            rows.push(Selectable {
+                label: format!(
+                    "{} / {qualifier}  [{shown_version}, {architecture}, {status}]",
+                    agent.agent_name
+                ),
+                target: Target {
+                    agent_runtime_id: agent.agent_runtime_id.clone(),
+                    qualifier,
+                    runtime_version: version,
+                },
+            });
+        }
+    }
+    rows
+}
+
 /// Render the listing for `aca agents`.
 ///
 /// Returns the text rather than printing it, so the format is assertable.
@@ -871,6 +915,48 @@ mod tests {
         ] {
             assert!(rendered.contains(expected), "{rendered} omits {expected}");
         }
+    }
+
+    #[test]
+    fn the_picker_offers_one_row_per_endpoint_with_its_version_resolved() {
+        let agents = vec![
+            agent("weather_agent", Some(r#"{"DEFAULT": "3", "staging": "2"}"#)),
+            agent("research_swarm", Some(r#"{"DEFAULT": "1"}"#)),
+        ];
+        let rows = selectable_targets(&agents);
+
+        assert_eq!(rows.len(), 3);
+        assert_eq!(
+            rows[0].target,
+            Target {
+                agent_runtime_id: "weather_agent-AbCdEf1234".into(),
+                qualifier: "DEFAULT".into(),
+                // Resolved, not blank: switching agents from inside a chat must
+                // not write a session row with an empty version.
+                runtime_version: "3".into(),
+            }
+        );
+        assert!(rows[1].label.contains("staging"), "{}", rows[1].label);
+        assert!(rows[1].label.contains("v2"), "{}", rows[1].label);
+        assert!(
+            rows[2].label.contains("research_swarm"),
+            "{}",
+            rows[2].label
+        );
+    }
+
+    #[test]
+    fn the_picker_omits_agents_with_nothing_to_connect_to() {
+        // An endpointless agent is not a choice; offering it would produce a
+        // handshake failure the user cannot act on.
+        let agents = vec![
+            agent("bare_agent", None),
+            agent("weather_agent", Some(r#"{"DEFAULT": "1"}"#)),
+        ];
+        let rows = selectable_targets(&agents);
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].label.contains("weather_agent"));
+        assert!(selectable_targets(&[]).is_empty());
     }
 
     #[test]

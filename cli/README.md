@@ -19,11 +19,12 @@ user — no AWS credentials, no `~/.aws`, no IAM role.
 4. [Configuration](#configuration)
 5. [Running without `aws-exports.json`](#running-without-aws-exportsjson)
 6. [Choosing an agent](#choosing-an-agent)
-7. [Plain mode vs. the TUI](#plain-mode-vs-the-tui)
-8. [Command reference](#command-reference)
-9. [Troubleshooting](#troubleshooting)
-10. [Limitations](#limitations)
-11. [Security notes](#security-notes)
+7. [In-chat commands](#in-chat-commands)
+8. [Plain mode vs. the TUI](#plain-mode-vs-the-tui)
+9. [Command reference](#command-reference)
+10. [Troubleshooting](#troubleshooting)
+11. [Limitations](#limitations)
+12. [Security notes](#security-notes)
 
 ## Prerequisites
 
@@ -188,20 +189,70 @@ The tradeoff for skipping discovery: the CLI cannot resolve the endpoint's
 runtime *version*, so the session row the web UI's history list reads will show a
 blank version for that conversation. Discovery fills it in.
 
+## In-chat commands
+
+A line starting with `/` is handled by the CLI instead of being sent to the agent.
+They work in both the TUI and plain mode.
+
+| Command | Does |
+|---|---|
+| `/session` (or `/new`) | Start a new session with the **same** agent |
+| `/agent` (or `/agents`, `/switch`) | Switch to another agent, in a new session |
+| `/help` (or `/?`) | List the commands |
+| `/quit` (or `/exit`, `/q`) | Leave |
+
+**Both commands start a genuinely new conversation.** An AgentCore session id maps
+to its own microVM, so a new session is a new container with no memory of what came
+before — that is the point of `/session` when an agent has wandered off, and it is
+also why the first reply after one may be slow (a cold start).
+
+The TUI keeps the transcript on screen across a new session and marks the break:
+
+```
+── new session on weather_agent-AbCdEf1234 / DEFAULT — the agent does not have the conversation above ──
+```
+
+That marker matters. Without it, an agent that answers the next question with no
+reference to the last five minutes looks like it has broken memory rather than a
+fresh session.
+
+`/agent` opens a picker listing every agent × endpoint pair, with its version,
+architecture and status; `↑`/`↓` move, `Enter` switches, `Esc` cancels. It needs
+an AppSync URL, the same as `aca agents` — with `--runtime-id` and no AppSync
+endpoint configured there is nothing to list, and the command reports that.
+
+Only a **leading** `/` counts, and only the first word: `does /etc/hosts exist?`
+is a question, not a command. An unrecognised `/word` is reported rather than sent
+on — an agent gamely answering a question about a command it has never heard of is
+a worse outcome than being told the name was mistyped.
+
+While a session is opening the prompt holds what you type rather than discarding
+it — press Enter again once the status line clears.
+
 ## Plain mode vs. the TUI
 
 On a terminal you get a full-screen view: a scrolling transcript, tokens
 appearing as the agent produces them, a `using <tool>` indicator that resolves
 when the tool finishes, and an input box that stays usable while a reply streams.
+The title bar names the current agent and the session id — the one a CloudWatch
+query needs.
 
 | Key | Does |
 |---|---|
-| `Enter` | Send |
+| `Enter` | Send (or run an in-chat command) |
 | `↑` / `↓`, `PageUp` / `PageDown` | Scroll the transcript |
+| `Home` / `End`, `←` / `→` | Move within the input |
 | `Ctrl-C` | Quit |
 | `Ctrl-D` | Quit (on an empty line) |
 | `Ctrl-U` | Clear the input |
-| `/quit`, `/exit` | Quit |
+
+In the `/agent` picker the keys change: `↑`/`↓` move, `Enter` switches, `Esc`
+cancels, `Ctrl-C` still quits. The hint under the input box always says which set
+is active.
+
+Nothing blocks the terminal while a session opens. Opening one can take tens of
+seconds (a cold container), so it runs in the background: scrolling and `Ctrl-C`
+keep working throughout.
 
 **Plain mode** is a linear, greppable transcript with no escape sequences. It is
 selected automatically when stdout is not a terminal, so redirection just works:
@@ -221,6 +272,11 @@ what is in the knowledge base about pricing?
 and what about support tiers?
 EOF
 ```
+
+The in-chat commands work in plain mode too, so `/session` mid-script is a way to
+ask a second question with no context from the first. `/agent` there uses the same
+numbered stdin menu as startup rather than a picker, and needs an interactive
+stdin — piped in, it has no way to answer its own prompt.
 
 ### Exit codes
 
@@ -314,6 +370,11 @@ attach to a bug report. Check it anyway before you do.
   architectures should work but may show less.
 - **Credentials are never persisted**, so every run asks for a password. This is
   deliberate, not an oversight — see below.
+- **`/session` and `/agent` cannot be undone.** There is no going back to the
+  previous session: the socket is closed and the container released. The
+  transcript stays on screen, but the agent that produced it is gone.
+- **One session at a time.** No split view, no tabs; a second `/session` while the
+  first is still opening is refused rather than queued.
 - **The TUI has one view.** No history search, no message editing, no session
   browser.
 

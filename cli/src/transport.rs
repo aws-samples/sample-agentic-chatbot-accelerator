@@ -43,6 +43,16 @@ pub struct AgentConnection {
     pub events: mpsc::Receiver<AgentEvent>,
     /// Write half. Separated from the read loop, which runs in its own task, so
     /// a send can happen while tokens are still streaming in.
+    writer: AgentWriter,
+}
+
+/// The send half of a session, separable from its event stream.
+///
+/// Split out for the TUI's `select!`: a loop that can *replace* its connection
+/// (`/session`, `/agent`) cannot also hold `&mut` the receiver inside a select
+/// branch, because the branch's borrow outlives the handler that would swap it.
+/// So the receiver is pumped by a task and the writer kept on its own.
+pub struct AgentWriter {
     writer: WriteHalf,
     session_id: SessionId,
     /// Echoed back in every `TextInput`. The container writes these three onto
@@ -74,6 +84,29 @@ trait MessageSink: Send {
 }
 
 impl AgentConnection {
+    /// Send one user turn.
+    pub async fn send_text(&mut self, text: &str) -> Result<(), TransportError> {
+        self.writer.send_text(text).await
+    }
+
+    pub fn session_id(&self) -> &SessionId {
+        self.writer.session_id()
+    }
+
+    /// Close the socket politely.
+    pub async fn close(self) -> Result<(), TransportError> {
+        self.writer.close().await
+    }
+
+    /// Separate the write half from the event stream.
+    ///
+    /// See [`AgentWriter`] for why the TUI needs these apart.
+    pub fn split(self) -> (AgentWriter, mpsc::Receiver<AgentEvent>) {
+        (self.writer, self.events)
+    }
+}
+
+impl AgentWriter {
     /// Send one user turn.
     ///
     /// `message_id` is generated per call. The `type` discriminant comes from
@@ -267,12 +300,73 @@ fn spawn(stream: WsStream, params: ConnectParams<'_>) -> AgentConnection {
 
     AgentConnection {
         events,
-        writer: Box::new(TungsteniteSink(sink)),
-        session_id: params.session_id.clone(),
-        agent_runtime_id: params.agent_runtime_id.to_string(),
-        qualifier: params.qualifier.to_string(),
-        runtime_version: params.runtime_version.to_string(),
-        user_id: params.identity.sub.clone(),
+        writer: AgentWriter {
+            writer: Box::new(TungsteniteSink(sink)),
+            session_id: params.session_id.clone(),
+            agent_runtime_id: params.agent_runtime_id.to_string(),
+            qualifier: params.qualifier.to_string(),
+            runtime_version: params.runtime_version.to_string(),
+            user_id: params.identity.sub.clone(),
+        },
+    }
+}
+
+/// A connection whose writes are recorded and whose events are fed by hand.
+///
+/// Crate-visible rather than private to `mod tests` because the sinks' own tests
+/// need a connection they can drive: the alternative is asserting the TUI's
+/// session handling against a live runtime, which is what the trait seams in
+/// this crate exist to avoid.
+#[cfg(test)]
+pub(crate) struct TestConnection {
+    pub connection: AgentConnection,
+    pub sent: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    /// Sends events as if the runtime had produced them. Dropping it closes the
+    /// stream, which is how a disconnect is simulated.
+    pub server: mpsc::Sender<AgentEvent>,
+}
+
+#[cfg(test)]
+pub(crate) fn test_connection() -> TestConnection {
+    let sent = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let (server, events) = mpsc::channel(64);
+    let connection = AgentConnection {
+        events,
+        writer: AgentWriter {
+            writer: Box::new(RecordingSink(std::sync::Arc::clone(&sent))),
+            session_id: SessionId::new_random(),
+            agent_runtime_id: "my_agent-AbCdEf".to_string(),
+            qualifier: "DEFAULT".to_string(),
+            runtime_version: "1".to_string(),
+            user_id: "11111111-2222-3333-4444-555555555555".to_string(),
+        },
+    };
+    TestConnection {
+        connection,
+        sent,
+        server,
+    }
+}
+
+/// Collects payloads instead of writing to a socket, so the `TextInput`
+/// assembly is checkable offline.
+#[cfg(test)]
+struct RecordingSink(std::sync::Arc<std::sync::Mutex<Vec<String>>>);
+
+#[cfg(test)]
+impl MessageSink for RecordingSink {
+    fn send_text<'a>(
+        &'a mut self,
+        payload: String,
+    ) -> std::pin::Pin<Box<dyn Future<Output = Result<(), TransportError>> + Send + 'a>> {
+        self.0.lock().expect("sink mutex").push(payload);
+        Box::pin(async { Ok(()) })
+    }
+
+    fn close<'a>(
+        &'a mut self,
+    ) -> std::pin::Pin<Box<dyn Future<Output = Result<(), TransportError>> + Send + 'a>> {
+        Box::pin(async { Ok(()) })
     }
 }
 
@@ -520,49 +614,13 @@ mod tests {
         let _ = backoff_delay(u32::MAX);
     }
 
-    /// Collects payloads instead of writing to a socket, so the `TextInput`
-    /// assembly is checkable offline.
-    struct RecordingSink(std::sync::Arc<std::sync::Mutex<Vec<String>>>);
-
-    impl MessageSink for RecordingSink {
-        fn send_text<'a>(
-            &'a mut self,
-            payload: String,
-        ) -> std::pin::Pin<Box<dyn Future<Output = Result<(), TransportError>> + Send + 'a>>
-        {
-            self.0.lock().expect("sink mutex").push(payload);
-            Box::pin(async { Ok(()) })
-        }
-
-        fn close<'a>(
-            &'a mut self,
-        ) -> std::pin::Pin<Box<dyn Future<Output = Result<(), TransportError>> + Send + 'a>>
-        {
-            Box::pin(async { Ok(()) })
-        }
-    }
-
-    fn recording_connection() -> (
-        AgentConnection,
-        std::sync::Arc<std::sync::Mutex<Vec<String>>>,
-    ) {
-        let sent = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-        let (_tx, events) = mpsc::channel(4);
-        let connection = AgentConnection {
-            events,
-            writer: Box::new(RecordingSink(std::sync::Arc::clone(&sent))),
-            session_id: SessionId::new_random(),
-            agent_runtime_id: "my_agent-AbCdEf".to_string(),
-            qualifier: "DEFAULT".to_string(),
-            runtime_version: "1".to_string(),
-            user_id: "11111111-2222-3333-4444-555555555555".to_string(),
-        };
-        (connection, sent)
-    }
-
     #[tokio::test]
     async fn a_turn_carries_the_three_fields_the_session_row_needs() {
-        let (mut connection, sent) = recording_connection();
+        let TestConnection {
+            mut connection,
+            sent,
+            ..
+        } = test_connection();
         connection.send_text("hello").await.expect("send");
 
         let payloads = sent.lock().expect("sink mutex");
@@ -587,7 +645,11 @@ mod tests {
 
     #[tokio::test]
     async fn a_second_turn_reuses_the_session_but_not_the_message_id() {
-        let (mut connection, sent) = recording_connection();
+        let TestConnection {
+            mut connection,
+            sent,
+            ..
+        } = test_connection();
         connection.send_text("first").await.expect("send");
         connection.send_text("second").await.expect("send");
 
@@ -597,6 +659,30 @@ mod tests {
 
         assert_eq!(first["sessionId"], second["sessionId"]);
         assert_ne!(first["messageId"], second["messageId"]);
+    }
+
+    #[tokio::test]
+    async fn splitting_keeps_both_halves_usable() {
+        // The TUI drives the two halves independently — writer in the key
+        // handler, receiver in a pump task — so a split that dropped either would
+        // show as a chat that renders nothing or silently swallows turns.
+        let TestConnection {
+            connection,
+            sent,
+            server,
+        } = test_connection();
+        let session_id = connection.session_id().clone();
+        let (mut writer, mut events) = connection.split();
+
+        server.send(AgentEvent::HeartbeatAck).await.expect("send");
+        writer.send_text("hi").await.expect("send");
+
+        assert!(matches!(
+            events.recv().await,
+            Some(AgentEvent::HeartbeatAck)
+        ));
+        assert_eq!(sent.lock().expect("sink mutex").len(), 1);
+        assert_eq!(writer.session_id(), &session_id);
     }
 
     #[tokio::test]

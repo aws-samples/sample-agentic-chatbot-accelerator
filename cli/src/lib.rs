@@ -13,7 +13,9 @@
 //! Module bands, per the design doc: `protocol` and `presign` are **pure** and
 //! carry the whole opaque-failure surface (a bad presign is a bare 403, a
 //! too-short session id is an indistinguishable 400), so both are testable
-//! offline. `config`, `auth`, `transport` and `discovery` do IO. `telemetry` is a
+//! offline. `config`, `auth`, `transport`, `discovery` and `session` do IO —
+//! `session` being the one that can repeat the others, since a new conversation
+//! means a new socket. `telemetry` is a
 //! leaf everything depends on, so no module can accidentally log to stdout.
 
 pub mod args;
@@ -22,6 +24,7 @@ pub mod config;
 pub mod discovery;
 pub mod presign;
 pub mod protocol;
+pub mod session;
 pub mod telemetry;
 pub mod tls;
 pub mod transport;

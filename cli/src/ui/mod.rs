@@ -11,6 +11,7 @@ use std::io::IsTerminal;
 use std::process::ExitCode;
 
 use crate::args::{ChatArgs, Cli, Command};
+use crate::session::SessionControl;
 
 /// Which renderer to use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,29 +74,58 @@ pub async fn run_cli(cli: Cli) -> ExitCode {
     }
 }
 
-/// Run `aca agents`: list what is deployed and exit.
+/// The CLI's own commands, typed into the chat rather than passed as flags.
 ///
-/// The listing goes to **stdout** because it is this command's output, not a
-/// diagnostic — `aca agents | grep` has to work.
-async fn list_agents(
-    config: &crate::config::AppConfig,
-    broker: &mut crate::auth::CredentialBroker,
-) -> Result<ExitCode, Failure> {
-    let appsync_url = config
-        .appsync_url
-        .as_deref()
-        .ok_or_else(|| Failure::new(exit::CONFIG, crate::discovery::DiscoveryError::NoEndpoint))?;
-    let id_token = broker
-        .id_token()
-        .await
-        .map_err(|err| Failure::new(exit::AUTH, err))?;
+/// A leading `/` is the only marker. Both sinks parse the same list, so a command
+/// cannot exist in the TUI and silently reach the agent as literal text in plain
+/// mode — which is the drift this shared function exists to prevent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Submission {
+    /// Send this to the agent.
+    Turn(String),
+    /// Leave.
+    Quit,
+    /// Start a new session with the same agent.
+    NewSession,
+    /// Choose a different agent, in a new session.
+    ChooseAgent,
+    /// List the commands.
+    Help,
+    /// A `/word` that is not a command. Reported rather than sent: an agent
+    /// gamely answering a question about a command it has never heard of is a
+    /// worse outcome than being told the name was mistyped.
+    Unknown(String),
+}
 
-    let agents = crate::discovery::list_runtime_agents(appsync_url, &id_token)
-        .await
-        .map_err(|err| Failure::new(discovery_exit_code(&err), err))?;
+/// The command list, single-sourced so `/help` and the README cannot disagree.
+pub const COMMANDS: &[(&str, &str)] = &[
+    (
+        "/session",
+        "start a new session with the same agent (the agent forgets the conversation)",
+    ),
+    ("/agent", "switch to another agent, in a new session"),
+    ("/help", "show this list"),
+    ("/quit", "leave the chat (ctrl-c also works)"),
+];
 
-    print!("{}", crate::discovery::render_listing(&agents));
-    Ok(ExitCode::SUCCESS)
+/// Classify a submitted line.
+///
+/// Only a line whose **first** character is `/` can be a command, and only its
+/// first word is examined: `/tmp/foo is missing` is a question about a path, so
+/// anything unrecognised is reported as a typo rather than guessed at.
+pub fn parse_submission(text: &str) -> Submission {
+    let Some(rest) = text.strip_prefix('/') else {
+        return Submission::Turn(text.to_string());
+    };
+    match rest.split_whitespace().next().unwrap_or_default() {
+        // A bare `/` is someone reaching for the command list.
+        "" | "help" | "?" | "commands" => Submission::Help,
+        "quit" | "exit" | "q" => Submission::Quit,
+        // `new` because that is what the web UI's button says.
+        "session" | "new" => Submission::NewSession,
+        "agent" | "agents" | "switch" => Submission::ChooseAgent,
+        other => Submission::Unknown(format!("/{other}")),
+    }
 }
 
 /// Map a discovery failure onto the right scriptable code.
@@ -188,49 +218,59 @@ async fn dispatch(cli: Cli) -> Result<ExitCode, Failure> {
         .await
         .map_err(|err| Failure::new(exit::AUTH, err))?;
 
-    let mut broker = crate::auth::CredentialBroker::new(&config, tokens)
+    let broker = crate::auth::CredentialBroker::new(&config, tokens)
         .await
         .map_err(|err| Failure::new(exit::AUTH, err))?;
 
+    // Config, credentials and identity move into the manager and stay there for
+    // the whole run: `/session` and `/agent` need every one of them again, and a
+    // sink that had only a socket could not honour either.
+    let mut manager = crate::session::SessionManager::new(config, broker, identity);
+
     if listing_only {
-        return list_agents(&config, &mut broker).await;
+        // stdout, because this is the command's output rather than a diagnostic —
+        // `aca agents | grep` has to work.
+        let agents = manager
+            .agents()
+            .await
+            .map_err(|err| Failure::new(session_exit_code(&err), err))?;
+        print!("{}", crate::discovery::render_listing(&agents));
+        return Ok(ExitCode::SUCCESS);
     }
 
-    let target = crate::discovery::resolve_target(
-        &config,
-        &chat,
-        &mut broker,
-        &crate::discovery::TerminalChooser,
-    )
-    .await
-    .map_err(|err| Failure::new(discovery_exit_code(&err), err))?;
+    let target = manager
+        .resolve(&chat, &crate::discovery::TerminalChooser)
+        .await
+        .map_err(|err| Failure::new(session_exit_code(&err), err))?;
 
-    let connection = crate::transport::connect(
-        crate::transport::ConnectParams {
-            config: &config,
-            agent_runtime_id: &target.agent_runtime_id,
-            qualifier: &target.qualifier,
-            // Resolved from the agent's `qualifierToVersion` when discovery ran,
-            // and empty in the `--runtime-id` path where no summary was fetched.
-            // The container's session write uses `if_not_exists`, so an empty
-            // value is skipped rather than stored as a blank — the same thing the
-            // browser sends when it cannot resolve one.
-            runtime_version: &target.runtime_version,
-            session_id: &session_id,
-            identity: &identity,
-        },
-        &mut broker,
-    )
-    .await
-    .map_err(|err| Failure::new(exit::TRANSPORT, err))?;
+    let session = manager
+        .open_with(target, session_id)
+        .await
+        .map_err(|err| Failure::new(session_exit_code(&err), err))?;
 
     match select_sink(chat.plain, chat.message.is_some()) {
-        SinkKind::Plain => Ok(plain::run(connection, chat.message).await),
+        SinkKind::Plain => Ok(plain::run(session, &mut manager, chat.message).await),
         // The TUI owns the terminal, so its own failures cannot be printed until
         // it has restored it — which `tui::run` does before returning either way.
-        SinkKind::Tui => tui::run(connection)
+        SinkKind::Tui => tui::run(session, Box::new(manager))
             .await
             .map_err(|err| Failure::new(exit::TRANSPORT, err)),
+    }
+}
+
+/// Map a session failure onto the right scriptable code.
+///
+/// Delegates the discovery half rather than collapsing it: a `/agent` that fails
+/// because nothing is deployed is a different situation from one that fails
+/// because AppSync is unreachable, and the exit code is the only thing a script
+/// can see.
+fn session_exit_code(error: &crate::session::SessionError) -> u8 {
+    use crate::session::SessionError as E;
+
+    match error {
+        E::Transport(_) => exit::TRANSPORT,
+        E::Discovery(discovery) => discovery_exit_code(discovery),
+        E::Credentials(_) => exit::AUTH,
     }
 }
 
@@ -251,6 +291,71 @@ mod tests {
         // sequences, so this asserts the auto-detection rather than the flag.
         assert!(!std::io::stdout().is_terminal());
         assert_eq!(select_sink(false, false), SinkKind::Plain);
+    }
+
+    #[test]
+    fn the_commands_and_their_aliases_parse() {
+        for (text, expected) in [
+            ("/session", Submission::NewSession),
+            ("/new", Submission::NewSession),
+            ("/agent", Submission::ChooseAgent),
+            ("/agents", Submission::ChooseAgent),
+            ("/switch", Submission::ChooseAgent),
+            ("/quit", Submission::Quit),
+            ("/exit", Submission::Quit),
+            ("/q", Submission::Quit),
+            ("/help", Submission::Help),
+            ("/?", Submission::Help),
+            ("/", Submission::Help),
+        ] {
+            assert_eq!(parse_submission(text), expected, "{text}");
+        }
+    }
+
+    #[test]
+    fn ordinary_text_is_never_mistaken_for_a_command() {
+        for text in [
+            "what is the weather in Rome?",
+            // The slash is not leading, so this is a question about a path.
+            "does /etc/hosts exist?",
+            "summarise this: /session was a typo",
+        ] {
+            assert_eq!(
+                parse_submission(text),
+                Submission::Turn(text.to_string()),
+                "{text}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_command_may_carry_arguments_it_does_not_use_yet() {
+        // `/session please` should still start a session rather than being sent
+        // to the agent: only the first word decides.
+        assert_eq!(parse_submission("/session please"), Submission::NewSession);
+    }
+
+    #[test]
+    fn an_unrecognised_command_is_reported_not_sent_to_the_agent() {
+        // A realistic misspelling cannot be used as the fixture here: the repo's
+        // `typos` pre-commit hook rewrites one into the correctly spelled command,
+        // which would quietly invert this assertion.
+        assert_eq!(
+            parse_submission("/frobnicate"),
+            Submission::Unknown("/frobnicate".to_string())
+        );
+    }
+
+    #[test]
+    fn every_documented_command_is_one_the_parser_accepts() {
+        // `/help` prints this table, so an entry the parser does not know would
+        // advertise a command that does nothing.
+        for (name, _) in COMMANDS {
+            assert!(
+                !matches!(parse_submission(name), Submission::Unknown(_)),
+                "{name} is documented but unparsed"
+            );
+        }
     }
 
     #[test]
