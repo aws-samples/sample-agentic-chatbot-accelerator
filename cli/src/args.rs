@@ -35,6 +35,8 @@ pub enum Command {
     Chat(ChatArgs),
     /// List deployed agents with their endpoints, and exit.
     Agents(AgentsArgs),
+    /// Forget the saved session, so the next run asks for a password.
+    Logout,
 }
 
 /// Inputs for `aca agents`.
@@ -90,6 +92,15 @@ pub struct ConfigArgs {
     /// Skip reading and writing the on-disk config cache.
     #[arg(long)]
     pub no_cache: bool,
+
+    /// Ignore any saved session and authenticate from scratch.
+    ///
+    /// Separate from `--no-cache`, which is about the *non-secret* config file:
+    /// these are two different files with two different risk profiles, and one
+    /// flag covering both would make "don't reuse my credentials" impossible to
+    /// ask for without also re-fetching the deployment's ids.
+    #[arg(long)]
+    pub fresh_login: bool,
 }
 
 /// Inputs specific to a chat session.

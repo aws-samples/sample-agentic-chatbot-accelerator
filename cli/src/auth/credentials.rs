@@ -12,8 +12,10 @@
 //! needs a live ID token. Keeping the two lifetimes distinct — each with its own
 //! expiry check and refresh path — is the whole reason this is a separate module.
 //!
-//! Nothing here touches the filesystem: no keychain, no token file, by decision.
-//! Every secret lives in memory only, wrapped in [`Secret`].
+//! Nothing *here* touches the filesystem: every secret this module holds lives in
+//! memory only, wrapped in [`Secret`]. Persistence across runs is
+//! [`crate::auth::store`]'s job and its risks are documented there — this module
+//! only ever receives tokens and hands back credentials.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -50,6 +52,10 @@ pub struct CredentialBroker {
     /// Cached STS credentials. `None` until first fetched, and treated as
     /// "refresh on next use" thereafter if their own `expires_at` is `None`.
     creds: Option<AwsCreds>,
+    /// The identity-pool id in use, so it can be persisted and skip `GetId` on
+    /// the next launch. Not a secret: it identifies an identity, it does not
+    /// authenticate as one.
+    identity_id: String,
 }
 
 impl CredentialBroker {
@@ -64,6 +70,7 @@ impl CredentialBroker {
     pub async fn new(
         config: &crate::config::AppConfig,
         tokens: crate::auth::Tokens,
+        cached_identity_id: Option<String>,
     ) -> Result<Self, CredentialError> {
         let sdk_config = super::sdk_config_without_credentials(&config.region).await;
         let identity_client = aws_sdk_cognitoidentity::Client::new(&sdk_config);
@@ -71,53 +78,66 @@ impl CredentialBroker {
 
         let logins_key = logins_key(&config.region, &config.user_pool_id);
 
-        // GetId is done once here; the resulting identity id is reused on every
-        // subsequent GetCredentialsForIdentity, exactly as the browser does.
-        //
-        // Timed alongside the other startup calls: this and the credential fetch
-        // are two serial round trips that cannot be collapsed (the second needs
-        // the first's identity id), so knowing their real cost is what says
-        // whether caching the identity id would be worth its complications.
-        let started = std::time::Instant::now();
-        let identity = identity_client
-            .get_id()
-            .identity_pool_id(config.identity_pool_id.as_str())
-            .logins(logins_key.clone(), tokens.id_token.expose().as_str())
-            .send()
-            .await
-            .map_err(|err| CredentialError::IdentityPool(err.into_service_error().to_string()))?;
-        tracing::info!(
-            call = "GetId",
-            elapsed_ms = started.elapsed().as_millis(),
-            "cognito call"
-        );
-        let identity_id = identity
-            .identity_id()
-            .ok_or(CredentialError::Incomplete)?
-            .to_string();
+        // A cached identity id skips `GetId` entirely — one of the two serial
+        // round trips here, since the second call needs the first's answer.
+        // Only safe because the session store is keyed by user: handing one
+        // user another's identity id is exactly why this was not cached before.
+        let reused_identity_id = cached_identity_id.is_some();
+        let identity_id = match cached_identity_id {
+            Some(identity_id) => identity_id,
+            None => {
+                get_id(
+                    &identity_client,
+                    config,
+                    &logins_key,
+                    tokens.id_token.expose(),
+                )
+                .await?
+            }
+        };
+
+        // The initial credential fetch is part of "the initial exchange", so a
+        // freshly-built broker already holds a usable credential set.
+        let id_token = tokens.id_token.expose().clone();
+        let (identity_id, creds) =
+            match get_credentials(&identity_client, &identity_id, &logins_key, &id_token).await {
+                Ok(creds) => (identity_id, creds),
+                // A cached identity id the pool no longer recognises (identity
+                // deleted, pool recreated) must not brick the CLI: fall back to the
+                // `GetId` that caching it skipped. Only retried when the id *was*
+                // reused — a freshly-fetched one failing is a real error.
+                Err(err) if reused_identity_id => {
+                    tracing::warn!("cached identity id rejected ({err}); re-running GetId");
+                    let fresh = get_id(&identity_client, config, &logins_key, &id_token).await?;
+                    let creds =
+                        get_credentials(&identity_client, &fresh, &logins_key, &id_token).await?;
+                    (fresh, creds)
+                }
+                Err(err) => return Err(err),
+            };
 
         let backend = AwsBackend {
             identity_client,
             idp_client,
-            identity_id,
+            identity_id: identity_id.clone(),
             user_pool_client_id: config.user_pool_client_id.clone(),
             logins_key,
         };
 
-        let mut broker = Self {
+        Ok(Self {
             backend: Box::new(backend),
             clock: Box::new(SystemTime::now),
             id_token: tokens.id_token,
             id_token_expires_at: tokens.expires_at,
             refresh_token: tokens.refresh_token,
-            creds: None,
-        };
+            creds: Some(creds),
+            identity_id,
+        })
+    }
 
-        // The initial credential fetch is part of "the initial exchange", so a
-        // freshly-built broker already holds a usable credential set.
-        let id_token = broker.id_token.expose().clone();
-        broker.creds = Some(broker.backend.fetch_credentials(&id_token).await?);
-        Ok(broker)
+    /// The identity-pool id this broker is using, for the session store.
+    pub fn identity_id(&self) -> &str {
+        &self.identity_id
     }
 
     /// Return credentials valid for at least [`REFRESH_BUFFER`], refreshing
@@ -216,46 +236,89 @@ struct AwsBackend {
     logins_key: String,
 }
 
+/// `GetId`: the identity-pool id for this user. One round trip.
+///
+/// A free function rather than a method so [`CredentialBroker::new`] can call it
+/// *after* a cached id has been rejected, without the backend having to expose a
+/// way to mutate the id it was built with.
+async fn get_id(
+    client: &aws_sdk_cognitoidentity::Client,
+    config: &crate::config::AppConfig,
+    logins_key: &str,
+    id_token: &str,
+) -> Result<String, CredentialError> {
+    let started = std::time::Instant::now();
+    let identity = client
+        .get_id()
+        .identity_pool_id(config.identity_pool_id.as_str())
+        .logins(logins_key.to_string(), id_token)
+        .send()
+        .await
+        .map_err(|err| CredentialError::IdentityPool(err.into_service_error().to_string()))?;
+    tracing::info!(
+        call = "GetId",
+        elapsed_ms = started.elapsed().as_millis(),
+        "cognito call"
+    );
+    Ok(identity
+        .identity_id()
+        .ok_or(CredentialError::Incomplete)?
+        .to_string())
+}
+
+/// `GetCredentialsForIdentity`: temporary AWS credentials. One round trip.
+///
+/// Shared by the initial exchange and every later refresh, so the "a partial
+/// credential set is unusable" rule cannot drift between the two paths.
+async fn get_credentials(
+    client: &aws_sdk_cognitoidentity::Client,
+    identity_id: &str,
+    logins_key: &str,
+    id_token: &str,
+) -> Result<AwsCreds, CredentialError> {
+    let started = std::time::Instant::now();
+    let output = client
+        .get_credentials_for_identity()
+        .identity_id(identity_id)
+        .logins(logins_key.to_string(), id_token)
+        .send()
+        .await
+        .map_err(|err| CredentialError::IdentityPool(err.into_service_error().to_string()))?;
+    tracing::info!(
+        call = "GetCredentialsForIdentity",
+        elapsed_ms = started.elapsed().as_millis(),
+        "cognito call"
+    );
+
+    let creds = output.credentials().ok_or(CredentialError::Incomplete)?;
+    // Every field is required to sign a request; a partial set is unusable,
+    // and the identity-pool role grants only InvokeAgentRuntime[...] on
+    // runtime/*, so these creds are never used for a control-plane call.
+    let access_key_id = creds.access_key_id().ok_or(CredentialError::Incomplete)?;
+    let secret_key = creds.secret_key().ok_or(CredentialError::Incomplete)?;
+    let session_token = creds.session_token().ok_or(CredentialError::Incomplete)?;
+
+    Ok(AwsCreds {
+        access_key_id: access_key_id.to_string(),
+        secret_access_key: Secret::new(secret_key.to_string()),
+        session_token: Secret::new(session_token.to_string()),
+        expires_at: creds
+            .expiration()
+            .and_then(|dt| SystemTime::try_from(*dt).ok()),
+    })
+}
+
 impl Backend for AwsBackend {
     fn fetch_credentials<'a>(
         &'a self,
         id_token: &'a str,
     ) -> Pin<Box<dyn Future<Output = Result<AwsCreds, CredentialError>> + Send + 'a>> {
-        Box::pin(async move {
-            let started = std::time::Instant::now();
-            let output = self
-                .identity_client
-                .get_credentials_for_identity()
-                .identity_id(self.identity_id.as_str())
-                .logins(self.logins_key.clone(), id_token)
-                .send()
-                .await
-                .map_err(|err| {
-                    CredentialError::IdentityPool(err.into_service_error().to_string())
-                })?;
-            tracing::info!(
-                call = "GetCredentialsForIdentity",
-                elapsed_ms = started.elapsed().as_millis(),
-                "cognito call"
-            );
-
-            let creds = output.credentials().ok_or(CredentialError::Incomplete)?;
-            // Every field is required to sign a request; a partial set is unusable,
-            // and the identity-pool role grants only InvokeAgentRuntime[...] on
-            // runtime/*, so these creds are never used for a control-plane call.
-            let access_key_id = creds.access_key_id().ok_or(CredentialError::Incomplete)?;
-            let secret_key = creds.secret_key().ok_or(CredentialError::Incomplete)?;
-            let session_token = creds.session_token().ok_or(CredentialError::Incomplete)?;
-
-            Ok(AwsCreds {
-                access_key_id: access_key_id.to_string(),
-                secret_access_key: Secret::new(secret_key.to_string()),
-                session_token: Secret::new(session_token.to_string()),
-                expires_at: creds
-                    .expiration()
-                    .and_then(|dt| SystemTime::try_from(*dt).ok()),
-            })
-        })
+        Box::pin(get_credentials(
+            &self.identity_client,
+            &self.identity_id,
+            &self.logins_key,
+            id_token,
+        ))
     }
 
     fn refresh_id_token<'a>(
@@ -381,6 +444,7 @@ mod tests {
             id_token_expires_at,
             refresh_token,
             creds,
+            identity_id: "us-east-1:test-identity".to_string(),
         }
     }
 

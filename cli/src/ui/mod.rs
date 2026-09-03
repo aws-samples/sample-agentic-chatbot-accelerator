@@ -153,6 +153,64 @@ fn discovery_exit_code(error: &crate::discovery::DiscoveryError) -> u8 {
     }
 }
 
+/// Tell the user what is happening, on stderr.
+///
+/// stderr rather than stdout because stdout is the transcript: a progress line in
+/// it would corrupt `aca chat -m … > out.txt`. These exist because the startup
+/// path spends seconds on Cognito round trips with nothing on screen, which
+/// reads as a hang — the TUI's own connecting screen only covers the last step.
+fn progress(message: &str) {
+    eprintln!("aca: {message}");
+}
+
+/// Everything [`dispatch`] needs from a signed-in user, however it was obtained.
+type Authenticated = (
+    String,
+    crate::auth::Tokens,
+    crate::auth::Identity,
+    Option<String>,
+);
+
+/// Turn a saved session into usable tokens, refreshing only if it has to.
+///
+/// Two paths, and which one runs is the difference between an instant launch and
+/// a fast one: an ID token with comfortable life left is used verbatim (**no**
+/// Cognito call at all), otherwise the refresh token buys a new one in a single
+/// `REFRESH_TOKEN_AUTH` round trip. Either way no password is asked for.
+///
+/// The identity is read back out of the ID token rather than stored, because it
+/// is derived data — persisting `sub` alongside the token it comes from would let
+/// the two disagree after a refresh.
+async fn resume(
+    config: &crate::config::AppConfig,
+    session: crate::auth::store::Session,
+) -> Result<Authenticated, crate::auth::LoginError> {
+    let identity_id = session.identity_id.clone();
+    let email = session.email.clone();
+
+    if let Some(id_token) = session.fresh_id_token.clone() {
+        let identity = crate::auth::identity_from_id_token(id_token.expose())?;
+        let expires_at = session.id_token_expires_at;
+        return Ok((
+            email,
+            session.into_tokens(id_token, expires_at),
+            identity,
+            identity_id,
+        ));
+    }
+
+    progress("renewing your saved session...");
+    let refreshed = crate::auth::refresh_id_token(config, session.refresh_token.expose()).await?;
+    let identity = crate::auth::identity_from_id_token(refreshed.0.expose())?;
+    let (id_token, expires_at) = refreshed;
+    Ok((
+        email,
+        session.into_tokens(id_token, expires_at),
+        identity,
+        identity_id,
+    ))
+}
+
 /// Log how long the step ending now took, and return the mark for the next one.
 ///
 /// To the log file only, never the terminal: this is for answering "which of
@@ -199,6 +257,12 @@ async fn dispatch(cli: Cli) -> Result<ExitCode, Failure> {
             },
             true,
         ),
+        // Nothing to resolve, nothing to authenticate: this only deletes a file.
+        Some(Command::Logout) => {
+            crate::auth::store::forget();
+            progress("signed out — the next run will ask for your password");
+            return Ok(ExitCode::SUCCESS);
+        }
     };
 
     let config = crate::config::resolve(&cli.config)
@@ -218,22 +282,58 @@ async fn dispatch(cli: Cli) -> Result<ExitCode, Failure> {
         None => crate::protocol::SessionId::new_random(),
     };
 
-    let email = match &chat.email {
-        Some(email) => email.clone(),
-        None => plain::prompt_line("Email: ").map_err(|err| Failure::new(exit::AUTH, err))?,
+    // A saved session is what makes a relaunch instant. Checked before anything
+    // is prompted for, because the whole point is to ask for nothing.
+    let saved = if cli.config.fresh_login {
+        None
+    } else {
+        crate::auth::store::load(&config, chat.email.as_deref(), std::time::SystemTime::now())
     };
-    let password =
-        plain::read_password(chat.password_stdin).map_err(|err| Failure::new(exit::AUTH, err))?;
 
-    let prompt = plain::TerminalPasswordPrompt;
     let started = std::time::Instant::now();
-    let (tokens, identity) = crate::auth::login(&config, &email, password, &prompt)
-        .await
-        .map_err(|err| Failure::new(exit::AUTH, err))?;
-    // Timed from here on, to the log only. Everything before this point waits on
-    // the user rather than the network, so a wall-clock total that included the
+    // A saved session that turns out to be dead must not be fatal. Cognito
+    // answers a revoked refresh token and a wrong password with the same
+    // `NotAuthorizedException`, so reporting it would tell someone who typed
+    // nothing that their password was wrong. Forget it and ask instead.
+    let resumed = match saved {
+        None => None,
+        Some(session) => {
+            progress(&format!("using your saved session ({})", session.email));
+            match resume(&config, session).await {
+                Ok(authenticated) => Some(authenticated),
+                Err(err) => {
+                    tracing::warn!("saved session unusable ({err}); asking for a password");
+                    progress("your saved session has expired — signing in again");
+                    crate::auth::store::forget();
+                    None
+                }
+            }
+        }
+    };
+
+    let (email, tokens, identity, cached_identity_id) = match resumed {
+        Some(authenticated) => authenticated,
+        None => {
+            let email = match &chat.email {
+                Some(email) => email.clone(),
+                None => {
+                    plain::prompt_line("Email: ").map_err(|err| Failure::new(exit::AUTH, err))?
+                }
+            };
+            let password = plain::read_password(chat.password_stdin)
+                .map_err(|err| Failure::new(exit::AUTH, err))?;
+
+            progress("signing in...");
+            let prompt = plain::TerminalPasswordPrompt;
+            let (tokens, identity) = crate::auth::login(&config, &email, password, &prompt)
+                .await
+                .map_err(|err| Failure::new(exit::AUTH, err))?;
+            (email, tokens, identity, None)
+        }
+    };
+    // Timed from here on, to the log only. A wall-clock total that included the
     // password prompt would say nothing about what is worth optimising.
-    let after_login = timed(started, "initiate_auth");
+    let after_login = timed(started, "authentication");
 
     // `aca agents` reads AppSync with the ID token and nothing else, so it stops
     // here: the identity-pool exchange below is two round trips it would never
@@ -242,10 +342,23 @@ async fn dispatch(cli: Cli) -> Result<ExitCode, Failure> {
         let appsync_url = config.appsync_url.as_deref().ok_or_else(|| {
             Failure::new(exit::CONFIG, crate::discovery::DiscoveryError::NoEndpoint)
         })?;
+        progress("fetching agents...");
         let agents = crate::discovery::list_runtime_agents(appsync_url, &tokens.id_token)
             .await
             .map_err(|err| Failure::new(discovery_exit_code(&err), err))?;
         timed(after_login, "list_runtime_agents");
+        // Saved here too, or `aca agents` would prompt for a password every time
+        // and never leave a session behind for `aca chat` to reuse. No identity
+        // id to record: this path deliberately never ran the exchange.
+        if !cli.config.fresh_login {
+            crate::auth::store::save(
+                &config,
+                &email,
+                &tokens,
+                cached_identity_id.as_deref(),
+                std::time::SystemTime::now(),
+            );
+        }
         // stdout, because this is the command's output rather than a diagnostic —
         // `aca agents | grep` has to work.
         print!("{}", crate::discovery::render_listing(&agents));
@@ -258,15 +371,36 @@ async fn dispatch(cli: Cli) -> Result<ExitCode, Failure> {
     // and this is latency the user is sitting through, having just typed a
     // password. The token is seconds old, so it cannot need the refresh the
     // broker would otherwise have been asked for.
+    progress("fetching credentials and agents...");
     let id_token = tokens.id_token.clone();
+    let expires_at = tokens.expires_at;
+    let refresh_token = tokens.refresh_token.clone();
     let (broker, listing) = tokio::join!(
-        crate::auth::CredentialBroker::new(&config, tokens),
+        crate::auth::CredentialBroker::new(&config, tokens, cached_identity_id),
         crate::discovery::listing_for(&config, &chat, &id_token),
     );
     // Auth first when both fail: a bad login explains a failed listing, and
     // reporting the listing error would send the user after the wrong problem.
     let broker = broker.map_err(|err| Failure::new(exit::AUTH, err))?;
     let listing = listing.map_err(|err| Failure::new(discovery_exit_code(&err), err))?;
+
+    // Saved only once the exchange has *worked*, so a session file never claims
+    // an identity id the pool rejects. Written on every run, which is what keeps
+    // the 24h window rolling for someone who uses the CLI daily.
+    if !cli.config.fresh_login {
+        crate::auth::store::save(
+            &config,
+            &email,
+            &crate::auth::Tokens {
+                id_token: id_token.clone(),
+                access_token: crate::telemetry::Secret::new(String::new()),
+                refresh_token,
+                expires_at,
+            },
+            Some(broker.identity_id()),
+            std::time::SystemTime::now(),
+        );
+    }
     // One span for both, because they overlap: timing them separately would
     // report two numbers that cannot be added up.
     timed(after_login, "identity exchange and listing (concurrent)");

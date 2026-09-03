@@ -76,6 +76,12 @@ accelerator is admin-created, so accounts start in `FORCE_CHANGE_PASSWORD`.
 Cognito allows roughly three minutes to answer that challenge — answer promptly
 or you will have to rerun.
 
+**Subsequent runs do not ask for a password.** A signed-in session is saved for
+24 hours, so relaunching is close to instant — no email, no password, no Cognito
+round trip while the ID token is still fresh. `aca logout` ends it early;
+`--fresh-login` skips it once. Read the security notes before relying on it: that
+file holds a refresh token.
+
 Every setting the exports file supplied is cached afterwards, so subsequent runs
 need no flags at all:
 
@@ -320,6 +326,7 @@ aca [CONFIG OPTIONS] [COMMAND]
 Commands:
   chat      Interactive chat session (default — a bare `aca` runs it)
   agents    List deployed agents with their endpoints, and exit
+  logout    Forget the saved session, so the next run asks for a password
 ```
 
 `chat` options, in addition to the config flags above:
@@ -334,7 +341,19 @@ Commands:
 | `--plain` | Force line mode. |
 | `-m`, `--message <TEXT>` | Send one prompt and exit. Implies `--plain`. |
 
-`agents` takes `--email` and `--password-stdin` only.
+`agents` takes `--email` and `--password-stdin` only. `logout` takes nothing —
+it deletes the saved session and exits without touching the network.
+
+`--fresh-login` (a config flag, so it goes *before* the subcommand) ignores any
+saved session for one run and authenticates from scratch, without deleting it:
+
+```bash
+aca --fresh-login chat
+```
+
+It is separate from `--no-cache` on purpose — that one is about the non-secret
+config file, and one flag covering both would make "don't reuse my credentials"
+impossible to ask for without also re-fetching the deployment's identifiers.
 
 ## Troubleshooting
 
@@ -388,8 +407,9 @@ attach to a bug report. Check it anyway before you do.
   The swarm, graph and agents-as-tools containers emit a partly different event
   set; unrecognised events are ignored rather than displayed, so those
   architectures should work but may show less.
-- **Credentials are never persisted**, so every run asks for a password. This is
-  deliberate, not an oversight — see below.
+- **A saved session lasts 24 hours**, then the next run asks for a password
+  again. The refresh token underneath it would be valid for 30 days; the shorter
+  cap is ours. See the security notes for what that file is worth if copied.
 - **`/session` and `/agent` cannot be undone.** The socket is closed, the
   container released, and in the TUI the transcript is cleared — which the
   alternate screen makes unrecoverable. There is no scrollback to go back to.
@@ -406,9 +426,21 @@ attach to a bug report. Check it anyway before you do.
 - **The presigned WebSocket URL is a bearer credential** with the same power as
   the session itself. It is never printed, never passed as an argument, and
   redacted in the log. It expires after 300 seconds — the documented maximum.
-- **No credential caching, by design.** Persisting the refresh token would make
-  the CLI a standing credential on disk; re-authenticating each run is the
-  tradeoff taken instead.
+- **A signed-in session is cached on disk** at `~/.config/aca-cli/session.json`,
+  `0600` in a `0700` directory, so a relaunch does not ask for a password. This
+  reverses an earlier decision not to persist anything, taken deliberately after
+  measuring ~11s of Cognito round trips on *every* launch. What it costs you:
+  that file contains a refresh token, so **anything able to read it can act as
+  you** until it expires. Three things bound that — our own **24h cap**
+  (independent of Cognito's 30-day token validity, and an over-age file is
+  deleted rather than left lying around), the file permissions, and keying by
+  deployment + app client + user so one user's session is never presented as
+  another's. It is *not* encrypted: any process running as your user can read it.
+  `aca logout` deletes it; `--fresh-login` ignores it for one run. The OS keychain
+  would be stronger and was declined — it needs a dependency tree `make run-ash`
+  cannot SCA-scan for Rust, and degrades badly on headless Linux.
+- **The access token is never written to disk.** Nothing in this CLI uses it, so
+  storing a third credential would add exposure for no capability.
 - **`USER_PASSWORD_AUTH` sends the password to Cognito inside TLS.** SRP
   (`USER_SRP_AUTH`), which never transmits the password, was considered and
   rejected: the AWS SDK for Rust implements no SRP, and the only purpose-built

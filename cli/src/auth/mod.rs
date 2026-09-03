@@ -7,14 +7,20 @@
 //! them is precisely how a session that outlives an hour becomes silently
 //! unreconnectable: re-presigning needs credentials, and getting credentials
 //! needs a live ID token.
+//!
+//! `store` is the third piece and the only one that writes to disk: it persists
+//! enough of a signed-in session to skip the password prompt on the next run.
+//! Read its module docs before changing it — it is the one place in this crate
+//! that keeps a credential after the process exits.
 
 pub mod credentials;
 pub mod login;
+pub mod store;
 
 pub use credentials::{CredentialBroker, CredentialError, REFRESH_BUFFER};
 pub use login::{
     Identity, LoginError, NewPasswordPrompt, Tokens, identity_from_id_token, login,
-    sdk_config_without_credentials,
+    refresh_id_token, sdk_config_without_credentials,
 };
 
 use crate::telemetry::Secret;

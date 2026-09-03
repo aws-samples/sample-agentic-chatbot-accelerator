@@ -178,6 +178,56 @@ pub async fn login(
     }
 }
 
+/// Mint a fresh ID token from a saved refresh token, with no password.
+///
+/// Separate from [`crate::auth::CredentialBroker`]'s refresh, which does the same
+/// call: that one renews a token the broker already owns mid-run, this one
+/// bootstraps a run that has nothing but a file on disk. Sharing the code would
+/// mean building a broker before knowing whether the refresh token still works.
+///
+/// A revoked or expired refresh token surfaces as [`LoginError::BadCredentials`],
+/// which the caller is expected to treat as "fall back to asking for a password"
+/// rather than as a failure — Cognito answers a dead refresh token and a wrong
+/// password with the same `NotAuthorizedException`.
+pub async fn refresh_id_token(
+    config: &crate::config::AppConfig,
+    refresh_token: &str,
+) -> Result<(Secret<String>, SystemTime), LoginError> {
+    let sdk_config = sdk_config_without_credentials(&config.region).await;
+    let client = aws_sdk_cognitoidentityprovider::Client::new(&sdk_config);
+
+    let started = std::time::Instant::now();
+    let output = client
+        .initiate_auth()
+        .client_id(config.user_pool_client_id.as_str())
+        .auth_flow(AuthFlowType::RefreshTokenAuth)
+        .auth_parameters("REFRESH_TOKEN", refresh_token)
+        .send()
+        .await
+        .map_err(|err| {
+            let service = err.into_service_error();
+            if service.is_not_authorized_exception() {
+                LoginError::BadCredentials
+            } else {
+                LoginError::Sdk(service.to_string())
+            }
+        })?;
+    tracing::info!(
+        call = "InitiateAuth(REFRESH_TOKEN_AUTH)",
+        elapsed_ms = started.elapsed().as_millis(),
+        "cognito call"
+    );
+
+    let result = output
+        .authentication_result()
+        .ok_or_else(|| LoginError::Sdk("refresh returned no tokens".into()))?;
+    let id_token = result
+        .id_token()
+        .ok_or_else(|| LoginError::Sdk("refresh returned no ID token".into()))?;
+    let expires_at = SystemTime::now() + Duration::from_secs(result.expires_in().max(0) as u64);
+    Ok((Secret::new(id_token.to_string()), expires_at))
+}
+
 /// Supplies a replacement password (and any required attributes) when Cognito
 /// demands one. Abstracted so T10/T11 can prompt differently and tests can stub.
 pub trait NewPasswordPrompt {

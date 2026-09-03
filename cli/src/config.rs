@@ -407,7 +407,7 @@ fn fill(slot: &mut Option<String>, value: Option<String>) {
 }
 
 /// Directory holding the config cache.
-fn config_dir() -> PathBuf {
+pub(crate) fn config_dir() -> PathBuf {
     config_dir_from(non_empty_env("XDG_CONFIG_HOME"), non_empty_env("HOME"))
 }
 
@@ -472,7 +472,7 @@ fn save_cache_at(path: &Path, config: &AppConfig) -> Result<(), ConfigError> {
 /// Create `dir` (and any missing ancestors) as `0700`, mirroring
 /// [`crate::telemetry`]'s log directory.
 #[cfg(unix)]
-fn create_private_dir(dir: &Path) -> std::io::Result<()> {
+pub(crate) fn create_private_dir(dir: &Path) -> std::io::Result<()> {
     use std::os::unix::fs::DirBuilderExt;
 
     std::fs::DirBuilder::new()
@@ -486,13 +486,13 @@ fn create_private_dir(dir: &Path) -> std::io::Result<()> {
 /// Non-unix targets are not a supported deployment of this CLI; this arm exists
 /// only so the crate still compiles there.
 #[cfg(not(unix))]
-fn create_private_dir(dir: &Path) -> std::io::Result<()> {
+pub(crate) fn create_private_dir(dir: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)
 }
 
 /// Write `body` to `path` as `0600`, tightening an existing file if needed.
 #[cfg(unix)]
-fn write_private_file(path: &Path, body: &[u8]) -> std::io::Result<()> {
+pub(crate) fn write_private_file(path: &Path, body: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
     use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
@@ -519,7 +519,7 @@ fn write_private_file(path: &Path, body: &[u8]) -> std::io::Result<()> {
 /// Non-unix targets are not a supported deployment of this CLI; this arm exists
 /// only so the crate still compiles there.
 #[cfg(not(unix))]
-fn write_private_file(path: &Path, body: &[u8]) -> std::io::Result<()> {
+pub(crate) fn write_private_file(path: &Path, body: &[u8]) -> std::io::Result<()> {
     std::fs::write(path, body)
 }
 
