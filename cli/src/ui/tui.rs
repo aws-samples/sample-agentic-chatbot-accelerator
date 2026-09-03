@@ -300,19 +300,27 @@ impl App {
         self.scroll = 0;
     }
 
-    /// Record that a session is now live, and say so if it replaced one.
+    /// Record that a session is now live, replacing anything on screen.
     ///
-    /// The transcript is kept across a `/session` deliberately — scrollback is
-    /// the reason to use a TUI at all — so the discontinuity is made explicit
-    /// instead. Without the marker the next reply looks like an agent that
-    /// forgot what was said three lines above, which is indistinguishable from a
-    /// broken memory configuration.
+    /// **The transcript is cleared.** A new session id is a new container with no
+    /// memory of the old conversation, so leaving it on screen would show a
+    /// history the agent cannot refer to — the user reads back three lines the
+    /// agent has never seen. Keeping it and merely marking the break was tried
+    /// first and is worse: two `/session`s in a row left a wall of markers, and
+    /// the screen still disagreed with the agent about what had been said.
+    ///
+    /// The consequence is real and one-way: this is an alternate-screen app, so a
+    /// cleared transcript is not in the terminal's scrollback either. It is gone.
     pub fn begin_session(&mut self, target: &Target, session_id: &str) {
         let agent = format!("{} / {}", target.agent_runtime_id, target.qualifier);
-        if !self.session.is_empty() {
-            self.push_system(format!(
-                "── new session on {agent} — the agent does not have the conversation above ──"
-            ));
+        // Whether this replaces a session or opens the first one.
+        let replacing = !self.session.is_empty();
+        self.transcript.clear();
+        if replacing {
+            // One line, on an otherwise empty transcript: confirmation that the
+            // command did something, since a cleared screen alone is ambiguous
+            // between "new session" and "crashed".
+            self.push_system(format!("── new session on {agent} ──"));
         }
         self.agent = agent;
         self.session = session_id.to_string();
@@ -320,6 +328,10 @@ impl App {
         self.status = Status::Idle;
         self.streaming_into_last = false;
         self.active_tools.clear();
+        // Not carried over: the exit code must describe *this* session, and an
+        // error from a container that no longer exists would report failure after
+        // a perfectly good conversation.
+        self.last_server_error = None;
         self.scroll = 0;
     }
 
@@ -1421,26 +1433,55 @@ mod tests {
     }
 
     #[test]
-    fn a_new_session_keeps_the_transcript_and_marks_the_discontinuity() {
-        // Clearing the scrollback would throw away the reason to use a TUI; the
-        // marker is what stops the next reply looking like the agent forgot.
+    fn a_new_session_clears_the_conversation_the_agent_cannot_see() {
+        // The screen has to agree with the agent about what has been said. A new
+        // container remembers nothing, so nothing may remain on screen.
         let mut app = App::default();
         app.begin_session(&target("weather_agent", "DEFAULT"), "session-one");
-        app.push_user_turn("hi".to_string());
-        app.apply(token("hello"));
+        app.push_user_turn("hello from Paris".to_string());
+        app.apply(token("Hello from Paris!"));
 
         app.begin_session(&target("weather_agent", "DEFAULT"), "session-two");
 
         assert_eq!(app.session, "session-two");
-        assert_eq!(app.transcript.len(), 3, "{:?}", app.transcript);
-        let marker = &app.transcript[2];
+        assert_eq!(app.transcript.len(), 1, "{:?}", app.transcript);
+        let marker = &app.transcript[0];
         assert_eq!(marker.role, Role::System);
         assert!(marker.text.contains("new session"), "{}", marker.text);
         assert!(
-            marker.text.contains("does not have the conversation above"),
-            "{}",
-            marker.text
+            !rendered(&app, 70, 12).contains("Paris"),
+            "the previous conversation must not survive on screen"
         );
+    }
+
+    #[test]
+    fn repeated_new_sessions_do_not_accumulate_markers() {
+        // Two `/session`s in a row previously left two markers with nothing
+        // between them, which is all noise and no information.
+        let mut app = App::default();
+        app.begin_session(&target("weather_agent", "DEFAULT"), "session-one");
+        for id in ["session-two", "session-three", "session-four"] {
+            app.begin_session(&target("weather_agent", "DEFAULT"), id);
+        }
+        assert_eq!(app.transcript.len(), 1, "{:?}", app.transcript);
+    }
+
+    #[test]
+    fn an_error_in_a_discarded_session_does_not_decide_the_exit_code() {
+        // Otherwise a run that hit a model-access error, recovered with
+        // `/session`, and then worked perfectly still reports failure.
+        let mut app = App::default();
+        app.begin_session(&target("weather_agent", "DEFAULT"), "session-one");
+        app.apply(AgentEvent::ServerError {
+            message: "model access denied".to_string(),
+        });
+        assert_eq!(
+            app.exit_code(),
+            ExitCode::from(super::super::exit::AGENT_ERROR)
+        );
+
+        app.begin_session(&target("weather_agent", "DEFAULT"), "session-two");
+        assert_eq!(app.exit_code(), ExitCode::SUCCESS);
     }
 
     #[test]

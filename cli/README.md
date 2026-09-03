@@ -206,15 +206,20 @@ to its own microVM, so a new session is a new container with no memory of what c
 before — that is the point of `/session` when an agent has wandered off, and it is
 also why the first reply after one may be slow (a cold start).
 
-The TUI keeps the transcript on screen across a new session and marks the break:
+**The TUI clears the transcript**, leaving one line to confirm what happened:
 
 ```
-── new session on weather_agent-AbCdEf1234 / DEFAULT — the agent does not have the conversation above ──
+── new session on weather_agent-AbCdEf1234 / DEFAULT ──
 ```
 
-That marker matters. Without it, an agent that answers the next question with no
-reference to the last five minutes looks like it has broken memory rather than a
-fresh session.
+The screen has to agree with the agent about what has been said, and a new
+container has seen none of it. This is one-way: the TUI runs on the alternate
+screen, so a cleared transcript is not in your terminal's scrollback either.
+Copy anything you need out first.
+
+Plain mode prints the same marker but keeps the text above it: a line already
+written to a terminal cannot be taken back, and a redirected transcript has to
+stay append-only.
 
 `/agent` opens a picker listing every agent × endpoint pair, with its version,
 architecture and status; `↑`/`↓` move, `Enter` switches, `Esc` cancels. It needs
@@ -370,9 +375,9 @@ attach to a bug report. Check it anyway before you do.
   architectures should work but may show less.
 - **Credentials are never persisted**, so every run asks for a password. This is
   deliberate, not an oversight — see below.
-- **`/session` and `/agent` cannot be undone.** There is no going back to the
-  previous session: the socket is closed and the container released. The
-  transcript stays on screen, but the agent that produced it is gone.
+- **`/session` and `/agent` cannot be undone.** The socket is closed, the
+  container released, and in the TUI the transcript is cleared — which the
+  alternate screen makes unrecoverable. There is no scrollback to go back to.
 - **One session at a time.** No split view, no tabs; a second `/session` while the
   first is still opening is refused rather than queued.
 - **The TUI has one view.** No history search, no message editing, no session
