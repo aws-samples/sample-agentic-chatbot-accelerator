@@ -228,6 +228,7 @@ pub async fn list_runtime_agents(
         .build()
         .map_err(|err| DiscoveryError::Http(err.to_string()))?;
 
+    let started = std::time::Instant::now();
     let response = client
         .post(appsync_url)
         // `expose` is the one way to read a Secret, which is what makes every
@@ -273,7 +274,11 @@ pub async fn list_runtime_agents(
         .data
         .and_then(|data| data.list_runtime_agents)
         .unwrap_or_default();
-    tracing::info!(count = agents.len(), "listed runtime agents");
+    tracing::info!(
+        count = agents.len(),
+        elapsed_ms = started.elapsed().as_millis(),
+        "listed runtime agents"
+    );
     Ok(agents)
 }
 

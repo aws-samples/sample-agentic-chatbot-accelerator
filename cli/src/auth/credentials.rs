@@ -73,6 +73,12 @@ impl CredentialBroker {
 
         // GetId is done once here; the resulting identity id is reused on every
         // subsequent GetCredentialsForIdentity, exactly as the browser does.
+        //
+        // Timed alongside the other startup calls: this and the credential fetch
+        // are two serial round trips that cannot be collapsed (the second needs
+        // the first's identity id), so knowing their real cost is what says
+        // whether caching the identity id would be worth its complications.
+        let started = std::time::Instant::now();
         let identity = identity_client
             .get_id()
             .identity_pool_id(config.identity_pool_id.as_str())
@@ -80,6 +86,11 @@ impl CredentialBroker {
             .send()
             .await
             .map_err(|err| CredentialError::IdentityPool(err.into_service_error().to_string()))?;
+        tracing::info!(
+            call = "GetId",
+            elapsed_ms = started.elapsed().as_millis(),
+            "cognito call"
+        );
         let identity_id = identity
             .identity_id()
             .ok_or(CredentialError::Incomplete)?
@@ -211,6 +222,7 @@ impl Backend for AwsBackend {
         id_token: &'a str,
     ) -> Pin<Box<dyn Future<Output = Result<AwsCreds, CredentialError>> + Send + 'a>> {
         Box::pin(async move {
+            let started = std::time::Instant::now();
             let output = self
                 .identity_client
                 .get_credentials_for_identity()
@@ -221,6 +233,11 @@ impl Backend for AwsBackend {
                 .map_err(|err| {
                     CredentialError::IdentityPool(err.into_service_error().to_string())
                 })?;
+            tracing::info!(
+                call = "GetCredentialsForIdentity",
+                elapsed_ms = started.elapsed().as_millis(),
+                "cognito call"
+            );
 
             let creds = output.credentials().ok_or(CredentialError::Incomplete)?;
             // Every field is required to sign a request; a partial set is unusable,

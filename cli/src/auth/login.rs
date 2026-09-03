@@ -86,6 +86,13 @@ pub async fn login(
 
     // A wrong email/password surfaces here as NotAuthorizedException; every other
     // failure is an SDK/transport problem the user cannot act on beyond retrying.
+    //
+    // Timed because this one call has been observed at ~7.8s against a pool with
+    // no Lambda triggers and no advanced-security add-on, while a *rejected*
+    // auth on the same pool answers in 170-580ms. Whether that is Cognito
+    // verifying a password or the network being slow at the time cannot be told
+    // apart without timing each call separately, so each one is timed.
+    let started = std::time::Instant::now();
     let initiated = client
         .initiate_auth()
         .client_id(config.user_pool_client_id.as_str())
@@ -102,6 +109,11 @@ pub async fn login(
                 LoginError::Sdk(service.to_string())
             }
         })?;
+    tracing::info!(
+        call = "InitiateAuth",
+        elapsed_ms = started.elapsed().as_millis(),
+        "cognito call"
+    );
 
     // A confirmed user with a permanent password authenticates in one round-trip.
     if let Some(result) = initiated.authentication_result() {
