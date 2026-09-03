@@ -297,12 +297,25 @@ impl App {
     }
 
     /// Note something the CLI itself did, in the transcript.
+    ///
+    /// Slotted **before** an assistant turn that is still streaming, rather than
+    /// after it. Appending would have to close that turn, so the rest of the
+    /// reply would arrive as a second message and the answer would read as two —
+    /// `/help` typed while the agent was talking split its sentence in half.
+    /// Ordering the CLI's own line just above the in-flight reply keeps the
+    /// reply whole, which is the part the user is reading.
     pub fn push_system(&mut self, text: impl Into<String>) {
-        self.transcript.push(Turn {
+        let turn = Turn {
             role: Role::System,
             text: text.into(),
-        });
-        self.streaming_into_last = false;
+        };
+        if self.streaming_into_last && !self.transcript.is_empty() {
+            let before_open_turn = self.transcript.len() - 1;
+            self.transcript.insert(before_open_turn, turn);
+        } else {
+            self.transcript.push(turn);
+            self.streaming_into_last = false;
+        }
         self.scroll = 0;
     }
 
@@ -1575,6 +1588,31 @@ mod tests {
         assert!(complaint.contains("/help"), "{complaint}");
         // Both are the CLI talking, not the agent.
         assert!(app.transcript.iter().all(|turn| turn.role == Role::System));
+    }
+
+    #[test]
+    fn a_command_typed_mid_reply_does_not_split_the_answer() {
+        // Regression: `push_system` closed the open assistant turn, so the rest
+        // of a streaming reply became a second message and the answer read as two.
+        let mut app = App::default();
+        app.apply(token("The forecast for Rome "));
+        submit(&mut app, "/help");
+        app.apply(token("is 24C and sunny."));
+
+        let assistant: Vec<&str> = app
+            .transcript
+            .iter()
+            .filter(|turn| turn.role == Role::Assistant)
+            .map(|turn| turn.text.as_str())
+            .collect();
+        assert_eq!(
+            assistant,
+            vec!["The forecast for Rome is 24C and sunny."],
+            "the reply must stay one turn: {:?}",
+            app.transcript
+        );
+        // The CLI's line is still there, just above the reply it interrupted.
+        assert_eq!(app.transcript[0].role, Role::System);
     }
 
     #[test]

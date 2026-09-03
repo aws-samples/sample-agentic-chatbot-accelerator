@@ -224,6 +224,12 @@ async fn render_turn(events: &mut Receiver<AgentEvent>, out: &mut impl Write) ->
     // Tracks whether the current line has unterminated token text, so the newline
     // before a tool line or at end of turn is written exactly once.
     let mut mid_line = false;
+    // Whether *any* token arrived this turn. Distinct from `mid_line`, which only
+    // says whether the last one left the cursor mid-line: a reply whose final
+    // token ends in `\n`, or one followed by a tool line, streams in full and
+    // still leaves `mid_line` false. Using `mid_line` to mean "nothing streamed"
+    // printed the whole answer a second time out of `final_response`.
+    let mut streamed = false;
 
     while let Some(event) = events.recv().await {
         match event {
@@ -235,6 +241,7 @@ async fn render_turn(events: &mut Receiver<AgentEvent>, out: &mut impl Write) ->
                 // failing the actual goal of *watching* the stream arrive.
                 let _ = out.flush();
                 mid_line = !data.ends_with('\n');
+                streamed |= !data.is_empty();
             }
             AgentEvent::ToolAction { tool_name, .. } => {
                 if mid_line {
@@ -259,16 +266,16 @@ async fn render_turn(events: &mut Receiver<AgentEvent>, out: &mut impl Write) ->
             }
             AgentEvent::FinalResponse(final_response) => {
                 // The container streams the answer as tokens *and* repeats it
-                // here. Printing the content again would duplicate the whole
-                // reply, so it is only used when nothing streamed — which is what
-                // a non-streaming architecture looks like.
-                if !mid_line && final_response.content.is_empty() {
-                    // Nothing streamed and nothing to show: leave the transcript
-                    // alone rather than emitting a blank line.
-                } else if !mid_line {
+                // here, so `content` is only printed when nothing streamed —
+                // which is what a non-streaming architecture looks like.
+                if streamed {
+                    // Terminate the line the tokens left open, if any. The answer
+                    // is already on screen; printing `content` too would repeat it.
+                    if mid_line {
+                        let _ = writeln!(out);
+                    }
+                } else if !final_response.content.is_empty() {
                     let _ = writeln!(out, "{}", final_response.content);
-                } else {
-                    let _ = writeln!(out);
                 }
                 let _ = out.flush();
                 return TurnOutcome::Complete;
@@ -587,6 +594,50 @@ mod tests {
 
         let rendered = String::from_utf8(out).expect("utf-8");
         assert_eq!(rendered.matches("sunny in Rome").count(), 1, "{rendered:?}");
+    }
+
+    #[tokio::test]
+    async fn a_reply_whose_last_token_ends_in_a_newline_is_not_printed_twice() {
+        // Regression: "did anything stream?" was inferred from "is the cursor
+        // mid-line?", so a reply ending in `\n` looked like nothing had streamed
+        // and the whole answer was repeated out of `final_response`.
+        let mut events = channel_of(vec![
+            token("It is 24C and sunny in Rome.\n"),
+            final_response(),
+        ]);
+
+        let mut out = Vec::new();
+        render_turn(&mut events, &mut out).await;
+
+        let rendered = String::from_utf8(out).expect("utf-8");
+        assert_eq!(rendered.matches("sunny in Rome").count(), 1, "{rendered:?}");
+        // And no stray blank line from terminating an already-terminated line.
+        assert_eq!(rendered, "It is 24C and sunny in Rome.\n", "{rendered:?}");
+    }
+
+    #[tokio::test]
+    async fn a_tool_line_after_the_last_token_does_not_duplicate_the_reply_either() {
+        // Same root cause reached the other way: a tool line resets `mid_line`,
+        // so a reply that streamed and then ran a tool looked unstreamed.
+        let mut events = channel_of(vec![
+            token("Checking the forecast."),
+            AgentEvent::ToolAction {
+                tool_name: "http_request".to_string(),
+                description: None,
+                invocation_number: 1,
+                parameters: Vec::new(),
+            },
+            final_response(),
+        ]);
+
+        let mut out = Vec::new();
+        render_turn(&mut events, &mut out).await;
+
+        let rendered = String::from_utf8(out).expect("utf-8");
+        assert!(
+            !rendered.contains("sunny in Rome"),
+            "the streamed reply must not be re-printed from final_response: {rendered:?}"
+        );
     }
 
     #[tokio::test]

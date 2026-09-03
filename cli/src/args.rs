@@ -95,6 +95,11 @@ pub struct ConfigArgs {
 
     /// Ignore any saved session and authenticate from scratch.
     ///
+    /// The session that results **is** saved, replacing the one that was ignored:
+    /// this means "do not reuse what is stored", not "do not store anything".
+    /// Skipping the write too would leave a stale file for the next run to trip
+    /// over. Use `aca logout` to leave nothing on disk.
+    ///
     /// Separate from `--no-cache`, which is about the *non-secret* config file:
     /// these are two different files with two different risk profiles, and one
     /// flag covering both would make "don't reuse my credentials" impossible to

@@ -350,15 +350,13 @@ async fn dispatch(cli: Cli) -> Result<ExitCode, Failure> {
         // Saved here too, or `aca agents` would prompt for a password every time
         // and never leave a session behind for `aca chat` to reuse. No identity
         // id to record: this path deliberately never ran the exchange.
-        if !cli.config.fresh_login {
-            crate::auth::store::save(
-                &config,
-                &email,
-                &tokens,
-                cached_identity_id.as_deref(),
-                std::time::SystemTime::now(),
-            );
-        }
+        crate::auth::store::save(
+            &config,
+            &email,
+            &tokens,
+            cached_identity_id.as_deref(),
+            std::time::SystemTime::now(),
+        );
         // stdout, because this is the command's output rather than a diagnostic —
         // `aca agents | grep` has to work.
         print!("{}", crate::discovery::render_listing(&agents));
@@ -387,20 +385,23 @@ async fn dispatch(cli: Cli) -> Result<ExitCode, Failure> {
     // Saved only once the exchange has *worked*, so a session file never claims
     // an identity id the pool rejects. Written on every run, which is what keeps
     // the 24h window rolling for someone who uses the CLI daily.
-    if !cli.config.fresh_login {
-        crate::auth::store::save(
-            &config,
-            &email,
-            &crate::auth::Tokens {
-                id_token: id_token.clone(),
-                access_token: crate::telemetry::Secret::new(String::new()),
-                refresh_token,
-                expires_at,
-            },
-            Some(broker.identity_id()),
-            std::time::SystemTime::now(),
-        );
-    }
+    //
+    // Written under `--fresh-login` too: that flag means "do not *reuse* what is
+    // saved", and skipping the write as well would leave the stale file in place
+    // for the next run to try and fail on. `aca logout` is how you ask for
+    // nothing on disk.
+    crate::auth::store::save(
+        &config,
+        &email,
+        &crate::auth::Tokens {
+            id_token: id_token.clone(),
+            access_token: crate::telemetry::Secret::new(String::new()),
+            refresh_token,
+            expires_at,
+        },
+        Some(broker.identity_id()),
+        std::time::SystemTime::now(),
+    );
     // One span for both, because they overlap: timing them separately would
     // report two numbers that cannot be added up.
     timed(after_login, "identity exchange and listing (concurrent)");
