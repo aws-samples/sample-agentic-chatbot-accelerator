@@ -243,18 +243,34 @@ async fn dispatch(cli: Cli) -> Result<ExitCode, Failure> {
         .await
         .map_err(|err| Failure::new(session_exit_code(&err), err))?;
 
-    let session = manager
-        .open_with(target, session_id)
-        .await
-        .map_err(|err| Failure::new(session_exit_code(&err), err))?;
-
+    // Chosen before connecting, not after: the TUI needs the terminal
+    // initialised *before* it dials, so it can show a connecting screen for
+    // the first cold start rather than leaving a blank terminal for up to a
+    // minute with nothing on screen to say why.
     match select_sink(chat.plain, chat.message.is_some()) {
-        SinkKind::Plain => Ok(plain::run(session, &mut manager, chat.message).await),
-        // The TUI owns the terminal, so its own failures cannot be printed until
-        // it has restored it — which `tui::run` does before returning either way.
-        SinkKind::Tui => tui::run(session, Box::new(manager))
-            .await
-            .map_err(|err| Failure::new(exit::TRANSPORT, err)),
+        SinkKind::Plain => {
+            // Plain mode has no spinner to draw, but silence for up to a
+            // minute reads as a hang — one line said once is enough.
+            eprintln!(
+                "aca: connecting to {} / {}...",
+                target.agent_runtime_id, target.qualifier
+            );
+            let session = manager
+                .open_with(target, session_id)
+                .await
+                .map_err(|err| Failure::new(session_exit_code(&err), err))?;
+            Ok(plain::run(session, &mut manager, chat.message).await)
+        }
+        // The TUI owns the terminal, so its own failures cannot be printed
+        // until it has restored it — which `tui::run` does before returning
+        // either way.
+        SinkKind::Tui => match tui::run(target, session_id, Box::new(manager)).await {
+            Ok(code) => Ok(code),
+            // The first connect never succeeded: the same precise mapping the
+            // plain-mode `open_with` above would have gotten.
+            Err(tui::RunError::Connect(err)) => Err(Failure::new(session_exit_code(&err), err)),
+            Err(tui::RunError::Terminal(err)) => Err(Failure::new(exit::TRANSPORT, err)),
+        },
     }
 }
 

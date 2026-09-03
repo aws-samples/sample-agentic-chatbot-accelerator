@@ -381,6 +381,25 @@ mod tests {
             })
         }
 
+        fn open_with(
+            &mut self,
+            target: Target,
+            _session_id: crate::protocol::SessionId,
+        ) -> std::pin::Pin<Box<dyn Future<Output = Result<Session, SessionError>> + Send + '_>>
+        {
+            // Nothing here exercises this path today — the plain sink's initial
+            // connect calls the inherent `SessionManager::open_with` directly,
+            // before the manager is ever behind this trait. Stubbed only because
+            // the trait requires it.
+            self.opened.push(target.clone());
+            Box::pin(async move {
+                Ok(Session {
+                    connection: crate::transport::test_connection().connection,
+                    target,
+                })
+            })
+        }
+
         fn agents(
             &mut self,
         ) -> std::pin::Pin<

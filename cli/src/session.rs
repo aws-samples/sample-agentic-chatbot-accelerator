@@ -42,6 +42,22 @@ pub trait SessionControl: Send + 'static {
     /// and an empty conversation — against `target`.
     fn open(&mut self, target: Target) -> BoxFuture<'_, Result<Session, SessionError>>;
 
+    /// Open a session with a caller-chosen id.
+    ///
+    /// On the trait only so the TUI's startup connect can show the same
+    /// connecting screen `/session` and `/agent` do — it is not exposed for
+    /// sinks to call at will. `--session-id` resumes a named conversation, and
+    /// that is only meaningful once, at the very first connect of a run; every
+    /// later reconnect must go through [`SessionControl::open`] instead, which
+    /// always picks a fresh random id. Nothing in the type system stops a sink
+    /// from calling this mid-chat — the discipline is enforced by there being
+    /// exactly one call site outside this module.
+    fn open_with(
+        &mut self,
+        target: Target,
+        session_id: SessionId,
+    ) -> BoxFuture<'_, Result<Session, SessionError>>;
+
     /// List the deployed agents, for a picker.
     fn agents(&mut self) -> BoxFuture<'_, Result<Vec<RuntimeSummary>, SessionError>>;
 }
@@ -67,6 +83,8 @@ impl SessionManager {
     /// Separate from [`SessionControl::open`] so `--session-id` can resume a
     /// named conversation, while every *mid-chat* reconnect is forced through the
     /// random-id path and cannot accidentally reuse an id that is still draining.
+    /// Also reachable through the trait now, for the TUI's very first connect —
+    /// see the trait method's doc for why that is still the only other caller.
     pub async fn open_with(
         &mut self,
         target: Target,
@@ -113,6 +131,17 @@ impl SessionControl for SessionManager {
             // point of `/session` is an empty conversation anyway.
             self.open_with(target, SessionId::new_random()).await
         })
+    }
+
+    fn open_with(
+        &mut self,
+        target: Target,
+        session_id: SessionId,
+    ) -> BoxFuture<'_, Result<Session, SessionError>> {
+        // Resolves to the inherent method above, not a recursive trait call:
+        // method lookup always prefers an inherent method over a trait one for
+        // the same receiver type, exactly as `open`'s body already relies on.
+        Box::pin(async move { self.open_with(target, session_id).await })
     }
 
     fn agents(&mut self) -> BoxFuture<'_, Result<Vec<RuntimeSummary>, SessionError>> {

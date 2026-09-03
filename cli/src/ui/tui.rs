@@ -13,20 +13,21 @@
 use std::collections::BTreeMap;
 use std::process::ExitCode;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crossterm::event::{Event, EventStream, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use futures_util::StreamExt;
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Layout};
+use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, List, ListState, Paragraph, Wrap};
 use tokio::sync::{Mutex, mpsc};
 
 use crate::discovery::{Selectable, Target};
-use crate::protocol::AgentEvent;
-use crate::session::{Session, SessionControl};
+use crate::protocol::{AgentEvent, SessionId};
+use crate::session::{Session, SessionControl, SessionError};
+use crate::transport::AgentWriter;
 
 use super::{Submission, parse_submission};
 
@@ -81,6 +82,11 @@ pub enum Status {
 pub enum Mode {
     #[default]
     Chat,
+    /// Dialling: the very first connect, `/session`, or `/agent`'s choice.
+    /// Replaces the transcript pane, but — unlike [`App::begin_session`] —
+    /// never touches `App::transcript` itself, so a failed dial leaves the
+    /// previous conversation exactly as it was underneath.
+    Connecting { label: String, since: Instant },
     /// `/agent` is open. The chat keeps streaming underneath; only the keyboard
     /// and the upper pane are taken over.
     Picker(Picker),
@@ -315,6 +321,7 @@ impl App {
         let agent = format!("{} / {}", target.agent_runtime_id, target.qualifier);
         // Whether this replaces a session or opens the first one.
         let replacing = !self.session.is_empty();
+        self.mode = Mode::Chat;
         self.transcript.clear();
         if replacing {
             // One line, on an otherwise empty transcript: confirmation that the
@@ -530,6 +537,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
         // has to be clipped against every terminal size, and the transcript is
         // still there when the picker closes.
         Mode::Picker(picker) => draw_picker(frame, picker, upper_area),
+        Mode::Connecting { label, since } => draw_connecting(frame, upper_area, app, label, *since),
     }
 
     frame.render_widget(Paragraph::new(status_line(app)), status_area);
@@ -596,6 +604,35 @@ fn draw_picker(frame: &mut Frame, picker: &Picker, area: ratatui::layout::Rect) 
     // pane it cannot see.
     let mut state = ListState::default().with_selected(Some(picker.selected));
     frame.render_stateful_widget(list, area, &mut state);
+}
+
+/// One spinner frame, chosen from elapsed time rather than a counter threaded
+/// through `App` — the loop only has to remember when dialling started.
+const SPINNER: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
+/// The screen shown while dialling: the very first connect, `/session`, or
+/// `/agent`'s choice landing. Title stays whatever `app.agent` already says —
+/// the previous agent while switching, blank on the first connect — so the
+/// spinner reads as "here's where you are, here's where you're headed" rather
+/// than erasing context before there is anything to replace it with.
+fn draw_connecting(frame: &mut Frame, area: Rect, app: &App, label: &str, since: Instant) {
+    let block = Block::bordered().title(title(app));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let frame_index = (since.elapsed().as_millis() / 80) as usize % SPINNER.len();
+    let text = format!("{} {label}", SPINNER[frame_index]);
+    let line = Rect {
+        y: inner.y + inner.height / 2,
+        height: 1.min(inner.height),
+        ..inner
+    };
+    frame.render_widget(
+        Paragraph::new(text)
+            .style(Style::default().fg(Color::Yellow))
+            .alignment(Alignment::Center),
+        line,
+    );
 }
 
 /// The transcript block's title: which agent this is.
@@ -697,12 +734,43 @@ pub fn restore_terminal() {
     ratatui::restore();
 }
 
+/// Ends [`run`].
+///
+/// Only a failure to *ever* establish a session carries enough for `dispatch`
+/// to choose the exit code precisely (auth vs. transport vs. usage — see
+/// `session_exit_code`). Once a session has been live at least once, a later
+/// failure is recoverable — shown as a notice inside the running chat instead
+/// of ending it, exactly as `/session` failing today does not exit either.
+#[derive(Debug, thiserror::Error)]
+pub enum RunError {
+    #[error(transparent)]
+    Connect(#[from] SessionError),
+    #[error(transparent)]
+    Terminal(#[from] std::io::Error),
+}
+
 /// Own the terminal and run the event loop until the user quits.
-pub async fn run(session: Session, manager: Box<dyn SessionControl>) -> anyhow::Result<ExitCode> {
+///
+/// Takes a target and session id rather than an already-open [`Session`]: the
+/// terminal is initialised *before* the first connect starts, so the very
+/// first dial gets the same connecting screen as `/session` and `/agent` —
+/// otherwise a cold microVM start left the user staring at a blank terminal
+/// for up to a minute with nothing on screen to say why.
+pub async fn run(
+    target: Target,
+    session_id: SessionId,
+    manager: Box<dyn SessionControl>,
+) -> Result<ExitCode, RunError> {
     let mut terminal = ratatui::try_init()?;
     // The loop's result is held rather than propagated so the terminal is
     // restored on *every* path, including an error mid-draw.
-    let outcome = event_loop(&mut terminal, session, Arc::new(Mutex::new(manager))).await;
+    let outcome = event_loop(
+        &mut terminal,
+        target,
+        session_id,
+        Arc::new(Mutex::new(manager)),
+    )
+    .await;
     restore_terminal();
     outcome
 }
@@ -725,7 +793,12 @@ enum Message {
         session: Box<Session>,
     },
     /// A requested session could not be opened, or the listing failed.
-    Failed { generation: u64, error: String },
+    /// `context` names which of the two, since `SessionError` itself does not.
+    Failed {
+        generation: u64,
+        error: SessionError,
+        context: &'static str,
+    },
     /// The agent list came back.
     Agents {
         generation: u64,
@@ -736,9 +809,10 @@ enum Message {
 /// The event loop proper, with the terminal already initialised.
 async fn event_loop(
     terminal: &mut ratatui::DefaultTerminal,
-    session: Session,
+    target: Target,
+    session_id: SessionId,
     manager: Arc<Mutex<Box<dyn SessionControl>>>,
-) -> anyhow::Result<ExitCode> {
+) -> Result<ExitCode, RunError> {
     let mut app = App::default();
     let mut keys = EventStream::new();
     let mut ticker = tokio::time::interval(FRAME_INTERVAL);
@@ -750,15 +824,17 @@ async fn event_loop(
     // the volume, and backpressure there is the same bound the socket already had.
     let (messages_tx, mut messages) = mpsc::channel::<Message>(256);
 
-    // Tags the live connection. The initial session is 0; every later request
-    // takes the next id, and an `Opened` adopts the id of the request that
-    // produced it — which is what lets a stale pump be recognised and ignored.
+    // Tags the live connection. Every request — including the very first
+    // connect, now — takes the next id, and an `Opened` adopts the id of the
+    // request that produced it, which is what lets a stale pump be recognised
+    // and ignored.
     let mut generation = 0_u64;
     let mut next_id = 1_u64;
-    let mut target = session.target.clone();
-    app.begin_session(&target, session.connection.session_id().as_str());
-    let (mut writer, events) = session.connection.split();
-    tokio::spawn(pump(events, messages_tx.clone(), generation));
+    let mut target = target;
+    // No socket until the first `Opened` arrives — the initial connect is
+    // issued below exactly like a later `/session`, rather than assumed done
+    // already, so both share one code path and one connecting screen.
+    let mut writer: Option<AgentWriter> = None;
 
     // The id of an in-flight request, or `None` when idle. Doubles as the busy
     // flag: exactly one open-or-list may be outstanding, so a second `/session`
@@ -766,12 +842,26 @@ async fn event_loop(
     // leaking a container.
     let mut pending: Option<u64> = None;
 
+    issue(
+        Request::Initial(target.clone(), session_id),
+        &mut app,
+        &mut pending,
+        &mut next_id,
+        &manager,
+        &messages_tx,
+    );
+
     terminal.draw(|frame| draw(frame, &app))?;
     let mut dirty = false;
     let mut quit = false;
     // Whether there is still a socket. Quitting without one is a transport
     // failure for a script's purposes, even though the window stayed open.
-    let mut live = true;
+    let mut live = false;
+    // Distinct from `live`: once true, stays true for the rest of the run. A
+    // `Failed` while this is still false means the run has never had a
+    // session, which `dispatch` needs to know to pick the right exit code —
+    // after that, the same failure is just a notice.
+    let mut ever_connected = false;
 
     while !quit {
         tokio::select! {
@@ -800,25 +890,36 @@ async fn event_loop(
                 Some(Message::Opened { generation: from, session }) => {
                     if pending == Some(from) {
                         pending = None;
+                        ever_connected = true;
                         generation = from;
                         live = true;
                         target = session.target.clone();
                         app.begin_session(&target, session.connection.session_id().as_str());
                         let (new_writer, events) = session.connection.split();
                         // Replaced *after* the new socket is up, so a failed
-                        // reconnect leaves the old conversation usable.
-                        let previous = std::mem::replace(&mut writer, new_writer);
-                        tokio::spawn(async move { let _ = previous.close().await; });
+                        // reconnect leaves the old conversation usable. `None`
+                        // on the very first connect, so there is nothing to close.
+                        if let Some(previous) = writer.replace(new_writer) {
+                            tokio::spawn(async move { let _ = previous.close().await; });
+                        }
                         tokio::spawn(pump(events, messages_tx.clone(), from));
                         dirty = true;
                     }
                 }
-                Some(Message::Failed { generation: from, error }) => {
+                Some(Message::Failed { generation: from, error, context }) => {
                     if pending == Some(from) {
                         pending = None;
                         app.working = None;
+                        app.mode = Mode::Chat;
+                        if !ever_connected {
+                            // Nothing to fall back to and nothing on screen worth
+                            // restoring — `dispatch` needs the real error to pick
+                            // between auth/transport/usage, so it goes out, not
+                            // into a notice a user would have to quit past anyway.
+                            return Err(RunError::Connect(error));
+                        }
                         tracing::error!(error = %error, "session request failed");
-                        app.status = Status::Notice(error);
+                        app.status = Status::Notice(format!("{context}: {error}"));
                         dirty = true;
                     }
                 }
@@ -839,12 +940,19 @@ async fn event_loop(
                         Action::Continue => {}
                         Action::Quit => quit = true,
                         Action::Send(text) => {
-                            // Awaited inline: this is one frame write, not the
-                            // reply, so the input box is only unusable for the
-                            // duration of a socket write.
-                            if let Err(err) = writer.send_text(&text).await {
-                                tracing::error!(error = %err, "send failed");
-                                app.status = Status::Notice(format!("could not send: {err}"));
+                            // `None` only while the first connect is still
+                            // dialling, and `submit()` holds Enter until
+                            // `working` clears — so this is unreachable in
+                            // practice, not just defensive.
+                            if let Some(writer) = writer.as_mut() {
+                                // Awaited inline: this is one frame write, not
+                                // the reply, so the input box is only unusable
+                                // for the duration of a socket write.
+                                if let Err(err) = writer.send_text(&text).await {
+                                    tracing::error!(error = %err, "send failed");
+                                    app.status =
+                                        Status::Notice(format!("could not send: {err}"));
+                                }
                             }
                         }
                         // `/session` reconnects to whatever is current, so it is
@@ -886,7 +994,10 @@ async fn event_loop(
                 // would be a hang with no way out.
                 None => break,
             },
-            _ = ticker.tick(), if dirty => {
+            // The `Connecting` guard keeps the spinner turning on its own —
+            // otherwise it would freeze between `dirty` events, since dialling
+            // produces none until it resolves.
+            _ = ticker.tick(), if dirty || matches!(app.mode, Mode::Connecting { .. }) => {
                 terminal.draw(|frame| draw(frame, &app))?;
                 dirty = false;
             }
@@ -898,14 +1009,21 @@ async fn event_loop(
     } else {
         ExitCode::from(super::exit::TRANSPORT)
     };
-    // Best-effort: a failed close cannot change what already happened.
-    let _ = writer.close().await;
+    // Best-effort: a failed close cannot change what already happened. `None`
+    // if the user quit before the first connect ever landed.
+    if let Some(writer) = writer {
+        let _ = writer.close().await;
+    }
     Ok(code)
 }
 
 /// What the loop wants from the session manager.
 enum Request {
-    /// Open a fresh session against this target.
+    /// The very first connect of the run: a caller-chosen id, so
+    /// `--session-id` still resumes a named conversation.
+    Initial(Target, SessionId),
+    /// Open a fresh session against this target with a new random id
+    /// (`/session`, and `/agent`'s choice).
     Open(Target),
     /// Fetch the agent list for the picker.
     Agents,
@@ -937,12 +1055,24 @@ fn issue(
     *next_id += 1;
     *pending = Some(id);
     app.working = Some(
-        match request {
-            Request::Open(_) => "starting a new session",
+        match &request {
+            Request::Initial(..) | Request::Open(_) => "starting a new session",
             Request::Agents => "listing agents",
         }
         .to_string(),
     );
+    // Only a session open replaces the pane — listing agents is a quick
+    // AppSync call, not a cold start, so the transcript stays put and the
+    // status line alone is enough to say what is happening.
+    if let Request::Initial(target, _) | Request::Open(target) = &request {
+        app.mode = Mode::Connecting {
+            label: format!(
+                "starting a new session on {} / {}",
+                target.agent_runtime_id, target.qualifier
+            ),
+            since: Instant::now(),
+        };
+    }
 
     let manager = Arc::clone(manager);
     let to = to.clone();
@@ -950,6 +1080,19 @@ fn issue(
         // Uncontended by construction: `pending` admits one request at a time.
         let mut manager = manager.lock().await;
         let message = match request {
+            Request::Initial(target, session_id) => {
+                match manager.open_with(target, session_id).await {
+                    Ok(session) => Message::Opened {
+                        generation: id,
+                        session: Box::new(session),
+                    },
+                    Err(error) => Message::Failed {
+                        generation: id,
+                        error,
+                        context: "could not start a session",
+                    },
+                }
+            }
             Request::Open(target) => match manager.open(target).await {
                 Ok(session) => Message::Opened {
                     generation: id,
@@ -957,7 +1100,8 @@ fn issue(
                 },
                 Err(error) => Message::Failed {
                     generation: id,
-                    error: format!("could not start a session: {error}"),
+                    error,
+                    context: "could not start a session",
                 },
             },
             Request::Agents => match manager.agents().await {
@@ -967,7 +1111,8 @@ fn issue(
                 },
                 Err(error) => Message::Failed {
                     generation: id,
-                    error: format!("could not list agents: {error}"),
+                    error,
+                    context: "could not list agents",
                 },
             },
         };
@@ -1652,6 +1797,175 @@ mod tests {
         app.begin_session(&target("weather_agent", "DEFAULT"), "session-one");
         assert!(app.working.is_none());
         assert_eq!(app.status, Status::Idle);
+    }
+
+    #[test]
+    fn connecting_replaces_the_pane_without_touching_the_transcript() {
+        // Unlike `begin_session`, entering `Connecting` must not clear anything:
+        // if the dial fails, `Message::Failed` only sets the mode back to
+        // `Chat` — the old conversation has to still be there underneath.
+        let mut app = App::default();
+        app.begin_session(&target("weather_agent", "DEFAULT"), "session-one");
+        app.push_user_turn("hello from Paris".to_string());
+        app.apply(token("Hello from Paris!"));
+
+        app.mode = Mode::Connecting {
+            label: "starting a new session on weather_agent-AbCdEf1234 / DEFAULT".to_string(),
+            since: Instant::now(),
+        };
+
+        assert_eq!(app.transcript.len(), 2, "{:?}", app.transcript);
+        let screen = rendered(&app, 70, 12);
+        assert!(screen.contains("starting a new session"), "{screen}");
+        assert!(
+            !screen.contains("Paris"),
+            "the old conversation must not show through the connecting screen: {screen}"
+        );
+
+        // A failed dial only ever sets `mode` back — proving that alone is
+        // enough to bring the old conversation back confirms nothing else was
+        // lost while it was hidden.
+        app.mode = Mode::Chat;
+        assert!(rendered(&app, 70, 12).contains("Paris"));
+    }
+
+    #[test]
+    fn a_finished_dial_leaves_connecting_mode() {
+        let mut app = App {
+            mode: Mode::Connecting {
+                label: "starting a new session".to_string(),
+                since: Instant::now(),
+            },
+            ..Default::default()
+        };
+        app.begin_session(&target("weather_agent", "DEFAULT"), "session-one");
+        assert!(matches!(app.mode, Mode::Chat));
+    }
+
+    #[test]
+    fn ctrl_c_escapes_the_connecting_screen_too() {
+        // Otherwise a cold start that never comes back would trap the window
+        // with no way out — ctrl-c has to work from every mode.
+        let mut app = App {
+            mode: Mode::Connecting {
+                label: "starting a new session".to_string(),
+                since: Instant::now(),
+            },
+            ..Default::default()
+        };
+        assert_eq!(
+            app.on_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)),
+            Action::Quit
+        );
+    }
+
+    #[test]
+    fn typing_while_connecting_still_reaches_the_input_buffer() {
+        // Unlike the picker, `Connecting` does not own the keyboard: `submit()`
+        // is what holds Enter (via `working`), so what was typed is not lost the
+        // moment the screen changes.
+        let mut app = App {
+            mode: Mode::Connecting {
+                label: "starting a new session".to_string(),
+                since: Instant::now(),
+            },
+            ..Default::default()
+        };
+        for ch in "hello".chars() {
+            app.on_key(key(KeyCode::Char(ch)));
+        }
+        assert_eq!(app.input, "hello");
+    }
+
+    #[test]
+    fn drawing_the_connecting_screen_survives_every_size_too() {
+        let app = App {
+            mode: Mode::Connecting {
+                label: "starting a new session on a rather long agent name / DEFAULT".to_string(),
+                since: Instant::now(),
+            },
+            ..Default::default()
+        };
+        for (width, height) in [(80, 24), (80, 5), (20, 4), (10, 3), (4, 2), (1, 1)] {
+            let backend = ratatui::backend::TestBackend::new(width, height);
+            let mut terminal = ratatui::Terminal::new(backend).expect("terminal");
+            terminal
+                .draw(|frame| draw(frame, &app))
+                .unwrap_or_else(|err| panic!("draw failed at {width}x{height}: {err}"));
+        }
+    }
+
+    /// Never resolves — enough to exercise `issue`'s synchronous side effects
+    /// without a real connect. Whatever it is asked to do is left pending
+    /// forever, which this test never awaits.
+    struct NeverControl;
+
+    impl SessionControl for NeverControl {
+        fn open(
+            &mut self,
+            _target: Target,
+        ) -> std::pin::Pin<Box<dyn Future<Output = Result<Session, SessionError>> + Send + '_>>
+        {
+            Box::pin(std::future::pending())
+        }
+
+        fn open_with(
+            &mut self,
+            _target: Target,
+            _session_id: SessionId,
+        ) -> std::pin::Pin<Box<dyn Future<Output = Result<Session, SessionError>> + Send + '_>>
+        {
+            Box::pin(std::future::pending())
+        }
+
+        fn agents(
+            &mut self,
+        ) -> std::pin::Pin<
+            Box<
+                dyn Future<Output = Result<Vec<crate::discovery::RuntimeSummary>, SessionError>>
+                    + Send
+                    + '_,
+            >,
+        > {
+            Box::pin(std::future::pending())
+        }
+    }
+
+    #[tokio::test]
+    async fn opening_a_session_shows_the_connecting_screen_but_listing_agents_does_not() {
+        // Listing is a quick AppSync call, not a cold start: it must not blank
+        // the transcript the way a session open does.
+        let manager: Arc<Mutex<Box<dyn SessionControl>>> =
+            Arc::new(Mutex::new(Box::new(NeverControl)));
+        let (to, _messages) = mpsc::channel(4);
+        let mut next_id = 1_u64;
+
+        let mut opening = App::default();
+        let mut pending = None;
+        issue(
+            Request::Open(target("weather_agent", "DEFAULT")),
+            &mut opening,
+            &mut pending,
+            &mut next_id,
+            &manager,
+            &to,
+        );
+        assert!(matches!(opening.mode, Mode::Connecting { .. }));
+        assert_eq!(opening.working.as_deref(), Some("starting a new session"));
+        assert_eq!(pending, Some(1));
+
+        let mut listing = App::default();
+        let mut pending = None;
+        issue(
+            Request::Agents,
+            &mut listing,
+            &mut pending,
+            &mut next_id,
+            &manager,
+            &to,
+        );
+        assert!(matches!(listing.mode, Mode::Chat));
+        assert_eq!(listing.working.as_deref(), Some("listing agents"));
     }
 
     #[test]

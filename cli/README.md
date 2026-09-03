@@ -206,7 +206,20 @@ to its own microVM, so a new session is a new container with no memory of what c
 before — that is the point of `/session` when an agent has wandered off, and it is
 also why the first reply after one may be slow (a cold start).
 
-**The TUI clears the transcript**, leaving one line to confirm what happened:
+**While the TUI dials, it shows a connecting screen** — a spinner and the
+target agent, replacing the transcript pane rather than sitting under a status
+line you might not notice. This is what a cold start actually looks like: the
+CLI is not doing anything but waiting for AgentCore to finish starting the
+container and complete the WebSocket handshake, which is why the wait can run
+up to a minute. The same screen appears for the very first connect of a run,
+not just `/session` and `/agent` — starting `aca chat` against a cold agent no
+longer looks like a hung terminal.
+
+If the dial fails, the screen goes back to whatever was there before —
+`/session` and `/agent` leave the previous conversation exactly as it was; a
+failed first connect exits with the same error a failed `aca chat` always
+would have. Only once the dial **succeeds** does the TUI clear the transcript,
+leaving one line to confirm what happened:
 
 ```
 ── new session on weather_agent-AbCdEf1234 / DEFAULT ──
@@ -219,7 +232,9 @@ Copy anything you need out first.
 
 Plain mode prints the same marker but keeps the text above it: a line already
 written to a terminal cannot be taken back, and a redirected transcript has to
-stay append-only.
+stay append-only. It has no spinner to draw, but a silent terminal for up to a
+minute reads as a hang, so it prints `connecting to <agent>...` once before
+dialling — on every connect, including the very first one.
 
 `/agent` opens a picker listing every agent × endpoint pair, with its version,
 architecture and status; `↑`/`↓` move, `Enter` switches, `Esc` cancels. It needs
