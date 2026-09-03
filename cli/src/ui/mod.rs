@@ -5,6 +5,7 @@
 //! reworking anything below this layer.
 
 pub mod plain;
+pub mod tui;
 
 use std::io::IsTerminal;
 use std::process::ExitCode;
@@ -168,12 +169,11 @@ async fn dispatch(cli: Cli) -> Result<ExitCode, Failure> {
 
     match select_sink(chat.plain, chat.message.is_some()) {
         SinkKind::Plain => Ok(plain::run(connection, chat.message).await),
-        SinkKind::Tui => {
-            // T11 replaces this. Falling back rather than failing keeps the
-            // milestone reachable on a TTY without forcing --plain.
-            tracing::info!("TUI not built yet (T11); using the plain sink");
-            Ok(plain::run(connection, chat.message).await)
-        }
+        // The TUI owns the terminal, so its own failures cannot be printed until
+        // it has restored it — which `tui::run` does before returning either way.
+        SinkKind::Tui => tui::run(connection)
+            .await
+            .map_err(|err| Failure::new(exit::TRANSPORT, err)),
     }
 }
 

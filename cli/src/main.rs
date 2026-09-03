@@ -29,9 +29,11 @@ async fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    // No-op `restore` until T11 owns the alternate screen and has something to
-    // tear down; installed now so the hook itself is never forgotten later.
-    telemetry::install_panic_hook(|| {});
+    // Leaves the terminal usable if the TUI panics inside the alternate screen —
+    // without this the backtrace is written to a screen that is then discarded,
+    // and the shell is left in raw mode. Idempotent, so it is safe on the plain
+    // path where no alternate screen was ever entered.
+    telemetry::install_panic_hook(ui::tui::restore_terminal);
     tracing::info!(version = env!("CARGO_PKG_VERSION"), "aca starting");
 
     // `run_cli` renders its own errors through their typed `Display` and returns a

@@ -25,7 +25,13 @@ path = "src/main.rs"
 # --- TUI (used in T11) ---------------------------------------------------
 # crossterm_0_29 pins ratatui's backend to the same crossterm we depend on
 # directly, so terminal event types are interchangeable rather than duplicated.
-ratatui = { version = "0.30", features = ["crossterm_0_29"] }
+# `unstable-rendered-line-info` unlocks `Paragraph::line_count`, which the
+# bottom-anchored transcript needs: the scroll offset is derived from how many
+# rows the text occupies *after wrapping*. The alternative is reimplementing
+# ratatui's wrap algorithm, which would silently disagree with what is on screen
+# for wide characters. Being unstable, a rename breaks the build rather than the
+# scrolling — see ratatui#293.
+ratatui = { version = "0.30", features = ["crossterm_0_29", "unstable-rendered-line-info"] }
 crossterm = { version = "0.29", features = ["event-stream"] }
 
 # --- transport -----------------------------------------------------------
