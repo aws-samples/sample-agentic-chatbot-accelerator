@@ -33,8 +33,26 @@ pub struct Cli {
 pub enum Command {
     /// Interactive chat session (default).
     Chat(ChatArgs),
-    /// List deployed agents and exit. Implemented in T12.
-    Agents,
+    /// List deployed agents with their endpoints, and exit.
+    Agents(AgentsArgs),
+}
+
+/// Inputs for `aca agents`.
+///
+/// Carries its own credential flags rather than sharing [`ChatArgs`]: listing
+/// still needs a Cognito login (the AppSync field is
+/// `@aws_cognito_user_pools`), but none of the chat-shaped options —
+/// `--session-id`, `--plain`, `--message` — mean anything for it, and offering
+/// them would imply they did.
+#[derive(Args, Debug, Default)]
+pub struct AgentsArgs {
+    /// Cognito user's email. Prompted interactively when absent.
+    #[arg(long, env = "ACA_EMAIL")]
+    pub email: Option<String>,
+
+    /// Read the password from stdin instead of prompting (for scripted use).
+    #[arg(long)]
+    pub password_stdin: bool,
 }
 
 /// Backend identity discovery. `--aws-exports-url` is the primary bootstrap;
@@ -240,9 +258,19 @@ mod tests {
     }
 
     #[test]
-    fn agents_subcommand_parses() {
+    fn agents_subcommand_parses_with_its_own_credential_flags() {
         let cli = Cli::try_parse_from(["aca", "agents"]).expect("agents must parse");
-        assert!(matches!(cli.command, Some(Command::Agents)));
+        assert!(matches!(cli.command, Some(Command::Agents(_))));
+
+        let cli = Cli::try_parse_from(["aca", "agents", "--email", "a@example.com"])
+            .expect("agents --email must parse");
+        let Some(Command::Agents(args)) = cli.command else {
+            panic!("wrong command");
+        };
+        assert_eq!(args.email.as_deref(), Some("a@example.com"));
+
+        // Chat-shaped options are deliberately not offered here.
+        assert!(Cli::try_parse_from(["aca", "agents", "--message", "hi"]).is_err());
     }
 
     /// clap's own consistency checks (duplicate flags, bad `short`/`long`

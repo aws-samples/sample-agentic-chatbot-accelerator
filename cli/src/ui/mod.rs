@@ -73,6 +73,57 @@ pub async fn run_cli(cli: Cli) -> ExitCode {
     }
 }
 
+/// Run `aca agents`: list what is deployed and exit.
+///
+/// The listing goes to **stdout** because it is this command's output, not a
+/// diagnostic — `aca agents | grep` has to work.
+async fn list_agents(
+    config: &crate::config::AppConfig,
+    broker: &mut crate::auth::CredentialBroker,
+) -> Result<ExitCode, Failure> {
+    let appsync_url = config
+        .appsync_url
+        .as_deref()
+        .ok_or_else(|| Failure::new(exit::CONFIG, crate::discovery::DiscoveryError::NoEndpoint))?;
+    let id_token = broker
+        .id_token()
+        .await
+        .map_err(|err| Failure::new(exit::AUTH, err))?;
+
+    let agents = crate::discovery::list_runtime_agents(appsync_url, &id_token)
+        .await
+        .map_err(|err| Failure::new(discovery_exit_code(&err), err))?;
+
+    print!("{}", crate::discovery::render_listing(&agents));
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Map a discovery failure onto the right scriptable code.
+///
+/// Discovery can fail for reasons in three different categories, and collapsing
+/// them onto one code would tell a script "could not pick an agent" without
+/// saying whether to fix the invocation, the deployment, or the network.
+fn discovery_exit_code(error: &crate::discovery::DiscoveryError) -> u8 {
+    use crate::discovery::DiscoveryError as E;
+
+    match error {
+        // The deployment is reachable but has nothing to offer, or the
+        // invocation named something that does not exist: the user acts next.
+        E::QualifierRequired
+        | E::NoAgents
+        | E::NoQualifiers(_)
+        | E::UnknownQualifier { .. }
+        | E::Unselectable(_) => exit::USAGE,
+        // No endpoint configured is a configuration hole, same as a missing region.
+        E::NoEndpoint => exit::CONFIG,
+        E::Credentials(_) => exit::AUTH,
+        // A GraphQL authorisation error also lands here. It is reported as a
+        // transport failure rather than an auth one because the login itself
+        // succeeded — what failed is one request against AppSync.
+        E::Http(_) | E::GraphQl(_) => exit::TRANSPORT,
+    }
+}
+
 /// A user-facing failure: one actionable sentence plus a scriptable code.
 struct Failure {
     code: u8,
@@ -89,43 +140,35 @@ impl Failure {
 }
 
 async fn dispatch(cli: Cli) -> Result<ExitCode, Failure> {
-    let chat = match cli.command {
+    // `agents` needs the same config and login as `chat`, so the two paths share
+    // everything up to the point where one lists and the other connects.
+    let (chat, listing_only) = match cli.command {
         // No subcommand means chat — the overwhelmingly common case, so it should
         // not need naming.
-        None => ChatArgs::default(),
-        Some(Command::Chat(args)) => args,
-        Some(Command::Agents) => {
-            return Err(Failure::new(
-                exit::USAGE,
-                "listing agents needs AppSync discovery, which is not built yet (T12); \
-                 pass --runtime-id to chat with a known runtime",
-            ));
-        }
+        None => (ChatArgs::default(), false),
+        Some(Command::Chat(args)) => (args, false),
+        Some(Command::Agents(args)) => (
+            ChatArgs {
+                email: args.email,
+                password_stdin: args.password_stdin,
+                ..Default::default()
+            },
+            true,
+        ),
     };
 
     let config = crate::config::resolve(&cli.config)
         .await
         .map_err(|err| Failure::new(exit::CONFIG, err))?;
 
-    // Required until T12 can look one up. Named explicitly so the message tells
-    // the user what to do rather than reporting a missing field.
-    let (runtime_id, qualifier) = match (&chat.runtime_id, &chat.qualifier) {
-        (Some(runtime_id), Some(qualifier)) => (runtime_id.clone(), qualifier.clone()),
-        (Some(_), None) => {
-            return Err(Failure::new(
-                exit::USAGE,
-                "--qualifier is required with --runtime-id until agent discovery lands (T12); \
-                 try --qualifier DEFAULT",
-            ));
-        }
-        (None, _) => {
-            return Err(Failure::new(
-                exit::USAGE,
-                "no agent selected: pass --runtime-id (and --qualifier); \
-                 automatic discovery lands in T12",
-            ));
-        }
-    };
+    // Checked before the password prompt, not after: `--runtime-id` without
+    // `--qualifier` is unusable no matter what the user types next, and making
+    // them authenticate first only to be told they mistyped the invocation
+    // wastes the one step they cannot script.
+    if !listing_only {
+        crate::discovery::explicit_target(&chat)
+            .map_err(|err| Failure::new(discovery_exit_code(&err), err))?;
+    }
 
     let session_id = match &chat.session_id {
         Some(raw) => crate::protocol::SessionId::parse(raw.as_str())
@@ -149,16 +192,30 @@ async fn dispatch(cli: Cli) -> Result<ExitCode, Failure> {
         .await
         .map_err(|err| Failure::new(exit::AUTH, err))?;
 
+    if listing_only {
+        return list_agents(&config, &mut broker).await;
+    }
+
+    let target = crate::discovery::resolve_target(
+        &config,
+        &chat,
+        &mut broker,
+        &crate::discovery::TerminalChooser,
+    )
+    .await
+    .map_err(|err| Failure::new(discovery_exit_code(&err), err))?;
+
     let connection = crate::transport::connect(
         crate::transport::ConnectParams {
             config: &config,
-            agent_runtime_id: &runtime_id,
-            qualifier: &qualifier,
-            // Empty until T12 can resolve it from the agent's
-            // `qualifierToVersion`. The browser sends "" the same way when it
-            // cannot resolve a version, and the container's DynamoDB write uses
-            // `if_not_exists`, so an empty value is skipped rather than stored.
-            runtime_version: "",
+            agent_runtime_id: &target.agent_runtime_id,
+            qualifier: &target.qualifier,
+            // Resolved from the agent's `qualifierToVersion` when discovery ran,
+            // and empty in the `--runtime-id` path where no summary was fetched.
+            // The container's session write uses `if_not_exists`, so an empty
+            // value is skipped rather than stored as a blank — the same thing the
+            // browser sends when it cannot resolve one.
+            runtime_version: &target.runtime_version,
             session_id: &session_id,
             identity: &identity,
         },

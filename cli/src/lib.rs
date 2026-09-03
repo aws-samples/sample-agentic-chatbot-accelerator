@@ -19,6 +19,7 @@
 pub mod args;
 pub mod auth;
 pub mod config;
+pub mod discovery;
 pub mod presign;
 pub mod protocol;
 pub mod telemetry;
