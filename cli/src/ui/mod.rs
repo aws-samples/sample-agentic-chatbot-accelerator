@@ -11,7 +11,6 @@ use std::io::IsTerminal;
 use std::process::ExitCode;
 
 use crate::args::{ChatArgs, Cli, Command};
-use crate::session::SessionControl;
 
 /// Which renderer to use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -154,6 +153,21 @@ fn discovery_exit_code(error: &crate::discovery::DiscoveryError) -> u8 {
     }
 }
 
+/// Log how long the step ending now took, and return the mark for the next one.
+///
+/// To the log file only, never the terminal: this is for answering "which of
+/// these round trips is the slow one" on a real deployment, which is not a
+/// question that can be settled offline — the local setup costs measure in
+/// microseconds, so anything worth optimising is latency this build cannot see.
+fn timed(since: std::time::Instant, step: &str) -> std::time::Instant {
+    tracing::info!(
+        step,
+        elapsed_ms = since.elapsed().as_millis(),
+        "startup step"
+    );
+    std::time::Instant::now()
+}
+
 /// A user-facing failure: one actionable sentence plus a scriptable code.
 struct Failure {
     code: u8,
@@ -195,10 +209,8 @@ async fn dispatch(cli: Cli) -> Result<ExitCode, Failure> {
     // `--qualifier` is unusable no matter what the user types next, and making
     // them authenticate first only to be told they mistyped the invocation
     // wastes the one step they cannot script.
-    if !listing_only {
-        crate::discovery::explicit_target(&chat)
-            .map_err(|err| Failure::new(discovery_exit_code(&err), err))?;
-    }
+    let explicit = crate::discovery::explicit_target(&chat)
+        .map_err(|err| Failure::new(discovery_exit_code(&err), err))?;
 
     let session_id = match &chat.session_id {
         Some(raw) => crate::protocol::SessionId::parse(raw.as_str())
@@ -214,34 +226,67 @@ async fn dispatch(cli: Cli) -> Result<ExitCode, Failure> {
         plain::read_password(chat.password_stdin).map_err(|err| Failure::new(exit::AUTH, err))?;
 
     let prompt = plain::TerminalPasswordPrompt;
+    let started = std::time::Instant::now();
     let (tokens, identity) = crate::auth::login(&config, &email, password, &prompt)
         .await
         .map_err(|err| Failure::new(exit::AUTH, err))?;
+    // Timed from here on, to the log only. Everything before this point waits on
+    // the user rather than the network, so a wall-clock total that included the
+    // password prompt would say nothing about what is worth optimising.
+    let after_login = timed(started, "initiate_auth");
 
-    let broker = crate::auth::CredentialBroker::new(&config, tokens)
-        .await
-        .map_err(|err| Failure::new(exit::AUTH, err))?;
+    // `aca agents` reads AppSync with the ID token and nothing else, so it stops
+    // here: the identity-pool exchange below is two round trips it would never
+    // use, and the credentials it produces are only needed to sign a WebSocket.
+    if listing_only {
+        let appsync_url = config.appsync_url.as_deref().ok_or_else(|| {
+            Failure::new(exit::CONFIG, crate::discovery::DiscoveryError::NoEndpoint)
+        })?;
+        let agents = crate::discovery::list_runtime_agents(appsync_url, &tokens.id_token)
+            .await
+            .map_err(|err| Failure::new(discovery_exit_code(&err), err))?;
+        timed(after_login, "list_runtime_agents");
+        // stdout, because this is the command's output rather than a diagnostic —
+        // `aca agents | grep` has to work.
+        print!("{}", crate::discovery::render_listing(&agents));
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    // Concurrent, not sequential: the identity-pool exchange and the agent
+    // listing both need only the ID token login just returned, and neither
+    // feeds the other. Run back to back they cost a round trip for nothing —
+    // and this is latency the user is sitting through, having just typed a
+    // password. The token is seconds old, so it cannot need the refresh the
+    // broker would otherwise have been asked for.
+    let id_token = tokens.id_token.clone();
+    let (broker, listing) = tokio::join!(
+        crate::auth::CredentialBroker::new(&config, tokens),
+        crate::discovery::listing_for(&config, &chat, &id_token),
+    );
+    // Auth first when both fail: a bad login explains a failed listing, and
+    // reporting the listing error would send the user after the wrong problem.
+    let broker = broker.map_err(|err| Failure::new(exit::AUTH, err))?;
+    let listing = listing.map_err(|err| Failure::new(discovery_exit_code(&err), err))?;
+    // One span for both, because they overlap: timing them separately would
+    // report two numbers that cannot be added up.
+    timed(after_login, "identity exchange and listing (concurrent)");
 
     // Config, credentials and identity move into the manager and stay there for
     // the whole run: `/session` and `/agent` need every one of them again, and a
     // sink that had only a socket could not honour either.
     let mut manager = crate::session::SessionManager::new(config, broker, identity);
 
-    if listing_only {
-        // stdout, because this is the command's output rather than a diagnostic —
-        // `aca agents | grep` has to work.
-        let agents = manager
-            .agents()
-            .await
-            .map_err(|err| Failure::new(session_exit_code(&err), err))?;
-        print!("{}", crate::discovery::render_listing(&agents));
-        return Ok(ExitCode::SUCCESS);
-    }
-
-    let target = manager
-        .resolve(&chat, &crate::discovery::TerminalChooser)
-        .await
-        .map_err(|err| Failure::new(session_exit_code(&err), err))?;
+    // Prompting happens here rather than inside the fetch above, so a question
+    // the user has to answer is never asked while a request is still in flight.
+    let target = match explicit {
+        Some(target) => target,
+        None => crate::discovery::select_target(
+            &listing.unwrap_or_default(),
+            chat.qualifier.as_deref(),
+            &crate::discovery::TerminalChooser,
+        )
+        .map_err(|err| Failure::new(discovery_exit_code(&err), err))?,
+    };
 
     // Chosen before connecting, not after: the TUI needs the terminal
     // initialised *before* it dials, so it can show a connecting screen for

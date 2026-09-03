@@ -277,58 +277,33 @@ pub async fn list_runtime_agents(
     Ok(agents)
 }
 
-/// Supplies the ID token discovery authenticates with.
+/// Fetch the listing the target will be chosen from, or nothing when
+/// `--runtime-id` has already named one.
 ///
-/// A one-method trait rather than taking the [`crate::auth::CredentialBroker`]
-/// directly, so the "`--runtime-id` reaches a connection with **zero** AppSync
-/// calls" rule is provable: a test can pass a source that panics if consulted.
-/// Taking the concrete broker would make that untestable, because a broker can
-/// only be built by talking to Cognito.
-pub trait IdTokenSource {
-    fn id_token<'a>(
-        &'a mut self,
-    ) -> std::pin::Pin<Box<dyn Future<Output = Result<Secret<String>, DiscoveryError>> + Send + 'a>>;
-}
-
-impl IdTokenSource for crate::auth::CredentialBroker {
-    fn id_token<'a>(
-        &'a mut self,
-    ) -> std::pin::Pin<Box<dyn Future<Output = Result<Secret<String>, DiscoveryError>> + Send + 'a>>
-    {
-        Box::pin(async move {
-            crate::auth::CredentialBroker::id_token(self)
-                .await
-                .map_err(|err| DiscoveryError::Credentials(err.to_string()))
-        })
-    }
-}
-
-/// Resolve the target agent, qualifier and version.
+/// Returns `Ok(None)` **before reading `appsync_url`** in the explicit-target
+/// case, which is what makes the "`--runtime-id` reaches a connection with zero
+/// AppSync calls" rule provable rather than assumed: with no endpoint
+/// configured, any attempt to list would be [`DiscoveryError::NoEndpoint`], so
+/// `Ok(None)` can only mean nothing was tried.
 ///
-/// Precedence:
-/// 1. `--runtime-id` (+ `--qualifier`, required in this path) → no network call
-/// 2. exactly one agent with exactly one qualifier → chosen silently
-/// 3. otherwise prompt
-pub async fn resolve_target(
+/// Takes the ID token **by value** rather than through a source trait, so this
+/// can run concurrently with the identity-pool exchange that builds the
+/// credential broker — the two need the same freshly-minted token and neither
+/// feeds the other, so running them back to back cost a round trip for nothing.
+pub async fn listing_for(
     config: &crate::config::AppConfig,
     args: &crate::args::ChatArgs,
-    tokens: &mut dyn IdTokenSource,
-    chooser: &dyn Chooser,
-) -> Result<Target, DiscoveryError> {
-    // First, and before anything reads `appsync_url` or asks for a token: an
-    // explicit target must not touch the network at all.
-    if let Some(target) = explicit_target(args)? {
-        return Ok(target);
+    id_token: &Secret<String>,
+) -> Result<Option<Vec<RuntimeSummary>>, DiscoveryError> {
+    if explicit_target(args)?.is_some() {
+        return Ok(None);
     }
 
     let appsync_url = config
         .appsync_url
         .as_deref()
         .ok_or(DiscoveryError::NoEndpoint)?;
-    let id_token = tokens.id_token().await?;
-
-    let agents = list_runtime_agents(appsync_url, &id_token).await?;
-    select_target(&agents, args.qualifier.as_deref(), chooser)
+    list_runtime_agents(appsync_url, id_token).await.map(Some)
 }
 
 /// Choose an agent and qualifier from a fetched listing.
@@ -722,62 +697,55 @@ mod tests {
         );
     }
 
-    /// Panics if asked for a token — nothing may authenticate to AppSync when the
-    /// user already named a runtime.
-    struct NeverTokenSource;
-
-    impl IdTokenSource for NeverTokenSource {
-        fn id_token<'a>(
-            &'a mut self,
-        ) -> std::pin::Pin<
-            Box<dyn Future<Output = Result<Secret<String>, DiscoveryError>> + Send + 'a>,
-        > {
-            panic!("must not fetch an ID token: discovery should have been skipped");
-        }
-    }
-
-    /// The acceptance check, in the form the plan describes but without a live
-    /// deployment: the endpoint points at a host that cannot resolve, so if
-    /// anything tried to reach it the call would fail rather than return.
-    #[tokio::test]
-    async fn an_explicit_target_reaches_a_connection_with_zero_appsync_calls() {
-        let config = crate::config::AppConfig {
+    fn config_with_endpoint(appsync_url: Option<&str>) -> crate::config::AppConfig {
+        crate::config::AppConfig {
             region: "us-west-2".into(),
             account_id: "123456789012".into(),
             user_pool_id: "us-west-2_Pool".into(),
             user_pool_client_id: "client".into(),
             identity_pool_id: "us-west-2:identity".into(),
-            appsync_url: Some("https://unreachable.invalid/graphql".into()),
-        };
+            appsync_url: appsync_url.map(str::to_string),
+        }
+    }
+
+    /// The acceptance check, proved rather than assumed: **no endpoint is
+    /// configured at all**, so anything that tried to list would return
+    /// `NoEndpoint`. Getting `Ok(None)` is only possible if nothing was tried.
+    ///
+    /// Pointing at an unreachable host would *not* prove this — that passes
+    /// whether or not a call was attempted.
+    #[tokio::test]
+    async fn an_explicit_target_needs_no_listing_and_no_endpoint() {
         let args = crate::args::ChatArgs {
             runtime_id: Some("weather_agent-AbCdEf1234".into()),
             qualifier: Some("DEFAULT".into()),
             ..Default::default()
         };
 
-        let target = resolve_target(&config, &args, &mut NeverTokenSource, &NeverChooser)
-            .await
-            .expect("explicit target must resolve offline");
+        let listing = listing_for(
+            &config_with_endpoint(None),
+            &args,
+            &Secret::new("unused".to_string()),
+        )
+        .await
+        .expect("an explicit target must need no listing");
+        assert!(listing.is_none(), "nothing may be fetched");
+
+        // And the target itself still resolves, from the flags alone.
+        let target = explicit_target(&args)
+            .expect("valid flags")
+            .expect("a target");
         assert_eq!(target.agent_runtime_id, "weather_agent-AbCdEf1234");
         assert_eq!(target.qualifier, "DEFAULT");
     }
 
     #[tokio::test]
     async fn discovery_without_an_endpoint_names_the_way_out() {
-        let config = crate::config::AppConfig {
-            region: "us-west-2".into(),
-            account_id: "123456789012".into(),
-            user_pool_id: "us-west-2_Pool".into(),
-            user_pool_client_id: "client".into(),
-            identity_pool_id: "us-west-2:identity".into(),
-            appsync_url: None,
-        };
-        // No `--runtime-id`, so discovery is required — and impossible.
-        let err = resolve_target(
-            &config,
+        // No `--runtime-id`, so a listing is required — and impossible.
+        let err = listing_for(
+            &config_with_endpoint(None),
             &crate::args::ChatArgs::default(),
-            &mut NeverTokenSource,
-            &NeverChooser,
+            &Secret::new("unused".to_string()),
         )
         .await
         .expect_err("must fail");

@@ -15,7 +15,7 @@ use std::pin::Pin;
 
 use crate::auth::{CredentialBroker, Identity};
 use crate::config::AppConfig;
-use crate::discovery::{Chooser, DiscoveryError, RuntimeSummary, Target};
+use crate::discovery::{DiscoveryError, RuntimeSummary, Target};
 use crate::protocol::SessionId;
 use crate::transport::{AgentConnection, ConnectParams, TransportError};
 
@@ -103,23 +103,6 @@ impl SessionManager {
         )
         .await?;
         Ok(Session { connection, target })
-    }
-
-    /// Resolve the target from the command line, prompting through `chooser`.
-    ///
-    /// Delegates to [`crate::discovery::resolve_target`]; it lives here only so
-    /// that `main` can hand config and the broker to this type once instead of
-    /// keeping its own copies alive for the whole run.
-    pub async fn resolve(
-        &mut self,
-        args: &crate::args::ChatArgs,
-        chooser: &dyn Chooser,
-    ) -> Result<Target, SessionError> {
-        // `self.config` and `self.broker` are disjoint fields, so the immutable
-        // borrow of one alongside the mutable borrow of the other is fine.
-        crate::discovery::resolve_target(&self.config, args, &mut self.broker, chooser)
-            .await
-            .map_err(SessionError::Discovery)
     }
 }
 
