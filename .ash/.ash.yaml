@@ -81,6 +81,37 @@ global_settings:
       path: '*pyproject.toml'
       reason: 'exclude-newer relative-duration needs uv>=0.9.17; repo/CI not yet pinned there. Tracked as a follow-up.'
 
+    # detect-secrets high-entropy hits in the `cli/` Rust crate. Every one is a
+    # test fixture or a lookup table, and each is pinned to its exact line so
+    # detect-secrets keeps scanning the rest of these files — they are the ones
+    # that handle real tokens at runtime, so blanket-silencing a whole file here
+    # would remove the check exactly where it matters most.
+    - rule_id: 'SECRET-HEX-HIGH-ENTROPY-STRING'
+      path: 'cli/src/args.rs'
+      line_start: 254
+      line_end: 254
+      reason: 'Fake 33-char session id in a clap parsing test. Session ids are not credentials; AgentCore rejects ids shorter than 33 chars, which is what this test pins.'
+    - rule_id: 'SECRET-BASE64-HIGH-ENTROPY-STRING'
+      path: 'cli/src/auth/login.rs'
+      line_start: 402
+      line_end: 402
+      reason: 'The base64url alphabet constant (A-Za-z0-9-_) used by the hand-rolled encoder in a test helper. A lookup table, not a secret.'
+    - rule_id: 'SECRET-BASE64-HIGH-ENTROPY-STRING'
+      path: 'cli/tests/presign.rs'
+      line_start: 44
+      line_end: 45
+      reason: "AWS's own documentation example secret key plus a fake session token, used to generate the golden SigV4 fixture with a fixed clock. Both are public example values; a real credential would make the fixture unreproducible."
+    - rule_id: 'SECRET-HEX-HIGH-ENTROPY-STRING'
+      path: 'cli/src/telemetry.rs'
+      line_start: 352
+      line_end: 352
+      reason: 'A made-up hex signature used to assert that URL redaction actually removes signatures from the log. The test would be pointless without a signature-shaped string.'
+    - rule_id: 'SECRET-HEX-HIGH-ENTROPY-STRING'
+      path: 'cli/src/protocol.rs'
+      line_start: 323
+      line_end: 323
+      reason: 'RFC 4122 example UUID with hyphens stripped, pinning that a 32-char id is rejected. A UUID is an identifier, not a credential.'
+
 converters:
   archive:
     enabled: false

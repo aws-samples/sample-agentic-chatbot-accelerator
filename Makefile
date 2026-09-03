@@ -24,6 +24,25 @@ run-ash:
 	pre-commit run --hook-stage manual ash
 
 # =============================================================================
+# Terminal CLI (cli/) — see cli/README.md
+# =============================================================================
+
+# Rust is not needed to deploy or use the accelerator; these targets exist only
+# because the Makefile is this repo's single entry point for automation. The
+# toolchain is pinned by cli/rust-toolchain.toml, so rustup fetches the right
+# version on first build.
+
+.PHONY: cli-build cli-test cli-lint
+cli-build:
+	cd cli && cargo build --release
+cli-test:
+	cd cli && cargo test
+# The gate the CLI's tasks require: clippy runs with -D warnings, so a warning
+# fails the build.
+cli-lint:
+	cd cli && cargo fmt --check && cargo clippy --all-targets -- -D warnings
+
+# =============================================================================
 # CDK Deployment
 # =============================================================================
 

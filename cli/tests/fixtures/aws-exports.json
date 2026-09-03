@@ -1,0 +1,25 @@
+{
+    "aws_project_region": "us-west-2",
+    "aws_account_id": "123456789012",
+    "aws_cognito_region": "us-west-2",
+    "aws_user_pools_id": "us-west-2_ExamplePool",
+    "aws_user_pools_web_client_id": "1example23client45id6789",
+    "aws_cognito_identity_pool_id": "us-west-2:11111111-2222-3333-4444-555555555555",
+    "Auth": {
+        "region": "us-west-2",
+        "userPoolId": "us-west-2_ExamplePool",
+        "userPoolWebClientId": "1example23client45id6789"
+    },
+    "aws_appsync_graphqlEndpoint": "https://example1234567890.appsync-api.us-west-2.amazonaws.com/graphql",
+    "aws_appsync_region": "us-west-2",
+    "aws_appsync_authenticationType": "AMAZON_COGNITO_USER_POOLS",
+    "aws_user_files_s3_bucket": "acastack-databucket-example",
+    "aws_user_files_s3_bucket_region": "us-west-2",
+    "aws_bedrock_supported_models": [
+        {
+            "provider": "anthropic",
+            "name": "Claude Sonnet 4.5",
+            "value": "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+        }
+    ]
+}

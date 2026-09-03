@@ -16,7 +16,8 @@ repos:
     rev: v1.31.1
     hooks:
       - id: typos
-        exclude: '.*\.svg$'
+        # Cargo.lock is crate names and 64-hex checksums, not prose.
+        exclude: '(.*\.svg$|^cli/Cargo\.lock$)'
 
   - repo: https://github.com/psf/black
     rev: 23.12.1
@@ -48,6 +49,34 @@ repos:
         language: system
         files: ^iac-terraform/.*\.tf$
         pass_filenames: false
+      # `cd cli` rather than `--manifest-path`: rustup picks the toolchain from the
+      # *working directory*, so running cargo from the repo root ignores
+      # cli/rust-toolchain.toml and a contributor on a pre-1.94.1 default gets the
+      # confusing SDK errors the pin exists to prevent. It also keeps these hooks
+      # identical to `make cli-lint`, which cds in.
+      - id: rust-fmt
+        name: Rust format
+        entry: bash -c 'cd cli && cargo fmt --'
+        language: system
+        files: ^cli/.*\.rs$
+        pass_filenames: false
+      # clippy and cargo-audit are manual-stage: a cold AWS-SDK + ratatui + tokio
+      # build takes minutes, which would make every commit painful.
+      # Run with: pre-commit run --hook-stage manual rust-clippy
+      - id: rust-clippy
+        name: Rust clippy
+        entry: bash -c 'cd cli && cargo clippy --all-targets -- -D warnings'
+        language: system
+        files: ^cli/.*\.(rs|toml)$
+        pass_filenames: false
+        stages: [manual]
+      - id: cargo-audit
+        name: cargo audit
+        entry: bash -c 'cd cli && cargo audit'
+        language: system
+        files: ^cli/Cargo\.lock$
+        pass_filenames: false
+        stages: [manual]
 
   - repo: https://github.com/bridgecrewio/checkov.git
     rev: 3.2.484

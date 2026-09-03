@@ -111,6 +111,7 @@ In summary, you will need:
 - **AWS CLI** (configured with appropriate credentials)
 - **Python 3.11+** (for Lambda development and linting)
 - **Git**
+- **Rust 1.94.1+** — only if you work on the terminal CLI in `cli/`. The toolchain is pinned by `cli/rust-toolchain.toml`, so `rustup` fetches the right version on first build. See the [CLI README](./cli/README.md).
 
 **Key Documentation Files**:
 - [Development Guide](./docs/src/development-guide.md) - Detailed development setup, project structure, and local development

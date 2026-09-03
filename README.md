@@ -67,6 +67,10 @@ Everything the Agent Factory UI does, you can also drive from a conversation in 
 
 > The plugin operates on a **deployed** stack via the Agent Factory API — it does not generate IaC. For build-time `config.yaml`/`tfvars`, see [How to Deploy](./docs/src/how-to-deploy.md).
 
+## Chat from a Terminal (`aca` CLI)
+
+`cli/` holds **`aca`**, a terminal client for chatting with a deployed agent — no browser, and no AWS credentials required. It bootstraps from the deployment's public `aws-exports.json`, authenticates with a Cognito user, and connects straight to the runtime over the same presigned WebSocket the web UI uses. Needs Rust (the only part of this repo that does). See the [CLI README](./cli/README.md).
+
 ## Documentation
 
 📚 **[Full documentation index](./docs/src/index.md)** — the complete map of guides, grouped by lifecycle stage.
