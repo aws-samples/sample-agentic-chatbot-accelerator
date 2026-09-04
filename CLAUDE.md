@@ -48,6 +48,7 @@ The browser talks to AgentCore **directly over WebSocket** (`wss://bedrock-agent
 - **Python**: PEP 8, type hints, Black + isort (88 cols), Ruff (E, F; E501 ignored), AWS Lambda Powertools for logging and tracing. Google-style docstrings (`Args:` / `Returns:` / `Raises:`, `name (type): description`) — match `src/agent-core/shared/`.
 - **TypeScript**: Prettier + ESLint. React uses functional components and Cloudscape.
 - **Comments explain *why***. The existing code comments carry a lot of hard-won context (protocol quirks, AWS bugs, deliberate trade-offs) — read them before "simplifying" something that looks redundant, and preserve them when refactoring.
+- **Keep doc comments short.** In an existing file, document a declaration the way the ones around it are documented; in a new one, follow the language's standard convention (see the Python and TypeScript entries above). The `local/user-stories/*/tasks/` API surfaces are sketches of intent — don't paste their doc comments or signatures in verbatim.
 - Commit each completed task rather than batching.
 
 ## Decisions and specs
