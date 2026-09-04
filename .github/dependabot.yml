@@ -1,2 +1,14 @@
+# .github/dependabot.yml
+# Dependabot is intentionally disabled — dependencies are managed manually.
 version: 2
-updates: []
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 0
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 0
