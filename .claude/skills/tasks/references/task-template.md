@@ -4,9 +4,11 @@
 |---|---|
 | **Status** | not-started |
 | **Depends on** | <T? or —> |
+| **Requirements** | <FR2, and any contract-row ids from the design doc> |
 
-**Satisfies (story Definition of Done):**
+**Satisfies:**
 - "<the story Definition-of-Done checkbox this task satisfies — one bullet per checkbox, quoted verbatim>"
+- <design doc `FR`/contract row this task discharges — one bullet each>
 
 ## Objective
 
@@ -41,6 +43,14 @@ class <Enum>(str, Enum):
 ## Notes / gotchas
 
 <API points likely to differ across versions, subtle ordering constraints, decisions the builder must honor. Point to the SDK example or docs to confirm exact signatures at build time. Omit if none.>
+
+## Edge cases owned
+
+<The design doc's Edge cases & failure handling rows that this task implements, copied verbatim (Condition / Behaviour / Rationale). These are requirements, not suggestions — each should be reflected in Acceptance or in the code's error paths. Omit only if the design doc assigns none to this task.>
+
+| Condition | Behaviour | Rationale |
+|---|---|---|
+| <copied from the design doc> | | |
 
 ## Acceptance
 
