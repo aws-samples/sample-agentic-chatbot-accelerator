@@ -382,6 +382,10 @@ export interface ExperimentsConfig {
  * This is the main configuration object that controls the entire system deployment.
  *
  * @property prefix - Prefix string used for naming AWS resources (e.g., "myapp" results in "myapp-lambda-xyz")
+ * @property deployUserInterface - Deploy the React web UI (website + logs buckets, CloudFront, aws-exports.json,
+ *                                 ReactAppBuild, data-bucket CORS, identity-pool upload grant). Absent means true,
+ *                                 applied by `withDefaults()` in bin/config.ts; read sites still use `?? true`
+ *                                 because getConfig() casts raw YAML instead of validating it.
  * @property enableGeoRestrictions - Flag to enable CloudFront geographic restrictions on content delivery
  * @property allowedGeoRegions - List of ISO 3166-1 alpha-2 country codes allowed to access the application when geo-restrictions are enabled
  * @property dataProcessingParameters - Optional configuration for document data processing pipelines (ingestion, transcription, etc.)
@@ -397,6 +401,8 @@ export interface SystemConfig {
     prefix: string;
 
     bedrockAccessRoleArn?: string;
+
+    deployUserInterface?: boolean;
 
     enableGeoRestrictions: boolean;
 
