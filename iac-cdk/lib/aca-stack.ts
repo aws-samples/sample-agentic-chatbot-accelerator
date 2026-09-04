@@ -49,6 +49,8 @@ export class AcaStack extends cdk.Stack {
                 : lambda.Architecture.X86_64;
         process.env.DOCKER_DEFAULT_PLATFORM = lambdaArchitecture.dockerPlatform;
 
+        const deployUserInterface = props.config.deployUserInterface ?? true;
+
         const shared = new Shared(this, "Shared", {
             lambdaArchitecture,
             boto3LayerBucket: props.builder.boto3Layer.artifactBucket,
@@ -150,16 +152,25 @@ export class AcaStack extends cdk.Stack {
             }),
         );
 
-        new UserInterface(this, "UserInterface", {
-            config: props.config,
-            userPoolId: auth.userPool.userPoolId,
-            userPoolClientId: auth.userPoolClient.userPoolClientId,
-            identityPool: auth.identityPool,
-            api: api,
-            dataBucket: dataProcessing?.dataBucket,
-            reactAppBuild: props.builder.reactAppBuild,
-            deployRegion: props.deployRegion,
-        });
+        if (deployUserInterface) {
+            if (!props.builder.reactAppBuild) {
+                throw new Error(
+                    "deployUserInterface is true but BuilderStack has no reactAppBuild artifact — " +
+                        "both stacks must be constructed from the same SystemConfig.",
+                );
+            }
+
+            new UserInterface(this, "UserInterface", {
+                config: props.config,
+                userPoolId: auth.userPool.userPoolId,
+                userPoolClientId: auth.userPoolClient.userPoolClientId,
+                identityPool: auth.identityPool,
+                api: api,
+                dataBucket: dataProcessing?.dataBucket,
+                reactAppBuild: props.builder.reactAppBuild,
+                deployRegion: props.deployRegion,
+            });
+        }
 
         new Cleanup(this, "Cleanup", {
             shared: shared,
@@ -176,25 +187,28 @@ export class AcaStack extends cdk.Stack {
         }
 
         // Suppressing CDK-NAG errors:
-        NagSuppressions.addResourceSuppressionsByPath(
-            this,
-            [
-                `/${this.stackName}/LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8a/ServiceRole/Resource`,
-                `/${this.stackName}/LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8a/ServiceRole/DefaultPolicy/Resource`,
+        // The CDKBucketDeployment singleton exists only when the UI does, and a
+        // suppression path that no longer resolves fails synth.
+        const implicitRolePaths = [
+            `/${this.stackName}/LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8a/ServiceRole/Resource`,
+            `/${this.stackName}/LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8a/ServiceRole/DefaultPolicy/Resource`,
+        ];
+        if (deployUserInterface) {
+            implicitRolePaths.push(
                 `/${this.stackName}/Custom::CDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C/ServiceRole/Resource`,
                 `/${this.stackName}/Custom::CDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C/ServiceRole/DefaultPolicy/Resource`,
-            ],
-            [
-                {
-                    id: "AwsSolutions-IAM4",
-                    reason: "IAM role implicitly created by CDK.",
-                },
-                {
-                    id: "AwsSolutions-IAM5",
-                    reason: "IAM role implicitly created by CDK.",
-                },
-            ],
-        );
+            );
+        }
+        NagSuppressions.addResourceSuppressionsByPath(this, implicitRolePaths, [
+            {
+                id: "AwsSolutions-IAM4",
+                reason: "IAM role implicitly created by CDK.",
+            },
+            {
+                id: "AwsSolutions-IAM5",
+                reason: "IAM role implicitly created by CDK.",
+            },
+        ]);
 
         // BucketNotificationsHandler only exists when dataProcessing is defined (S3 bucket with notifications)
         if (dataProcessing) {
@@ -228,18 +242,20 @@ export class AcaStack extends cdk.Stack {
                 },
             ]);
         }
-        NagSuppressions.addResourceSuppressionsByPath(
-            this,
-            [
-                `/${this.stackName}/Custom::CDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C/Resource`,
-            ],
-            [
-                {
-                    id: "AwsSolutions-L1",
-                    reason: "Resource automatically created by CDK.",
-                },
-            ],
-        );
+        if (deployUserInterface) {
+            NagSuppressions.addResourceSuppressionsByPath(
+                this,
+                [
+                    `/${this.stackName}/Custom::CDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756C/Resource`,
+                ],
+                [
+                    {
+                        id: "AwsSolutions-L1",
+                        reason: "Resource automatically created by CDK.",
+                    },
+                ],
+            );
+        }
 
         // AwsCustomResource singleton Lambda (used by DynamoDB table seeders)
         // Only exists when at least one AwsCustomResource is created (KB seeder, tool registry, or graph registry seeders)
