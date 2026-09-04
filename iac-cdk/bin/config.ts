@@ -7,10 +7,31 @@ import { existsSync, readFileSync } from "fs";
 import * as yaml from "js-yaml";
 import { SystemConfig } from "../lib/shared/types";
 
+/**
+ * Apply every default a raw config.yaml may omit.
+ *
+ * Exported so "an absent key means on" is assertable without reading a
+ * developer's real bin/config.yaml — getConfig() cannot be used for that, and
+ * decision 6 keeps the new tests off it entirely. Idempotent: applying it twice
+ * is applying it once.
+ *
+ * Note on `deployUserInterface`: getConfig() parses YAML with a cast, not a
+ * validation. Under CORE_SCHEMA only the literals `true` / `false` become real
+ * booleans, so `deployUserInterface: no` reaches us as the string "no" (which
+ * is truthy). Treat any non-`false` value as on, so a YAML 1.1 misspelling
+ * cannot silently delete the website.
+ */
+export function withDefaults(raw: SystemConfig): SystemConfig {
+    return {
+        ...raw,
+        deployUserInterface: raw.deployUserInterface === false ? false : true,
+    };
+}
+
 export function getConfig(): SystemConfig {
     if (existsSync("./bin/config.yaml")) {
         const yamlContent = readFileSync("./bin/config.yaml", "utf8");
-        return yaml.load(yamlContent, { schema: yaml.CORE_SCHEMA }) as SystemConfig;
+        return withDefaults(yaml.load(yamlContent, { schema: yaml.CORE_SCHEMA }) as SystemConfig);
     }
     // The default configuration:
     //  - Uses "dev" prefix for all resource names
@@ -23,7 +44,7 @@ export function getConfig(): SystemConfig {
     //  - Observability: Transaction Search disabled by default (see docs/src/troubleshooting.md)
     //      Set enableTransactionSearch to true if it's not already enabled in your AWS account.
     //      Without Transaction Search enabled, agent traces will not be generated.
-    return {
+    return withDefaults({
         prefix: "dev",
         enableGeoRestrictions: false,
         allowedGeoRegions: [],
@@ -79,7 +100,7 @@ export function getConfig(): SystemConfig {
         },
 
         experimentsConfig: {},
-    };
+    });
 }
 
 export const config: SystemConfig = getConfig();
