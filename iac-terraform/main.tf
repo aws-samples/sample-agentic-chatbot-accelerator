@@ -355,6 +355,7 @@ module "agent_core_apis" {
 # -----------------------------------------------------------------------------
 module "user_interface" {
   source = "./modules/user_interface"
+  count  = var.deploy_user_interface ? 1 : 0
 
   prefix = local.prefix
 
@@ -395,16 +396,18 @@ module "user_interface" {
 # Allows browser-based uploads via Amplify Storage
 # Must be defined at root level to access CloudFront domain from user_interface
 # Matches CDK configuration in iac-cdk/lib/user-interface/index.ts
+# Gated on deploy_user_interface as well: in CDK this rule lives inside the
+# UserInterface construct, so it disappears with it.
 # -----------------------------------------------------------------------------
 resource "aws_s3_bucket_cors_configuration" "data_bucket_cors" {
-  count  = var.data_processing != null ? 1 : 0
+  count  = var.data_processing != null && var.deploy_user_interface ? 1 : 0
   bucket = module.data_processing[0].data_bucket_id
 
   cors_rule {
     allowed_headers = ["*"]
     allowed_methods = ["PUT", "POST", "GET", "DELETE", "HEAD"]
     allowed_origins = [
-      "https://${module.user_interface.distribution_domain_name}",
+      "https://${module.user_interface[0].distribution_domain_name}",
       "http://localhost:3000"
     ]
     expose_headers = [
@@ -424,9 +427,11 @@ resource "aws_s3_bucket_cors_configuration" "data_bucket_cors" {
 # Allows browser-based uploads via Amplify Storage
 # Matches CDK configuration in iac-cdk/lib/user-interface/index.ts:
 #   props.identityPool.authenticatedRole.addToPrincipalPolicy(...)
+# Gated on deploy_user_interface as well: that call is inside the UserInterface
+# construct, so the grant disappears with it.
 # -----------------------------------------------------------------------------
 resource "aws_iam_role_policy" "cognito_data_bucket_access" {
-  count = var.data_processing != null ? 1 : 0
+  count = var.data_processing != null && var.deploy_user_interface ? 1 : 0
   name  = "${local.prefix}-cognito-data-bucket-access"
   role  = module.authentication.authenticated_role_name
 
