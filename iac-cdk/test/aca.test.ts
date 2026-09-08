@@ -8,10 +8,12 @@ import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { getConfig } from "../bin/config";
+import { getConfig, withDefaults } from "../bin/config";
 import { AcaStack } from "../lib/aca-stack";
 import { BuilderStack } from "../lib/builder-stack";
 import { modelsForRegion } from "../lib/shared/supported-models";
+import { SystemConfig } from "../lib/shared/types";
+import { DEPLOY_REGION, reactAppBuildResources, synthBuilder } from "./ui-gate-support";
 
 // Synthesize the application stack once and reuse the template across the
 // configuration-bundles migration assertions (T11). The stacks are wired the
@@ -31,10 +33,6 @@ function synthTemplate(): Template {
     acaStack.addDependency(builderStack);
     return Template.fromStack(acaStack);
 }
-
-// The deploy region the synth-slice assertions pin to. Must be a region seeded in
-// SUPPORTED_MODELS, or T3's synth guard would abort. Kept in sync with synthTemplate().
-const DEPLOY_REGION = "us-east-1";
 
 // The UserInterface construct writes aws-exports.json via s3deploy.Source.jsonData(),
 // which becomes a BucketDeployment asset: the JSON is emitted to a file under the synth
@@ -191,5 +189,40 @@ describe("region-supported-models synth slice (T5)", () => {
     test("emitted exports contain no [REGION-PREFIX] substitution token", () => {
         // T4/T6 invariant: ids are literal in IaC — no leftover substitution marker.
         expect(exportsText).not.toContain("[REGION-PREFIX]");
+    });
+});
+
+// The cheap half of the deployUserInterface gate: BuilderStack has no Lambdas to bundle, so
+// these synths cost seconds. The AcaStack half — CloudFront, the bucket deployment, the CORS
+// rule, the upload grant, template parity — is in ui-gate.slow.test.ts, which `npm test`
+// skips because three AcaStack synths take ~15 minutes.
+describe("deployUserInterface gate — BuilderStack (T4)", () => {
+    test("an absent key means on", () => {
+        expect(withDefaults({} as SystemConfig).deployUserInterface).toBe(true);
+    });
+
+    test("flag on: the ReactAppBuild project is created", () => {
+        expect(reactAppBuildResources(synthBuilder(true)).length).toBeGreaterThan(0);
+    });
+
+    test("flag off: no ReactAppBuild project, role or artifact bucket", () => {
+        const builder = synthBuilder(false);
+        expect(reactAppBuildResources(builder)).toHaveLength(0);
+        expect(JSON.stringify(builder.toJSON())).not.toContain("ReactAppBuild");
+    });
+
+    test("flag off removes only the ReactAppBuild resources", () => {
+        // Guards the other direction: gating the project must not disturb the rest of the
+        // build stack. Everything else, outputs included, has to match resource for resource.
+        const on = synthBuilder(true).toJSON();
+        const off = synthBuilder(false).toJSON();
+        const withoutReact = (template: any) => {
+            const copy = JSON.parse(JSON.stringify(template));
+            for (const id of Object.keys(copy.Resources)) {
+                if (id.startsWith("ReactAppBuild")) delete copy.Resources[id];
+            }
+            return copy;
+        };
+        expect(withoutReact(off)).toEqual(withoutReact(on));
     });
 });
