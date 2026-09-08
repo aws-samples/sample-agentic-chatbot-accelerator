@@ -313,6 +313,237 @@ fn ask_required(prompter: &dyn Prompter, field: &str, help: &str) -> Result<Stri
     Err(ConfigError::Aborted)
 }
 
+/// Launches an editor on a path and waits for it.
+///
+/// A trait so the three outcomes — saved, non-zero exit, no editor at all — are
+/// testable without spawning a process.
+pub trait EditorLauncher {
+    /// Run the editor to completion.
+    ///
+    /// Must inherit stdin/stdout/stderr: a full-screen editor that cannot see the
+    /// terminal renders nothing and appears to hang.
+    fn launch(&self, path: &Path) -> Result<Launched, std::io::Error>;
+}
+
+/// How a [`EditorLauncher::launch`] attempt ended.
+///
+/// Three states rather than the `bool` the task plan named, because "no editor on
+/// this machine" is a documented outcome of its own and a `bool` cannot carry it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Launched {
+    /// The editor ran and exited zero.
+    Saved,
+    /// The editor exited non-zero, e.g. vim's `:cq`.
+    Abandoned,
+    /// Neither `$VISUAL` nor `$EDITOR` is set and there is no `vi` on `PATH`.
+    NoEditor,
+}
+
+/// Spawns the resolved editor, inheriting the terminal.
+pub struct TerminalEditor;
+
+impl EditorLauncher for TerminalEditor {
+    fn launch(&self, path: &Path) -> Result<Launched, std::io::Error> {
+        let Some(editor) = resolve_editor() else {
+            return Ok(Launched::NoEditor);
+        };
+
+        // `status()`, not `output()`: capturing stdout would leave a full-screen
+        // editor with nothing to draw on.
+        let status = std::process::Command::new(&editor).arg(path).status()?;
+        Ok(if status.success() {
+            Launched::Saved
+        } else {
+            Launched::Abandoned
+        })
+    }
+}
+
+/// What [`edit_config`] did, so the caller prints the right sentence.
+#[derive(Debug, PartialEq, Eq)]
+pub enum EditOutcome {
+    /// Edited, re-read, validated, and left at mode `0600`.
+    Edited,
+    /// The editor exited non-zero; the file was left exactly as it was.
+    Abandoned,
+    /// No editor was available; the path and current contents were printed.
+    Printed,
+}
+
+/// Open the configuration file for editing, bootstrapping one if absent.
+///
+/// Never calls [`resolve`]: the command exists to repair a file `resolve()` may
+/// reject, so resolving first would make it unusable in exactly the case it is
+/// for. Dispatched before config resolution, like `logout`.
+///
+/// Async only because bootstrapping goes through [`interactive_setup`], which may
+/// fetch an exports file.
+pub async fn edit_config(
+    prompter: &dyn Prompter,
+    editor: &dyn EditorLauncher,
+) -> Result<EditOutcome, ConfigError> {
+    edit_config_at(&config_path(), prompter, editor, stdin_is_tty()).await
+}
+
+/// Testable core of [`edit_config`]: every filesystem access goes through `path`.
+///
+/// `interactive` is passed in rather than read from stdin so the reopen offer can
+/// be exercised both ways — under `cargo test` stdin may or may not be a terminal
+/// depending on how the run was launched, and a test that prompts would hang.
+async fn edit_config_at(
+    path: &Path,
+    prompter: &dyn Prompter,
+    editor: &dyn EditorLauncher,
+    interactive: bool,
+) -> Result<EditOutcome, ConfigError> {
+    // Only a *missing* file is bootstrapped. A file that exists but does not parse
+    // is opened as-is: repairing it by hand is the whole point of the command, and
+    // overwriting it with prompted answers would destroy the evidence.
+    if !path.exists() {
+        let mut partial = Partial::default();
+        interactive_setup(&mut partial, prompter).await?;
+        save_config_at(path, &partial.into_complete()?)?;
+    }
+
+    loop {
+        match editor.launch(path).map_err(|source| ConfigError::Editor {
+            path: path.to_path_buf(),
+            source,
+        })? {
+            Launched::NoEditor => {
+                eprintln!(
+                    "aca: no editor found — set $EDITOR (or $VISUAL) to edit this file in place"
+                );
+                println!("{}", path.display());
+                if let Ok(body) = std::fs::read_to_string(path) {
+                    print!("{body}");
+                }
+                return Ok(EditOutcome::Printed);
+            }
+            Launched::Abandoned => {
+                // Not even the permissions are touched: treating an aborted edit
+                // as a save is data loss.
+                return Ok(EditOutcome::Abandoned);
+            }
+            Launched::Saved => match validation_failure(path) {
+                None => {
+                    reassert_private_mode(path).map_err(|source| ConfigError::Editor {
+                        path: path.to_path_buf(),
+                        source,
+                    })?;
+                    return Ok(EditOutcome::Edited);
+                }
+                Some(detail) => {
+                    let invalid = ConfigError::InvalidFile {
+                        path: path.to_path_buf(),
+                        detail,
+                    };
+                    // A non-interactive run cannot answer the reopen offer, so it
+                    // exits non-zero instead of looping.
+                    if !interactive || !wants_reopen(prompter, &invalid)? {
+                        return Err(invalid);
+                    }
+                }
+            },
+        }
+    }
+}
+
+/// Why the file on disk is not a usable configuration, or `None` if it is.
+///
+/// Validates by re-reading rather than trusting what the editor was handed, and
+/// reuses [`Partial::into_complete`] so "usable" cannot drift from [`resolve`]'s
+/// definition of it.
+fn validation_failure(path: &Path) -> Option<String> {
+    let raw = match std::fs::read_to_string(path) {
+        Ok(raw) => raw,
+        Err(err) => return Some(err.to_string()),
+    };
+    match serde_json::from_str::<AppConfig>(&raw) {
+        Err(err) => Some(err.to_string()),
+        Ok(config) => Partial::from(config)
+            .into_complete()
+            .err()
+            .map(|err| match err {
+                // Rendered without the `--aws-exports-url` advice `resolve()` adds:
+                // the user is editing a file, and flags are not what they reach for.
+                ConfigError::Incomplete(message) => message
+                    .split("; pass ")
+                    .next()
+                    .unwrap_or(&message)
+                    .to_string(),
+                other => other.to_string(),
+            }),
+    }
+}
+
+/// Report `invalid` and ask whether to reopen the editor. Anything but `n` is yes.
+fn wants_reopen(prompter: &dyn Prompter, invalid: &ConfigError) -> Result<bool, ConfigError> {
+    eprintln!("aca: {invalid}");
+    let answer = prompter.ask("reopen the file", "Y/n")?;
+    Ok(!answer.trim().eq_ignore_ascii_case("n"))
+}
+
+/// `$VISUAL` → `$EDITOR` → `vi` if on `PATH` → `None`.
+///
+/// Blank env vars are ignored, like every other env read here. `None` means print
+/// the path and contents rather than guess: guessing an editor is hostile, and
+/// hard-erroring hides the file the user came for.
+pub(crate) fn resolve_editor() -> Option<std::ffi::OsString> {
+    non_empty_env("VISUAL")
+        .or_else(|| non_empty_env("EDITOR"))
+        .map(std::ffi::OsString::from)
+        .or_else(|| on_path("vi").map(std::ffi::OsString::from))
+}
+
+/// The first executable named `name` on `PATH`.
+///
+/// Probed rather than assumed: a container image often has no `vi`, and spawning
+/// one that does not exist would report a bare `No such file or directory`.
+fn on_path(name: &str) -> Option<String> {
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .map(|dir| dir.join(name))
+        .find(|candidate| is_executable(candidate))
+        .map(|_| name.to_string())
+}
+
+#[cfg(unix)]
+fn is_executable(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+
+    std::fs::metadata(path)
+        .is_ok_and(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
+}
+
+#[cfg(not(unix))]
+fn is_executable(path: &Path) -> bool {
+    path.is_file()
+}
+
+/// Re-apply `0600` to a file another writer may have replaced.
+///
+/// [`write_private_file`] only tightens permissions on its *own* writes, and an
+/// editor that saves by rename leaves a fresh file at the umask default —
+/// commonly `0644`.
+#[cfg(unix)]
+pub(crate) fn reassert_private_mode(path: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let mut permissions = std::fs::metadata(path)?.permissions();
+    if permissions.mode() & 0o177 != 0 {
+        permissions.set_mode(0o600);
+        std::fs::set_permissions(path, permissions)?;
+    }
+    Ok(())
+}
+
+/// No-op off unix, matching how [`write_private_file`] is already split.
+#[cfg(not(unix))]
+pub(crate) fn reassert_private_mode(_path: &Path) -> std::io::Result<()> {
+    Ok(())
+}
+
 /// Fetch and parse the deployment's public exports file. No credentials.
 ///
 /// Deliberately sends no `Authorization` header and signs nothing: the file is
@@ -424,6 +655,26 @@ pub enum ConfigError {
     /// written: a partly-answered config is worse than none.
     #[error("configuration setup abandoned; nothing was saved")]
     Aborted,
+    /// The file on disk is not a usable configuration, after an edit.
+    ///
+    /// Distinct from [`ConfigError::Incomplete`]: that one is about a merge across
+    /// every layer, this one about a single file the user just saved, so the
+    /// message points at the file rather than at flags.
+    #[error("{path} is not a usable configuration: {detail}", path = path.display())]
+    InvalidFile {
+        /// The file that was read back.
+        path: PathBuf,
+        /// A parse error, or the required fields still missing.
+        detail: String,
+    },
+    /// The editor could not be run, or its result could not be secured.
+    #[error("could not edit {path}: {source}", path = path.display())]
+    Editor {
+        /// The file being edited.
+        path: PathBuf,
+        /// Underlying IO error.
+        source: std::io::Error,
+    },
 }
 
 /// A partially-resolved configuration: one merge layer.
@@ -1288,6 +1539,212 @@ mod tests {
 
         assert!(matches!(err, ConfigError::Aborted), "{err:?}");
         assert!(!path.exists(), "an abandoned setup must write nothing");
+        cleanup(&path);
+    }
+
+    /// An editor stand-in: replaces the file's contents, or reports an outcome.
+    ///
+    /// `writes` is what each successive launch saves; once exhausted the file is
+    /// left alone, which is how the reopen loop is kept finite in a test.
+    struct FakeEditor {
+        result: Launched,
+        writes: RefCell<std::collections::VecDeque<String>>,
+        launches: std::cell::Cell<usize>,
+    }
+
+    impl FakeEditor {
+        fn saving(bodies: &[&str]) -> Self {
+            Self {
+                result: Launched::Saved,
+                writes: RefCell::new(bodies.iter().map(|body| body.to_string()).collect()),
+                launches: std::cell::Cell::new(0),
+            }
+        }
+
+        fn reporting(result: Launched) -> Self {
+            Self {
+                result,
+                writes: RefCell::new(std::collections::VecDeque::new()),
+                launches: std::cell::Cell::new(0),
+            }
+        }
+    }
+
+    impl EditorLauncher for FakeEditor {
+        fn launch(&self, path: &Path) -> Result<Launched, std::io::Error> {
+            self.launches.set(self.launches.get() + 1);
+            if let Some(body) = self.writes.borrow_mut().pop_front() {
+                // Written by an ordinary create, i.e. at the umask default, which
+                // is how an editor that saves by rename leaves the file.
+                std::fs::write(path, body)?;
+            }
+            Ok(self.result)
+        }
+    }
+
+    /// Serialised `sample_config()`, the shape a valid edit leaves behind.
+    fn valid_body() -> String {
+        serde_json::to_string_pretty(&sample_config()).expect("serialise")
+    }
+
+    /// A seeded config file, plus its path.
+    fn seeded_config_file() -> PathBuf {
+        let path = temp_config_path();
+        save_config_at(&path, &sample_config()).expect("seed");
+        path
+    }
+
+    #[tokio::test]
+    async fn an_absent_file_is_bootstrapped_by_the_setup_prompts() {
+        let path = temp_config_path();
+        let prompter = ScriptedPrompter::answering(FULL_SETUP);
+        let editor = FakeEditor::saving(&[]);
+
+        let outcome = edit_config_at(&path, &prompter, &editor, false)
+            .await
+            .expect("bootstrap then edit");
+
+        assert_eq!(outcome, EditOutcome::Edited);
+        assert_eq!(load_config_at(&path), Some(prompted_config()));
+        cleanup(&path);
+    }
+
+    /// An existing file is never overwritten by prompts: repairing it by hand is
+    /// the point, and a corrupt one is evidence.
+    #[tokio::test]
+    async fn an_existing_file_is_opened_rather_than_bootstrapped() {
+        let path = temp_config_path();
+        create_private_dir(path.parent().expect("parent")).expect("mkdir");
+        std::fs::write(&path, "{ not json").expect("seed");
+        let editor = FakeEditor::saving(&[&valid_body()]);
+
+        let outcome = edit_config_at(&path, &NeverPrompter, &editor, false)
+            .await
+            .expect("a corrupt file must be editable");
+
+        assert_eq!(outcome, EditOutcome::Edited);
+        assert_eq!(load_config_at(&path), Some(sample_config()));
+        cleanup(&path);
+    }
+
+    #[tokio::test]
+    async fn an_editor_that_exits_non_zero_changes_nothing() {
+        let path = seeded_config_file();
+        let before = std::fs::read(&path).expect("read");
+        let editor = FakeEditor::reporting(Launched::Abandoned);
+
+        let outcome = edit_config_at(&path, &NeverPrompter, &editor, false)
+            .await
+            .expect("an abandoned edit is not an error");
+
+        assert_eq!(outcome, EditOutcome::Abandoned);
+        assert_eq!(std::fs::read(&path).expect("read"), before);
+        cleanup(&path);
+    }
+
+    #[tokio::test]
+    async fn no_editor_prints_the_file_instead_of_failing() {
+        let path = seeded_config_file();
+        let editor = FakeEditor::reporting(Launched::NoEditor);
+
+        let outcome = edit_config_at(&path, &NeverPrompter, &editor, false)
+            .await
+            .expect("no editor is not an error");
+
+        assert_eq!(outcome, EditOutcome::Printed);
+        assert_eq!(load_config_at(&path), Some(sample_config()));
+        cleanup(&path);
+    }
+
+    /// The case `aca config` has to survive, since it bypasses `resolve()`.
+    #[tokio::test]
+    async fn an_invalid_edit_is_reported_and_not_re_offered_without_a_tty() {
+        let path = seeded_config_file();
+        let editor = FakeEditor::saving(&["{ broken", &valid_body()]);
+
+        let err = edit_config_at(&path, &NeverPrompter, &editor, false)
+            .await
+            .expect_err("invalid JSON must not pass");
+
+        let ConfigError::InvalidFile { path: named, .. } = &err else {
+            panic!("expected InvalidFile, got {err:?}");
+        };
+        assert_eq!(named, &path, "the message must name the file");
+        assert_eq!(editor.launches.get(), 1, "must not reopen without a TTY");
+        cleanup(&path);
+    }
+
+    /// A field dropped by the editor is as invalid as unparsable JSON, and the
+    /// message names the field rather than a flag.
+    #[tokio::test]
+    async fn an_edit_that_drops_a_required_field_is_rejected() {
+        let path = seeded_config_file();
+        let mut blanked = sample_config();
+        blanked.region = String::new();
+        let editor = FakeEditor::saving(&[&serde_json::to_string(&blanked).expect("serialise")]);
+
+        let err = edit_config_at(&path, &NeverPrompter, &editor, false)
+            .await
+            .expect_err("a missing field must not pass");
+
+        let ConfigError::InvalidFile { detail, .. } = &err else {
+            panic!("expected InvalidFile, got {err:?}");
+        };
+        assert!(detail.contains("region"), "{detail:?} omits the field");
+        assert!(
+            !detail.contains("--aws-exports-url"),
+            "{detail:?} points at a flag, not at the file"
+        );
+        cleanup(&path);
+    }
+
+    #[tokio::test]
+    async fn an_interactive_run_reopens_until_the_file_validates() {
+        let path = seeded_config_file();
+        let editor = FakeEditor::saving(&["{ broken", &valid_body()]);
+        let prompter = ScriptedPrompter::answering(&["y"]);
+
+        let outcome = edit_config_at(&path, &prompter, &editor, true)
+            .await
+            .expect("the second edit is valid");
+
+        assert_eq!(outcome, EditOutcome::Edited);
+        assert_eq!(editor.launches.get(), 2);
+        cleanup(&path);
+    }
+
+    #[tokio::test]
+    async fn declining_the_reopen_offer_reports_the_invalid_file() {
+        let path = seeded_config_file();
+        let editor = FakeEditor::saving(&["{ broken", &valid_body()]);
+        let prompter = ScriptedPrompter::answering(&["n"]);
+
+        let err = edit_config_at(&path, &prompter, &editor, true)
+            .await
+            .expect_err("declining must not resolve");
+
+        assert!(matches!(err, ConfigError::InvalidFile { .. }), "{err:?}");
+        assert_eq!(editor.launches.get(), 1);
+        cleanup(&path);
+    }
+
+    /// An editor that saves by rename leaves a fresh file at the umask default,
+    /// which `write_private_file` never sees.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_world_readable_save_is_tightened_again() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let path = seeded_config_file();
+        let editor = FakeEditor::saving(&[&valid_body()]);
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).expect("loosen");
+
+        edit_config_at(&path, &NeverPrompter, &editor, false)
+            .await
+            .expect("edit");
+
+        let mode = std::fs::metadata(&path).expect("stat").permissions().mode();
+        assert_eq!(mode & 0o777, 0o600, "an edited config is not user-only");
         cleanup(&path);
     }
 
