@@ -227,6 +227,7 @@ fn timed(since: std::time::Instant, step: &str) -> std::time::Instant {
 }
 
 /// A user-facing failure: one actionable sentence plus a scriptable code.
+#[derive(Debug)]
 struct Failure {
     code: u8,
     message: String,
@@ -239,6 +240,35 @@ impl Failure {
             message: message.to_string(),
         }
     }
+}
+
+/// `aca config`: print the path, or open the file for editing.
+///
+/// `--path` prints to stdout with no decoration, so `$(aca config --path)` works;
+/// every status line goes to stderr like the rest of the crate.
+async fn config_command(args: crate::args::ConfigCommandArgs) -> Result<ExitCode, Failure> {
+    use crate::config::EditOutcome;
+
+    if args.path {
+        println!("{}", crate::config::config_path().display());
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    let outcome = crate::config::edit_config(
+        &crate::config::TerminalPrompter,
+        &crate::config::TerminalEditor,
+    )
+    .await
+    .map_err(|err| Failure::new(exit::CONFIG, err))?;
+
+    match outcome {
+        EditOutcome::Edited => progress("configuration saved"),
+        EditOutcome::Abandoned => progress("editor exited without saving — nothing changed"),
+        // The path and contents have already gone to stdout; saying more would
+        // just push them off the screen.
+        EditOutcome::Printed => {}
+    }
+    Ok(ExitCode::SUCCESS)
 }
 
 async fn dispatch(cli: Cli) -> Result<ExitCode, Failure> {
@@ -263,6 +293,9 @@ async fn dispatch(cli: Cli) -> Result<ExitCode, Failure> {
             progress("signed out — the next run will ask for your password");
             return Ok(ExitCode::SUCCESS);
         }
+        // Also before resolution, and for a stronger reason than `logout`: a
+        // broken config file must not disable the command that repairs it.
+        Some(Command::Config(args)) => return config_command(args).await,
     };
 
     let config = crate::config::resolve(&cli.config)
@@ -552,6 +585,28 @@ mod tests {
                 "{name} is documented but unparsed"
             );
         }
+    }
+
+    /// `aca config` is dispatched *before* `config::resolve()`, so a machine with
+    /// no usable configuration can still reach the command that fixes it.
+    ///
+    /// `no_cache` is what makes this an assertion rather than a coincidence: it
+    /// takes any config file the developer running the tests happens to have out
+    /// of play, so resolution could not succeed if it ran at all.
+    #[tokio::test]
+    async fn config_is_handled_before_configuration_is_resolved() {
+        let cli = Cli {
+            command: Some(Command::Config(crate::args::ConfigCommandArgs {
+                path: true,
+            })),
+            config: crate::args::ConfigArgs {
+                no_cache: true,
+                ..Default::default()
+            },
+        };
+
+        let code = dispatch(cli).await.expect("--path must not need config");
+        assert_eq!(code, ExitCode::SUCCESS);
     }
 
     #[test]

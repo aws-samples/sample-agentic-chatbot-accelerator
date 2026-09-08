@@ -37,6 +37,16 @@ pub enum Command {
     Agents(AgentsArgs),
     /// Forget the saved session, so the next run asks for a password.
     Logout,
+    /// Open the CLI's configuration file in an editor, creating one if needed.
+    Config(ConfigCommandArgs),
+}
+
+/// Inputs for `aca config`.
+#[derive(Args, Debug, Default)]
+pub struct ConfigCommandArgs {
+    /// Print the configuration file's path and exit, for scripts.
+    #[arg(long)]
+    pub path: bool,
 }
 
 /// Inputs for `aca agents`.
@@ -287,6 +297,21 @@ mod tests {
 
         // Chat-shaped options are deliberately not offered here.
         assert!(Cli::try_parse_from(["aca", "agents", "--message", "hi"]).is_err());
+    }
+
+    #[test]
+    fn config_subcommand_parses_with_and_without_path() {
+        let cli = Cli::try_parse_from(["aca", "config"]).expect("config must parse");
+        let Some(Command::Config(args)) = cli.command else {
+            panic!("wrong command");
+        };
+        assert!(!args.path);
+
+        let cli = Cli::try_parse_from(["aca", "config", "--path"]).expect("--path must parse");
+        let Some(Command::Config(args)) = cli.command else {
+            panic!("wrong command");
+        };
+        assert!(args.path);
     }
 
     /// clap's own consistency checks (duplicate flags, bad `short`/`long`
