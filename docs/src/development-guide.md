@@ -91,6 +91,25 @@ This feature is enabled when both `knowledgeBaseParameters` and `dataProcessingP
 
 See [How to Deploy - Deployment Scenarios](./how-to-deploy.md#deployment-scenarios) for configuration examples.
 
+### React Web UI Feature
+
+The web UI is deployed by default. Setting `deployUserInterface: false` in `iac-cdk/bin/config.yaml` — or `deploy_user_interface = false` in Terraform, which exposes the same flag with the same default — deploys the backend without it.
+
+What is not created:
+- **Website bucket**, **website logs bucket**, and **distribution logs bucket** (`iac-cdk/lib/user-interface/`)
+- **CloudFront distribution**
+- **`aws-exports.json`**, along with the `BucketDeployment` that writes it
+- **`ReactAppBuild`** CodeBuild project in `BuilderStack` (`iac-cdk/lib/builder-stack.ts`), so no React build runs during `make deploy`
+- **Data-bucket CORS rule** and the **Cognito identity-pool S3 upload grant** — both exist only for browser uploads
+
+Agents, the AppSync API, and the Knowledge Base are unaffected. The deployment is reached with the [`aca` CLI](../../cli/README.md), which requires no AWS credentials; it prompts for the identifiers the missing `aws-exports.json` would have supplied, and `aca config` reopens them for editing.
+
+Two consequences worth stating plainly: there is no web UI at all, and **browser document upload stops working** even when `dataProcessingParameters` is configured, because the CORS rule and the upload grant go with the UI. Uploading becomes an operator-side S3 write.
+
+> **Flipping this off on an existing deployment is destructive.** It **deletes** the website bucket and its contents — the buckets are configured `DESTROY` with `autoDeleteObjects` — and CloudFront takes roughly 15 minutes to disable and delete. Terraform additionally re-addresses the module; `iac-terraform/moved.tf` is what keeps `terraform plan` from proposing to destroy and recreate the whole website tier when the flag is left on.
+
+This is **not** a way to get a private website. It removes hosting altogether; private hosting is separate work.
+
 ## Development Setup
 
 ### 1. Environment Setup
@@ -185,6 +204,8 @@ npm run gen
 ```
 
 ### Local development
+
+This loop needs a deployment with the UI **on**: it starts by copying `aws-exports.json` from CloudFront, and a `deployUserInterface: false` deployment serves neither. Deploy with the UI enabled to do frontend work.
 
 Go to `<app cloudfront URL>/aws-exports.json` and copy its content to `src/user-interface/react-app/public/aws-exports.json`, then run `npm run dev` from the [react app folder](../../src/user-interface/react-app).
 

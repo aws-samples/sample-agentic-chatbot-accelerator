@@ -6,10 +6,10 @@ The deliverable of a deployment is the **agent**; the web UI is one way to reach
 it. This CLI is another, and it needs nothing but a CloudFront URL and a Cognito
 user — no AWS credentials, no `~/.aws`, no IAM role.
 
-> The accelerator still deploys a CloudFront distribution today. Making the
-> `UserInterface` construct optional is a separate piece of work, and the CLI
-> currently *depends* on that distribution: the public `aws-exports.json` it
-> serves is how the CLI bootstraps.
+The web UI is optional: a deployment with `deployUserInterface: false` has no
+CloudFront distribution and so serves no `aws-exports.json`. `aca` is then the
+only client, and it asks for the identifiers it needs on first run — see
+[Configuration](#configuration).
 
 ## Contents
 
@@ -17,6 +17,9 @@ user — no AWS credentials, no `~/.aws`, no IAM role.
 2. [Install](#install)
 3. [Quick start](#quick-start)
 4. [Configuration](#configuration)
+   - [First run](#first-run)
+   - [The configuration file](#the-configuration-file)
+   - [`aca config`](#aca-config)
 5. [Running without `aws-exports.json`](#running-without-aws-exportsjson)
 6. [Choosing an agent](#choosing-an-agent)
 7. [In-chat commands](#in-chat-commands)
@@ -71,6 +74,12 @@ That fetches the deployment's public `aws-exports.json` (no credentials, no
 signature — CloudFront serves it publicly), prompts for your email and password,
 picks the agent if there is only one, and opens a chat window.
 
+**On a deployment with no web UI there is no exports URL.** Run a bare `aca` and
+answer the questions it asks — press Enter past the first one, since there is no
+`aws-exports.json` to fetch. [Running without
+`aws-exports.json`](#running-without-aws-exportsjson) covers where the answers
+come from.
+
 **Your first login will ask you to set a new password.** Every user in this
 accelerator is admin-created, so accounts start in `FORCE_CHANGE_PASSWORD`.
 Cognito allows roughly three minutes to answer that challenge — answer promptly
@@ -82,7 +91,7 @@ round trip while the ID token is still fresh. `aca logout` ends it early;
 `--fresh-login` skips it once. Read the security notes before relying on it: that
 file holds a refresh token.
 
-Every setting the exports file supplied is cached afterwards, so subsequent runs
+Every setting the exports file supplied is saved afterwards, so subsequent runs
 need no flags at all:
 
 ```bash
@@ -91,13 +100,19 @@ aca chat
 
 ## Configuration
 
-Three layers, highest precedence first. The first layer to supply a field wins.
+Four layers, highest precedence first. The first layer to supply a field wins.
 
 1. **Flags and `ACA_*` environment variables** — an explicit override always
    wins, so a split or hand-rolled stack can be addressed field by field.
-2. **The on-disk cache** — non-secret identifiers only.
+2. **The configuration file** — non-secret identifiers only.
 3. **The deployment's public `aws-exports.json`** — fetched only when something
-   is still missing, so a warm cache means no network call at all.
+   is still missing, so a warm config file means no network call at all.
+4. **Interactive setup** — when everything above has been consulted and a field
+   is still missing, `aca` asks for it, and saves the answers.
+
+Layer 4 only runs when stdin is a terminal. **A non-interactive run never
+prompts**: it fails with every missing field and the flag that supplies it, so a
+CI job fails fast instead of blocking on a question nothing can answer.
 
 | Flag | Environment variable | Meaning |
 |---|---|---|
@@ -108,7 +123,7 @@ Three layers, highest precedence first. The first layer to supply a field wins.
 | `--user-pool-client-id` | `ACA_USER_POOL_CLIENT_ID` | Cognito user pool **app client** id. |
 | `--identity-pool-id` | `ACA_IDENTITY_POOL_ID` | Cognito identity pool id, exchanged for the SigV4 credentials. |
 | `--appsync-url` | `ACA_APPSYNC_URL` | AppSync GraphQL endpoint. Used **only** to list agents. |
-| `--no-cache` | — | Skip reading *and* writing the cache. |
+| `--no-cache` | — | Skip reading *and* writing the configuration file. Prompts still happen; the answers just are not saved. |
 | `--email` | `ACA_EMAIL` | Cognito user's email. Prompted when absent. |
 
 ### Config flags come *before* the subcommand
@@ -125,38 +140,142 @@ and this is a parse error:
 aca chat --no-cache          # error: unexpected argument '--no-cache'
 ```
 
-### The cache
+### First run
+
+With nothing configured and no flags, `aca` asks. The first question is the
+deployment's `aws-exports.json` URL, because for a deployment **with** a web UI
+that one answer supplies everything:
+
+```
+aca needs to know which deployment to reach.
+aws-exports.json URL (blank if this deployment has no web UI):
+```
+
+Press Enter to skip it — that is the path for a UI-off deployment — and `aca`
+asks for each identifier in turn instead. A URL that turns out to be stale is not
+fatal either: the failure is reported and the per-field questions follow, so one
+wrong paste does not end the run.
+
+The AppSync endpoint is asked for last and is **optional**. Leaving it blank
+means `aca agents` and the `/agent` picker have nothing to query, and
+`--runtime-id` with `--qualifier` is how you reach a runtime instead.
+
+Answers are saved, so this happens once. `--no-cache` prompts without saving.
+
+### The configuration file
 
 `~/.config/aca-cli/config.json` (honours `XDG_CONFIG_HOME`), written `0600`
 inside a `0700` directory. It holds the six identifiers above and **nothing
 else** — no tokens, no credentials. That is structural rather than filtered: the
 type that gets serialised has no secret field.
 
-Delete the file, or pass `--no-cache`, to start over.
+It is meant to be read and edited: it is the record of which deployment this CLI
+is pointed at. Delete it, or pass `--no-cache`, to start over.
 
-> **Known limitation: the cache is not keyed by source URL.** If you point
-> `--aws-exports-url` at a *second* deployment while a complete cache exists, the
-> cached deployment wins — because no field is left for the fetch to supply, so
+> **Known limitation: it is not keyed by source URL.** If you point
+> `--aws-exports-url` at a *second* deployment while a complete config exists, the
+> stored deployment wins — because no field is left for the fetch to supply, so
 > no fetch happens. Use `--no-cache` when switching deployments.
+
+### `aca config`
+
+```bash
+aca config          # open the file in $VISUAL, $EDITOR, or vi
+aca config --path   # print its location and exit
+```
+
+`--path` prints the path alone, on stdout, so `$(aca config --path)` works in a
+script.
+
+With no editor available — no `$VISUAL`, no `$EDITOR`, no `vi` on `PATH` — it
+prints the path and the current contents rather than guessing at an editor or
+failing. If there is no file yet, it runs the first-run questions above to create
+one, then opens it.
+
+On save the file is re-read and validated. Invalid JSON, or a required field left
+blank, is reported and you are offered the editor again; an editor that exits
+non-zero (`:cq` in vim) leaves the file exactly as it was. Permissions are
+re-asserted to `0600` after a successful edit, because an editor that saves by
+rename leaves a fresh file at your umask default.
+
+**This command works on a broken file by design.** It never resolves
+configuration first — that would make the one command that can repair an
+unusable file unusable itself.
 
 ## Running without `aws-exports.json`
 
-If the CloudFront distribution is unavailable, most of the configuration can be
-derived by hand. **This is a manual recipe, not something the CLI implements** —
-you still pass the results as flags.
+A deployment with `deployUserInterface: false` has no CloudFront distribution and
+therefore no `aws-exports.json`. This is not a fallback — it is the normal case
+for a headless deployment, and `aca` is the client it is deployed for.
 
-Given only a Cognito ID token, decode its payload (it is base64url JSON):
+There is nothing to derive: the six identifiers come from **the operator who
+deployed**, who reads them once from the stack outputs and hands them over. You
+need no AWS credentials, no `~/.aws`, and no AWS CLI to use them.
+
+Three ways to receive them, all equivalent:
+
+- **Answer the prompts.** Press Enter at the exports-URL question and type the six
+  values. This is the least ceremony and the answers are saved.
+- **Paste an `ACA_*` block** into your shell (below). Useful in CI, where nothing
+  may prompt.
+- **Take the config file itself** — `$(aca config --path)`, JSON, six keys — from
+  someone who already has it. It contains no credential, so it is safe to send.
+
+### For the operator: producing the hand-off
+
+Every value is already a stack output. From the deployed `AcaStack`:
+
+| Stack output | Environment variable |
+|---|---|
+| `UserPoolId` | `ACA_USER_POOL_ID` |
+| `UserPoolWebClientId` | `ACA_USER_POOL_CLIENT_ID` |
+| `IdentityPoolId` | `ACA_IDENTITY_POOL_ID` |
+| `GraphQLApiUrl` | `ACA_APPSYNC_URL` (optional — only `aca agents` needs it) |
+
+Region and account id you already know; they are the ones you deployed into.
+
+```bash
+export ACA_REGION=us-west-2 \
+       ACA_ACCOUNT_ID=111122223333 \
+       ACA_USER_POOL_ID=us-west-2_AbCdEfGhI \
+       ACA_USER_POOL_CLIENT_ID=1a2b3c4d5e6f7g8h9i0j \
+       ACA_IDENTITY_POOL_ID=us-west-2:11111111-2222-3333-4444-555555555555 \
+       ACA_APPSYNC_URL=https://abc123.appsync-api.us-west-2.amazonaws.com/graphql
+```
+
+With those set, `aca chat` needs nothing else and never prompts for
+configuration — which is what makes a non-interactive run possible.
+
+### Deriving what you can from an ID token
+
+If all you have is a Cognito ID token, decode its payload (base64url JSON):
 
 | From | Gives |
 |---|---|
 | `iss` = `https://cognito-idp.<region>.amazonaws.com/<user-pool-id>` | `--region` and `--user-pool-id` |
 | `aud` | `--user-pool-client-id` |
 | An identity pool id's own `<region>:<uuid>` form | confirms the region |
-| `aws sts get-caller-identity` | `--account-id` — and this needs **no IAM permission**, so any credential works |
 
-So the irreducible manual inputs are the **app client id**, the **identity pool
-id**, and — only if you want `aca agents` — the **AppSync URL**. Everything else
-either falls out of the token or is free to look up.
+The **account id** is not in the token and `aca agents` cannot supply it either —
+the discovery query returns no account id. It is required up front, so it has to
+come from the operator. The same goes for the **identity pool id** and, if you
+want `aca agents`, the **AppSync URL**.
+
+### Creating a Cognito user with no hosted UI
+
+Gating the web UI does not change how users are made — every user in this
+accelerator is admin-created. The operator runs:
+
+```bash
+aws cognito-idp admin-create-user \
+  --user-pool-id us-west-2_AbCdEfGhI \
+  --username me@example.com \
+  --user-attributes Name=email,Value=me@example.com Name=email_verified,Value=true
+```
+
+The new user lands in `FORCE_CHANGE_PASSWORD`, and `aca` prompts for a
+replacement password on first login — the same first-run experience the web UI
+gives. Cognito allows roughly three minutes to answer that challenge.
 
 ## Choosing an agent
 
@@ -327,6 +446,7 @@ Commands:
   chat      Interactive chat session (default — a bare `aca` runs it)
   agents    List deployed agents with their endpoints, and exit
   logout    Forget the saved session, so the next run asks for a password
+  config    Open the configuration file in an editor, creating one if needed
 ```
 
 `chat` options, in addition to the config flags above:
@@ -342,7 +462,9 @@ Commands:
 | `-m`, `--message <TEXT>` | Send one prompt and exit. Implies `--plain`. |
 
 `agents` takes `--email` and `--password-stdin` only. `logout` takes nothing —
-it deletes the saved session and exits without touching the network.
+it deletes the saved session and exits without touching the network. `config`
+takes `--path`; like `logout`, it resolves no configuration and touches no
+network.
 
 `--fresh-login` (a config flag, so it goes *before* the subcommand) ignores any
 saved session for one run and authenticates from scratch, without deleting it:
@@ -389,7 +511,10 @@ attach to a bug report. Check it anyway before you do.
 | `AppSync returned errors: Not Authorized...` | Your user can authenticate but cannot read `listRuntimeAgents`. Use `--runtime-id` and `--qualifier`. |
 | `no agents are deployed in this account` | Nothing to talk to. Create an agent via the Agent Factory UI or `agentRuntimeConfig`. |
 | `agent X has no endpoints` | The runtime exists but has no endpoint. Deploy one. |
-| `incomplete configuration: missing ...` | Every missing field is listed with the flag that supplies it. `--aws-exports-url` supplies them all at once. |
+| `incomplete configuration: missing ...` | Every missing field is listed with the flag that supplies it. `--aws-exports-url` supplies them all at once. On a terminal `aca` would have asked instead, so seeing this means stdin is not a TTY — set the `ACA_*` variables. |
+| `configuration setup abandoned; nothing was saved` | You pressed Ctrl-D at a setup question, or left a required one blank three times. Nothing was written. |
+| `... is not a usable configuration: ...` | An `aca config` edit produced invalid JSON or dropped a required field. On a terminal you are offered the editor again; otherwise fix the file and rerun. |
+| `no editor found — set $EDITOR (or $VISUAL)` | `aca config` had nowhere to open the file, so it printed the path and contents instead. Not an error. |
 
 ## Limitations
 
@@ -420,9 +545,10 @@ attach to a bug report. Check it anyway before you do.
 
 ## Security notes
 
-- **Nothing secret reaches disk.** The only file written is the config cache, and
-  the type serialised into it has no secret field. Both the cache and the log are
-  `0600` in `0700` directories.
+- **Nothing secret reaches disk.** The only file written is the configuration
+  file, and the type serialised into it has no secret field. That file and the log
+  are both `0600` in `0700` directories, and `aca config` re-asserts `0600` after
+  an edit in case your editor loosened it.
 - **The presigned WebSocket URL is a bearer credential** with the same power as
   the session itself. It is never printed, never passed as an argument, and
   redacted in the log. It expires after 300 seconds — the documented maximum.

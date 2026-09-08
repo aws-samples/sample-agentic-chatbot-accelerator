@@ -58,6 +58,7 @@ The CDK stack is configured through the `SystemConfig` interface defined in [`ia
 - **evaluatorConfig**: *(Optional)* Configuration for the LLM-based evaluation framework, including pass threshold and default rubrics. Defaults are provided in `config.ts`.
 - **experimentsConfig**: *(Optional)* Configuration for synthetic data generation, including VPC settings and Batch infrastructure toggle. See [Experiments Configuration](#experiments-configuration-vpc--batch) for details. Defaults are provided in `config.ts`.
 - **bedrockAccessRoleArn**: *(Optional)* IAM role ARN for cross-account Amazon Bedrock access.
+- **deployUserInterface**: *(Optional, defaults to `true`)* Deploy the React web UI. Set to `false` for a headless deployment — see [Headless Deployment (without the web UI)](#headless-deployment-without-the-web-ui). Unlike the options above, this one is a boolean rather than a block: **omitting it leaves the UI enabled**.
 
 > **Selectable models are not configured here.** The set of foundation models offered in the chat, evaluator, and experiments surfaces is a **region-scoped platform fact**, hard-coded in [`iac-cdk/lib/shared/supported-models.ts`](../../iac-cdk/lib/shared/supported-models.ts) and keyed by deploy region — it is **not** a `config.yaml` knob. Deploying to an unsupported (or unset) region **fails at synth** with the list of supported regions. To add a model or region, edit `SUPPORTED_MODELS` and redeploy. See [ADR-0004](../adr/0004-region-scoped-model-catalog.md) for the rationale and [Bedrock Mantle Models](./mantle-models.md) for the model catalog and protocol routing. Model ids are **literal** — the old `[REGION-PREFIX]` template no longer exists.
 
@@ -160,6 +161,27 @@ This configuration:
 - Hides Knowledge Base-related navigation items in the UI
 - Reduces deployment complexity and resource footprint
 - Is ideal for use cases that don't require RAG capabilities or when using external knowledge sources via MCP servers
+
+#### Headless Deployment (without the web UI)
+
+Set `deployUserInterface: false` to deploy the backend with no web front end:
+
+```yaml
+prefix: dev
+deployUserInterface: false
+```
+
+Not created: the website bucket, the website-logs and distribution-logs buckets, the CloudFront distribution, `aws-exports.json` and the `BucketDeployment` that writes it, the `ReactAppBuild` CodeBuild project (so no React build runs during `make deploy`), the data-bucket CORS rule, and the Cognito identity-pool S3 upload grant.
+
+Unaffected: agents, the AppSync API, the Knowledge Base and the document pipeline. Reach the deployment with the [`aca` CLI](../../cli/README.md), which needs no AWS credentials — it asks for the identifiers the missing `aws-exports.json` would have supplied.
+
+Two consequences: there is no web UI at all, and **browser document upload stops working** even with `dataProcessingParameters` configured, because the CORS rule and the upload grant exist only for browser uploads. Uploading becomes an operator-side S3 write.
+
+Terraform exposes the same flag with the same default as `deploy_user_interface`.
+
+> **Turning this off on an existing deployment is destructive.** It **deletes** the website bucket and its contents (`DESTROY` + `autoDeleteObjects`), and disabling and deleting the CloudFront distribution takes roughly 15 minutes.
+
+This is **not** a way to serve the website privately — it removes hosting entirely.
 
 #### Pre-configured Agent Runtime (via CDK)
 

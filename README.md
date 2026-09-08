@@ -93,6 +93,12 @@ The accelerator supports flexible deployment configurations:
 
 - **Experiments Generator** — Synthetic test case generation using AWS Batch. Requires a VPC; you can provide an existing one via `vpcId` or disable the feature entirely with `deployBatchInfrastructure: false` if VPC permissions are unavailable. See [Experiments Configuration](./docs/src/how-to-deploy.md#experiments-configuration-vpc--batch).
 
+- **React Web UI** — Deployed by default. Set `deployUserInterface: false` (Terraform: `deploy_user_interface = false`) for a headless deployment: no website or logs buckets, no CloudFront distribution, no `aws-exports.json`, no React CodeBuild project, and no data-bucket CORS rule or Cognito S3 upload grant. The agents, the API and the Knowledge Base are unaffected — reach them with the [`aca` CLI](./cli/README.md), which needs no AWS credentials. Two costs: there is no web UI at all, and **browser document upload stops working** even with the document pipeline enabled, so uploads become your own S3 write.
+
+  > **Flipping this off on a live deployment is destructive.** It **deletes** the website bucket and everything in it (the buckets are `DESTROY` + `autoDeleteObjects`), and disabling and deleting a CloudFront distribution takes roughly 15 minutes on its own.
+
+Configuration goes in `iac-cdk/bin/config.yaml`, which is **not** git-versioned — a plain clone deploys the defaults in `iac-cdk/bin/config.ts`. The `/iac-config-generator` Claude Code skill produces matching CDK and Terraform configs.
+
 See [How to Deploy](./docs/src/how-to-deploy.md#deployment-scenarios) for full configuration details.
 
 ## How to Contribute

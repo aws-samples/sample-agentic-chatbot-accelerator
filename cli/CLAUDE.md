@@ -29,7 +29,9 @@ Anything that reaches for the AWS control plane to discover configuration is the
 
 `~/.config/aca-cli/config.json` (honours `XDG_CONFIG_HOME`) — pretty-printed JSON, `0600` inside a `0700` directory, holding exactly the six non-secret identifiers. It holds **no secret by construction**: `AppConfig` has no secret field, which is what makes persisting it safe. The permissions are the backstop for future code, not for today's.
 
-Resolution precedence is flags/env > config file > fetched exports, merged by one `Partial::fill_from` operation rather than per-field `or_else` chains — precedence bugs hide in the latter.
+Resolution precedence is flags/env > config file > fetched exports > interactive setup, merged by one `Partial::fill_from` operation rather than per-field `or_else` chains — precedence bugs hide in the latter.
+
+Layer 4 exists because a `deployUserInterface: false` deployment serves no `aws-exports.json`, so layer 3 has nothing to read. It runs only when stdin is a TTY, and it prompts *before* `into_complete()` so the non-interactive outcome stays today's `Incomplete` error. `aca config` opens the same file in an editor and is dispatched **before** `resolve()` — a broken file must not disable the command that repairs it.
 
 Two tolerances are deliberate: a corrupt or half-written config file reads as absent rather than fatal (which is also what makes the non-atomic write safe), and a failed config write is logged, never fatal. Keep both.
 
