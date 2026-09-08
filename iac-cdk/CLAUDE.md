@@ -24,6 +24,8 @@ Gate before a PR: `cd iac-cdk && npm test`, plus `make run-ash` from the repo ro
 
 Gates worth knowing: `dataProcessingParameters` + `knowledgeBaseParameters` (document pipeline + KB), `agentRuntimeConfig` (pre-create a runtime instead of using the Agent Factory UI), `agentCoreObservability` (X-Ray Transaction Search), `evaluatorConfig`, `experimentsConfig` (Batch synthetic data — needs a VPC), `bedrockAccessRoleArn` (cross-account Bedrock; only assumed on the `BedrockModel` branch), and the `toolRegistry` / `mcpServerRegistry` / `stateClassRegistry` / `deterministicNodeRegistry` / `structuredOutputRegistry` lists the wizard reads for discovery.
 
+`deployUserInterface` is the one gate that is a **boolean, defaulting to true**, rather than a block whose absence disables it — so absent means on, normalized by `withDefaults()` in `bin/config.ts` and re-defaulted with `?? true` at each read site. It has to be threaded into `BuilderStack` as well as `AcaStack` (`ReactAppBuild` lives in the former), where it is a *required* prop: a default there could silently disagree with the one `AcaStack` read. Flipping it off deletes a live website bucket and its contents.
+
 ## The cdk-nag footgun when you gate something
 
 `NagSuppressions.addResourceSuppressionsByPath` on a path that **no longer resolves fails synth**. So a construct that becomes conditional must take its suppressions into the same branch — including suppressions on CDK's framework-managed singletons, which exist only because some construct in the stack pulled them in.
