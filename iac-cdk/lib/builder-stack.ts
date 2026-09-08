@@ -18,15 +18,19 @@ import * as lambda from "aws-cdk-lib/aws-lambda";
 import { Construct } from "constructs";
 import * as path from "path";
 
-import { CodeBuildDockerImage } from "./codebuild-builder";
-import { CodeBuildNpmBuild } from "./codebuild-builder";
-import { CodeBuildPipBundle } from "./codebuild-builder";
-import { CodeBuildPipLayer } from "./codebuild-builder";
+import {
+    CodeBuildDockerImage,
+    CodeBuildNpmBuild,
+    CodeBuildPipBundle,
+    CodeBuildPipLayer,
+} from "./codebuild-builder";
 
 const pythonRuntime = lambda.Runtime.PYTHON_3_14;
 
 export interface BuilderStackProps extends cdk.StackProps {
     readonly lambdaArchitecture: lambda.Architecture;
+    /** Required, not optional: a default here could disagree with the one AcaStack read. */
+    readonly deployUserInterface: boolean;
 }
 
 /**
@@ -47,8 +51,8 @@ export class BuilderStack extends cdk.Stack {
     // Pip bundle — evaluation executor (source + strands-agents-evals)
     public readonly evaluationExecutorBundle: CodeBuildPipBundle;
 
-    // Npm build — React app
-    public readonly reactAppBuild: CodeBuildNpmBuild;
+    // Npm build — React app. Undefined when deployUserInterface is false.
+    public readonly reactAppBuild?: CodeBuildNpmBuild;
 
     constructor(scope: Construct, id: string, props: BuilderStackProps) {
         super(scope, id, {
@@ -83,16 +87,12 @@ export class BuilderStack extends cdk.Stack {
             excludes: dockerExcludes,
         });
 
-        this.agentsAsToolsImage = new CodeBuildDockerImage(
-            this,
-            "AgentsAsToolsAgentCoreImage",
-            {
-                directory: agentCoreDir,
-                file: "docker-agents-as-tools/Dockerfile",
-                platform: "linux/arm64",
-                excludes: dockerExcludes,
-            },
-        );
+        this.agentsAsToolsImage = new CodeBuildDockerImage(this, "AgentsAsToolsAgentCoreImage", {
+            directory: agentCoreDir,
+            file: "docker-agents-as-tools/Dockerfile",
+            platform: "linux/arm64",
+            excludes: dockerExcludes,
+        });
 
         // Batch experiments image
         this.batchImage = new CodeBuildDockerImage(this, "BatchImage", {
@@ -123,10 +123,12 @@ export class BuilderStack extends cdk.Stack {
         // -----------------------------------------------------------------
         // Npm build — React web app
         // -----------------------------------------------------------------
-        this.reactAppBuild = new CodeBuildNpmBuild(this, "ReactAppBuild", {
-            directory: path.join(__dirname, "../../src/user-interface/react-app"),
-            excludes: ["node_modules", ".git", "dist", "*.pyc", "__pycache__"],
-        });
+        if (props.deployUserInterface) {
+            this.reactAppBuild = new CodeBuildNpmBuild(this, "ReactAppBuild", {
+                directory: path.join(__dirname, "../../src/user-interface/react-app"),
+                excludes: ["node_modules", ".git", "dist", "*.pyc", "__pycache__"],
+            });
+        }
 
         // -----------------------------------------------------------------
         // Outputs — consumed by AcaStack via cross-stack references

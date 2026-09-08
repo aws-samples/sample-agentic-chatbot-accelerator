@@ -58,6 +58,7 @@ const builderStackName = `${stackName}-builder`;
 // ── Stack 1: Build infrastructure (CodeBuild projects, ECR repos, S3 buckets) ──
 const builderStack = new BuilderStack(app, builderStackName, {
     lambdaArchitecture: lambda.Architecture.X86_64,
+    deployUserInterface: config.deployUserInterface ?? true,
 });
 
 // ── Stack 2: Application (deploys after build.sh runs all builds) ──
