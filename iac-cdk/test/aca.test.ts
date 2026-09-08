@@ -21,6 +21,7 @@ function synthTemplate(): Template {
     const config = getConfig();
     const builderStack = new BuilderStack(app, "test-aca-builder", {
         lambdaArchitecture: lambda.Architecture.X86_64,
+        deployUserInterface: config.deployUserInterface ?? true,
     });
     const acaStack = new AcaStack(app, "test-aca", {
         config,
@@ -46,6 +47,7 @@ function synthAwsExportsText(): string {
     const config = getConfig();
     const builderStack = new BuilderStack(app, "test-aca-builder", {
         lambdaArchitecture: lambda.Architecture.X86_64,
+        deployUserInterface: config.deployUserInterface ?? true,
     });
     const acaStack = new AcaStack(app, "test-aca", {
         config,
