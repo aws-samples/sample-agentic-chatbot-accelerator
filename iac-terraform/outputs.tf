@@ -146,28 +146,30 @@ output "default_agent_memory_id" {
 }
 
 # -----------------------------------------------------------------------------
-# User Interface Module Outputs
+# User Interface Module Outputs (Optional)
 # CloudFront distribution and website bucket information
+# one() so these resolve to null instead of failing the apply when
+# deploy_user_interface is false
 # -----------------------------------------------------------------------------
 
 output "website_url" {
-  description = "Full HTTPS URL of the deployed website"
-  value       = module.user_interface.website_url
+  description = "Full HTTPS URL of the deployed website (null when the UI is not deployed)"
+  value       = one(module.user_interface[*].website_url)
 }
 
 output "cloudfront_distribution_id" {
-  description = "CloudFront distribution ID"
-  value       = module.user_interface.distribution_id
+  description = "CloudFront distribution ID (null when the UI is not deployed)"
+  value       = one(module.user_interface[*].distribution_id)
 }
 
 output "cloudfront_distribution_domain" {
-  description = "CloudFront distribution domain name"
-  value       = module.user_interface.distribution_domain_name
+  description = "CloudFront distribution domain name (null when the UI is not deployed)"
+  value       = one(module.user_interface[*].distribution_domain_name)
 }
 
 output "website_bucket_name" {
-  description = "Name of the S3 bucket hosting the website"
-  value       = module.user_interface.website_bucket_name
+  description = "Name of the S3 bucket hosting the website (null when the UI is not deployed)"
+  value       = one(module.user_interface[*].website_bucket_name)
 }
 
 # -----------------------------------------------------------------------------

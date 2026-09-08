@@ -142,6 +142,12 @@ variable "ecr_image_uri" {
 # region-keyed in supported-models.tf (local.supported_models) rather than an
 # operator input — see docs/adr/0004-region-scoped-model-catalog.md.
 
+variable "deploy_user_interface" {
+  description = "Deploy the React web UI: website and logs buckets, CloudFront distribution, aws-exports.json, and the React CodeBuild project. When false, also drops the data-bucket CORS rule and the Cognito identity-pool S3 upload grant, which exist only for browser uploads. Mirrors SystemConfig.deployUserInterface in CDK, same default."
+  type        = bool
+  default     = true
+}
+
 variable "reranking_models" {
   description = "Map of display name to model ID for reranking models. Key = display name, Value = model ID."
   type        = map(string)

@@ -102,6 +102,17 @@ tool_registry = [
 mcp_server_registry = []
 
 # =============================================================================
+# User Interface (Optional)
+# S3 website + logs buckets, CloudFront, aws-exports.json, React CodeBuild
+# =============================================================================
+
+# Set to false for a headless deploy (API + agents only, no web UI). Also drops
+# the data-bucket CORS rule and the Cognito S3 upload grant, which only exist
+# for browser uploads. Turning this off on an existing deployment deletes the
+# CloudFront distribution and the website buckets.
+# deploy_user_interface = false
+
+# =============================================================================
 # Data Processing Configuration (Optional)
 # Processes documents for Knowledge Base ingestion (transcription, text extraction)
 # Required if you want to use Knowledge Base
