@@ -24,8 +24,34 @@ const EXECUTOR_DIR = path.join(__dirname, "../../src/api/functions/evaluation-ex
 const EVALS_SDK = "strands-agents-evals";
 const MANTLE_SDKS = ["openai", "anthropic", "aws-bedrock-token-generator"];
 
-// bin/aca.ts wires BuilderStack with X86_64 and deployUserInterface from config; the flag is
-// irrelevant here but required, and true is its default.
+// The architecture bin/aca.ts wires into BuilderStack, read from that source rather than
+// duplicated here: the platform tag assertion below has to follow the deploy, not a literal.
+function deployArchitecture(): lambda.Architecture {
+    const source = fs.readFileSync(path.join(__dirname, "../bin/aca.ts"), "utf8");
+    const match = source.match(
+        /new BuilderStack\([^)]*?lambdaArchitecture:\s*lambda\.Architecture\.(\w+)/,
+    );
+    if (match === null) {
+        throw new Error("bin/aca.ts does not wire a lambdaArchitecture into BuilderStack");
+    }
+    const architecture: Record<string, lambda.Architecture> = {
+        X86_64: lambda.Architecture.X86_64,
+        ARM_64: lambda.Architecture.ARM_64,
+    };
+    if (!(match[1] in architecture)) {
+        throw new Error(`bin/aca.ts wires an unhandled architecture: ${match[1]}`);
+    }
+    return architecture[match[1]];
+}
+
+// PEP 599 platform tags: the wheels pip may resolve for a given Lambda architecture.
+function expectedPlatformTag(architecture: lambda.Architecture): string {
+    return architecture === lambda.Architecture.ARM_64
+        ? "manylinux2014_aarch64"
+        : "manylinux2014_x86_64";
+}
+
+// deployUserInterface is irrelevant to the bundle but required, and true is its default.
 function synthBuilder(architecture: lambda.Architecture): Template {
     const app = new cdk.App();
     return Template.fromStack(
@@ -133,7 +159,7 @@ describe("the judge bundle's pip dependencies (T2)", () => {
     let command: string;
 
     beforeAll(() => {
-        command = pipInstallCommand(synthBuilder(lambda.Architecture.X86_64));
+        command = pipInstallCommand(synthBuilder(deployArchitecture()));
         packages = requestedPackages(command);
     });
 
@@ -175,10 +201,10 @@ describe("the judge bundle's pip dependencies (T2)", () => {
         expect(command).toContain("--implementation cp");
     });
 
-    test("the wheels are resolved for aarch64", () => {
-        // Acceptance: the build "log shows aarch64 wheels resolved" for the three SDKs. The log
-        // half needs a deployed stack (T6); the platform tag pip is given is the synth-time half.
-        expect(command).toContain("--platform manylinux2014_aarch64");
+    test("the wheel platform tag follows the architecture the deploy wires", () => {
+        // Acceptance names aarch64, which is the Terraform tree's default; the CDK tree deploys
+        // X86_64. Both sides read bin/aca.ts, so flipping it re-targets this instead of lying.
+        expect(command).toContain(`--platform ${expectedPlatformTag(deployArchitecture())}`);
     });
 
     test("the pin assertions are not vacuous — an unpinned list fails them", () => {
