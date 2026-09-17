@@ -30,6 +30,18 @@ locals {
   # S3 keys for build context and artifact
   executor_source_s3_key   = "codebuild/source/evaluation-executor-${local.executor_source_hash}.zip"
   executor_artifact_s3_key = "lambda-code/evaluation-executor.zip"
+
+  # Rendered into both the project's buildspec and the buildspec_hash that
+  # decides whether to rebuild — one local so the two cannot diverge.
+  #
+  # All four pinned: the judge relies on the evals SDK's
+  # `model: Union[Model, str, None]` signature, and unpinned pip resolves
+  # openai 3.x / anthropic 1.x — majors outside the range strands' own extras
+  # allow. Base strands depends on neither SDK, so pip reports no conflict and
+  # the break surfaces only at runtime in strands.models.openai / .anthropic.
+  # Named directly rather than via `strands-agents[openai,anthropic]` so
+  # strands stays transitive.
+  executor_pip_packages = "strands-agents-evals==0.1.8 openai==2.48.0 anthropic==0.120.0 aws-bedrock-token-generator==1.1.0"
 }
 
 # -----------------------------------------------------------------------------
@@ -144,7 +156,7 @@ resource "aws_iam_role_policy" "codebuild_executor" {
 
 # -----------------------------------------------------------------------------
 # CodeBuild Project — Evaluation Executor Lambda Package
-# Installs strands-agents-evals + copies source files → zip artifact on S3
+# Installs the judge's SDKs + copies source files → zip artifact on S3
 # -----------------------------------------------------------------------------
 
 resource "aws_codebuild_project" "evaluation_executor" {
@@ -160,7 +172,7 @@ resource "aws_codebuild_project" "evaluation_executor" {
     location = "${aws_s3_bucket.evaluations.id}/${local.executor_source_s3_key}"
 
     buildspec = templatefile("${path.module}/buildspec-pip.yml.tpl", {
-      pip_packages    = "strands-agents-evals"
+      pip_packages    = local.executor_pip_packages
       output_zip_name = "evaluation-executor.zip"
     })
   }
@@ -214,7 +226,7 @@ resource "null_resource" "build_evaluation_executor" {
   triggers = {
     source_hash = local.executor_source_hash
     buildspec_hash = sha256(templatefile("${path.module}/buildspec-pip.yml.tpl", {
-      pip_packages    = "strands-agents-evals"
+      pip_packages    = local.executor_pip_packages
       output_zip_name = "evaluation-executor.zip"
     }))
     project_config = aws_codebuild_project.evaluation_executor.id
