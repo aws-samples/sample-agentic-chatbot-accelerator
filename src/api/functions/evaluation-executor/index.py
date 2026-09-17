@@ -576,6 +576,8 @@ def _evaluate_result(
                 actual_output=actual_output,
                 trajectory=trajectory,
                 actual_structured_output=actual_structured_output,
+                expected_trajectory=test_case.expected_trajectory,
+                expected_interactions=test_case.expected_interactions,
             )
 
             score = result.score
