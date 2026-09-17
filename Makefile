@@ -6,6 +6,23 @@
 copy-graphql-util:
 	cp src/api/functions/outgoing-message-handler/graphql.ts src/api/functions/notify-runtime-update/graphql.ts
 
+# Copy the model-routing modules from agent-core into the evaluation-executor
+# bundle. CodeBuildPipBundle uses one directory as both build context and
+# payload, so anything the judge imports has to physically live under the
+# function directory. Source of truth is src/agent-core/shared/ — this copy is
+# regenerated on every deploy and MUST NOT be edited.
+#
+# __init__.py is synthesized empty rather than copied: the real one eagerly
+# imports bedrock-agentcore and the MCP stack, which the bundle does not carry.
+copy-model-routing:
+	mkdir -p src/api/functions/evaluation-executor/shared
+	cp src/agent-core/shared/base_factory.py \
+		src/agent-core/shared/mantle_support.py \
+		src/agent-core/shared/stream_types.py \
+		src/agent-core/shared/base_constants.py \
+		src/api/functions/evaluation-executor/shared/
+	: > src/api/functions/evaluation-executor/shared/__init__.py
+
 # Generate TypeScript types from GraphQL schema (requires @aws-amplify/cli)
 gen-graphql:
 	cd iac-cdk && npx @aws-amplify/cli codegen
@@ -58,7 +75,7 @@ install-deps:
 	npm install --prefix .
 	cd iac-cdk && npm install
 
-deploy: install-deps copy-graphql-util gen-graphql
+deploy: install-deps copy-graphql-util copy-model-routing gen-graphql
 	@echo "═══════════════════════════════════════════════════════════"
 	@echo "Phase 1: Deploying BuilderStack (CodeBuild infrastructure)"
 	@echo "═══════════════════════════════════════════════════════════"
@@ -130,7 +147,7 @@ tf-plan:
 # - React web app (user interface)
 # No local Docker or Node.js required for builds!
 # All settings read from iac-terraform/terraform.tfvars
-tf-deploy: copy-graphql-util gen-graphql
+tf-deploy: copy-graphql-util copy-model-routing gen-graphql
 	@echo "Initializing Terraform..."
 	cd iac-terraform && terraform init -upgrade
 	@echo "Deploying all infrastructure..."
@@ -138,7 +155,7 @@ tf-deploy: copy-graphql-util gen-graphql
 	cd iac-terraform && terraform apply
 
 # Deploy with auto-approve (for CI/CD)
-tf-deploy-auto: copy-graphql-util gen-graphql
+tf-deploy-auto: copy-graphql-util copy-model-routing gen-graphql
 	cd iac-terraform && terraform init -upgrade
 	cd iac-terraform && terraform apply -auto-approve
 
