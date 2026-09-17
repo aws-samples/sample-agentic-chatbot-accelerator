@@ -26,6 +26,8 @@ SOURCE_DIR = REPO_ROOT / "src" / "agent-core" / "shared"
 FUNCTION_DIR = REPO_ROOT / "src" / "api" / "functions" / "evaluation-executor"
 COPY_DIR = FUNCTION_DIR / "shared"
 API_DOC = REPO_ROOT / "src" / "api" / "CLAUDE.md"
+# The generated package only — the function's own tracked files are not T1's.
+COPY_PREFIX = "src/api/functions/evaluation-executor/shared/"
 
 COPIED_MODULES = (
     "base_factory.py",
@@ -192,17 +194,20 @@ def test_generated_files_are_gitignored(copy_generated, name):
     assert result.returncode == 0, f"{name} is not gitignored"
 
 
-def test_git_status_never_reports_the_generated_copy(copy_generated):
+def git_status(*flags):
     result = subprocess.run(
-        ["git", "status", "--porcelain"],
+        ["git", "status", "--porcelain", *flags],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
     )
     assert result.returncode == 0, result.stderr
-    assert [
-        line for line in result.stdout.splitlines() if "evaluation-executor" in line
-    ] == []
+    return [line for line in result.stdout.splitlines() if COPY_PREFIX in line]
+
+
+def test_git_status_never_reports_the_generated_copy(copy_generated):
+    assert git_status() == []
+    assert git_status("--ignored") != []
 
 
 def test_read_only_copy_fails_the_target_loudly(copy_generated):
