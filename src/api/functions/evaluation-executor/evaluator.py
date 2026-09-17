@@ -29,6 +29,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Union
 
+from shared.base_factory import BaseAgentFactory
+from strands.models import Model
 from strands_evals.evaluators import (
     Evaluator,
     FaithfulnessEvaluator,
@@ -50,6 +52,31 @@ OutputT = TypeVar("OutputT")
 logger = logging.getLogger(__name__)
 
 
+# ========================= Judge Inference Parameters ========================= #
+
+JUDGE_TEMPERATURE: float = 0.0
+"""Judge sampling temperature. Scoring must be deterministic and low-variance
+across a suite, so this is pinned rather than exposed as a user setting.
+
+CAVEAT: ``create_model`` does not forward ``temperature`` on every branch. With
+no reasoning budget (the judge never sets one) it reaches the model on the
+Converse path and on both Mantle Chat Completions surfaces, and is dropped
+outright on the Mantle Anthropic Messages and OpenAI Responses surfaces, which
+reject sampling params on the newest models. There this value is a best-effort
+floor, not a guarantee — the provider default applies instead.
+"""
+
+JUDGE_MAX_TOKENS: int = 4096
+"""Judge output ceiling. A judge emits one structured verdict — score, pass flag
+and a ``reason`` paragraph — which even for a rubric enumerating every field
+stays in the low hundreds of tokens. The headroom is for the always-on reasoning
+families: on the Mantle Responses surface this becomes ``max_output_tokens``,
+which reasoning tokens are charged against, and a budget exhausted mid-reasoning
+returns an incomplete response with no structured output at all — a scored case
+would degrade into an error result.
+"""
+
+
 # ========================= Data Classes ========================= #
 
 
@@ -60,14 +87,17 @@ class EvaluatorConfig:
     Attributes:
         evaluator_type: Type of evaluator (e.g., "OutputEvaluator", "HelpfulnessEvaluator")
         rubric: Rubric for evaluators that support it
-        model_id: Model ID for LLM-based evaluators
+        model_id: The configured model id verbatim — what gets logged and persisted
         pass_threshold: Score threshold for passing (0.0-1.0)
+        model: The built Strands model the evaluator actually uses. None for
+            deterministic evaluators, which need no LLM.
     """
 
     evaluator_type: str
     model_id: str
     pass_threshold: float
     rubric: str = ""
+    model: Optional[Model] = None
 
 
 @dataclass
@@ -642,6 +672,11 @@ class EvaluatorFactory:
     def create(cls, config: EvaluatorConfig) -> Any:
         """Create an evaluator from configuration.
 
+        Deterministic evaluators are built with no model. Every other type
+        receives ``config.model`` — a Model instance, never a model-id string:
+        strands_evals treats a ``str`` as "build me a default BedrockModel",
+        which is the Converse path this routing exists to stop taking.
+
         Args:
             config: Evaluator configuration
 
@@ -649,7 +684,10 @@ class EvaluatorFactory:
             Strands evaluator instance
 
         Raises:
-            ValueError: If evaluator_type is not recognized
+            ValueError: If evaluator_type is not recognized, or if a
+                non-deterministic evaluator is requested with ``config.model``
+                unset. Fail closed — silently falling back to the id string
+                would restore the bug.
         """
         if config.evaluator_type not in cls.EVALUATOR_CLASSES:
             raise ValueError(
@@ -663,16 +701,22 @@ class EvaluatorFactory:
         if config.evaluator_type in cls.DETERMINISTIC_EVALUATORS:
             return evaluator_class()
 
+        if config.model is None:
+            raise ValueError(
+                f"{config.evaluator_type} requires a built model instance; "
+                f"none was provided for model_id '{config.model_id}'"
+            )
+
         # Only certain evaluators require rubric parameter
         if config.evaluator_type in cls.EVALUATORS_REQUIRING_RUBRIC:
             rubric = config.rubric.strip() if config.rubric else ""
             return evaluator_class(
                 rubric=rubric,
-                model=config.model_id,
+                model=config.model,
                 include_inputs=True,
             )
         else:
-            return evaluator_class(model=config.model_id)
+            return evaluator_class(model=config.model)
 
     @classmethod
     def create_from_type(
@@ -681,13 +725,16 @@ class EvaluatorFactory:
         model_id: str,
         pass_threshold: float,
         rubric: str = "",
+        model: Optional[Model] = None,
     ) -> Any:
         """Convenience method to create evaluator from type string.
 
         Args:
             evaluator_type: Type of evaluator
             model_id: Model ID for LLM-based evaluators
+            pass_threshold: Score threshold for passing (0.0-1.0)
             rubric: Rubric of evaluator
+            model: Built Strands model, threaded through to ``create`` unchanged
 
         Returns:
             Strands evaluator instance
@@ -697,6 +744,7 @@ class EvaluatorFactory:
             model_id=model_id,
             rubric=rubric,
             pass_threshold=pass_threshold,
+            model=model,
         )
         return cls.create(config)
 
@@ -727,6 +775,40 @@ class EvaluationRunner:
         self.model_id = model_id
         self.pass_threshold = pass_threshold
         self._trajectory_builder = TrajectoryBuilder()
+        self._model: Optional[Model] = None
+
+    def _judge_model(self) -> Model:
+        """Return the judge model for ``self.model_id``, building it at most once.
+
+        Built through ``BaseAgentFactory.create_model`` so the judge routes by
+        provider exactly as the agents do: a Mantle id reaches its Mantle
+        surface, a non-Mantle id gets the unchanged BedrockModel/Converse path.
+        Prompt caching stays off — a judge prompt is single-shot per case, and
+        the pre-routing call added no cache point either.
+
+        Memoised on the instance: one runner serves one test case across N
+        evaluator types, and each construction can mint a bearer token, so
+        per-evaluator construction would be pure waste.
+
+        MUST only be called from inside ``evaluate()``'s try block, which
+        converts a construction failure into a per-evaluator error result
+        instead of letting it fail the whole SQS record.
+
+        Returns:
+            Model: The Strands model for this runner's configured model id.
+
+        Raises:
+            Exception: Whatever ``create_model`` raises (e.g. RuntimeError from a
+                failed token mint). Deliberately not caught here.
+        """
+        if self._model is None:
+            self._model = BaseAgentFactory.create_model(
+                model_id=self.model_id,
+                max_tokens=JUDGE_MAX_TOKENS,
+                temperature=JUDGE_TEMPERATURE,
+                enable_caching=False,
+            )
+        return self._model
 
     def evaluate(
         self,
@@ -827,12 +909,23 @@ class EvaluationRunner:
                     evaluator_type,
                 )
 
+            # Build the judge model here, not in __init__: this try converts a
+            # token-mint or catalog-fetch failure into one error result, and
+            # building after the applicability checks above keeps an all-skipped
+            # case off the network entirely.
+            judge_model = (
+                None
+                if evaluator_type in EvaluatorFactory.DETERMINISTIC_EVALUATORS
+                else self._judge_model()
+            )
+
             # Create evaluator
             evaluator = EvaluatorFactory.create_from_type(
                 evaluator_type=evaluator_type,
                 rubric=rubric,
                 model_id=self.model_id,
                 pass_threshold=self.pass_threshold,
+                model=judge_model,
             )
 
             # Build trajectory session if provided
