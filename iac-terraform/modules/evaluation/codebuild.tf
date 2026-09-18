@@ -21,11 +21,23 @@ Creates:
 locals {
   executor_source_dir = "${local.functions_dir}/evaluation-executor"
 
-  # Content-based hash for change detection
-  executor_source_hash = sha256(join("", [
-    filesha256("${local.executor_source_dir}/evaluator.py"),
-    filesha256("${local.executor_source_dir}/index.py"),
-  ]))
+  # Content-based hash for change detection. Must cover the generated `shared/`
+  # copy as well as the function's own sources: the judge imports
+  # `shared.base_factory`, so an edit confined to `src/agent-core/shared/` would
+  # otherwise change neither this hash nor the S3 key, and the Lambda would keep
+  # a stale zip built from the previous routing code. `fileset` on a missing
+  # directory yields an empty set, so a fresh clone that has not run
+  # `make copy-model-routing` still plans.
+  executor_source_hash = sha256(join("", concat(
+    [
+      filesha256("${local.executor_source_dir}/evaluator.py"),
+      filesha256("${local.executor_source_dir}/index.py"),
+    ],
+    [
+      for f in sort(tolist(fileset("${local.executor_source_dir}/shared", "*.py"))) :
+      filesha256("${local.executor_source_dir}/shared/${f}")
+    ],
+  )))
 
   # S3 keys for build context and artifact
   executor_source_s3_key   = "codebuild/source/evaluation-executor-${local.executor_source_hash}.zip"
