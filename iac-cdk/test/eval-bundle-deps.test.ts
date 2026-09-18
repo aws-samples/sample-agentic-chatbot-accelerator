@@ -153,7 +153,10 @@ function parseVersion(version: string): number[] {
 // The lower bound the repo's own dev environment declares for a package.
 function devGroupFloor(name: string): number[] {
     const pyproject = fs.readFileSync(path.join(__dirname, "../../pyproject.toml"), "utf8");
-    const match = pyproject.match(new RegExp(`"${name}>=([0-9.]+)"`));
+    // The trailing group tolerates an upper bound (`>=0.1.17,<0.2`). Several dev
+    // entries are bounded ranges, not bare floors, because they have to stay on the
+    // major the Lambdas actually ship — only the floor matters to this comparison.
+    const match = pyproject.match(new RegExp(`"${name}>=([0-9.]+)(?:,[^"]*)?"`));
     if (match === null) {
         throw new Error(`No ${name} lower bound in the repo's pyproject.toml`);
     }

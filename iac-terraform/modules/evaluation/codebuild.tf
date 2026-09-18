@@ -53,7 +53,7 @@ locals {
   # the break surfaces only at runtime in strands.models.openai / .anthropic.
   # Named directly rather than via `strands-agents[openai,anthropic]` so
   # strands stays transitive.
-  executor_pip_packages = "strands-agents-evals==0.1.8 openai==2.48.0 anthropic==0.120.0 aws-bedrock-token-generator==1.1.0"
+  executor_pip_packages = "strands-agents-evals==0.1.17 openai==2.54.0 anthropic==0.125.0 aws-bedrock-token-generator==1.1.0"
 }
 
 # -----------------------------------------------------------------------------

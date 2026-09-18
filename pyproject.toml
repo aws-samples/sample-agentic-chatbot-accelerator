@@ -15,24 +15,39 @@ dev = [
     "aws-bedrock-token-generator>=1.0.0",
     "aws-lambda-powertools>=3.4.1",
     "aws-xray-sdk>=2.14.0",
-    "boto3>=1.40.55",
-    "openai>=1.0.0",
+    "boto3>=1.43.97",
+    # Bounded to the major the judge bundle ships (`openai==2.54.0`); unbounded
+    # this resolves 3.x, so the tests would exercise an SDK no Lambda runs.
+    "openai>=2.54,<3.0",
     "ipykernel>=6.29.5",
-    "opensearch-py>=2.8.0",
-    "pydantic>=2.10.5",
-    "requests>=2.32.3",
-    "strands-agents[bidi]>=1.50.1",
-    "bedrock-agentcore>=1.18.1",
-    "mcp-proxy-for-aws>=1.2.0",
+    # Held on 2.x to match the boto3-latest layer's `opensearch-py==2.8.0`, which is
+    # what `genai_core.aoss` and the knowledge-base resolver actually import at
+    # runtime. 2.8.0 is the last 2.x; 3.x is a major and moves with the layer.
+    "opensearch-py>=2.8.0,<3",
+    "pydantic>=2.13.5",
+    "requests>=2.34.2",
+    # These two are a coupled pair, held at what the agent containers' uv.lock
+    # files resolve (strands 1.50.1 + agentcore 1.18.1). bedrock-agentcore 1.23.1's
+    # strands session manager imports `strands.experimental.bidi.hooks`, which only
+    # exists from strands-agents 1.56.0 — and it declares no such floor, so an
+    # unbounded resolve happily picks 1.23.1 with strands 1.50.x and then dies on
+    # `import shared.agentcore_memory`. That module is imported at container start
+    # (docker/app.py, docker-agents-as-tools/app.py), so the pair has to move
+    # together, here and in all four container pyprojects, never one side alone.
+    "strands-agents[bidi]>=1.50.1,<1.51",
+    "bedrock-agentcore>=1.18.1,<1.19",
+    "mcp-proxy-for-aws>=1.7.0",
     "retry>=0.9.2",
-    "strands-agents-evals>=0.1.8",
-    "langgraph>=1.0.10",
-    "fastapi>=0.136.1",
+    # Same reasoning, and tighter because this one is pre-1.0: the containers and
+    # the judge bundle all pin 0.1.17, so 0.x minors are held rather than tracked.
+    "strands-agents-evals>=0.1.17,<0.2",
+    "langgraph>=1.2.11",
+    "fastapi>=0.141.1",
     "pytest>=9.1.0",
     "pytest-asyncio>=1.4.0",
     # Bounded to the range strands-agents' own `anthropic` extra declares
     # (>=0.21,<1.0). Unbounded, this resolves 1.x — a different major from the
-    # `anthropic==0.120.0` the judge bundle ships, so the tests would exercise an
+    # `anthropic==0.125.0` the judge bundle ships, so the tests would exercise an
     # SDK that never reaches a Lambda.
     "anthropic>=0.21,<1.0",
 ]
