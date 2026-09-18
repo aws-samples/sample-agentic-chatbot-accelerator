@@ -76,15 +76,49 @@ export class CodeBuildPipBundle extends Construct {
         const excludes = props.excludes ?? ["__pycache__", "*.pyc", ".pytest_cache"];
 
         // -----------------------------------------------------------------
-        // 1. Upload function source as an S3 asset
+        // 1. Resolve the pip install command
         // -----------------------------------------------------------------
+        const isArm = props.architecture === lambda.Architecture.ARM_64;
+
+        // Lambda runtime name is "python3.14" → "3.14". Wheels for compiled
+        // extensions (e.g. pydantic_core) must match the target ABI exactly,
+        // so pip is forced to resolve wheels for the Lambda runtime + arch
+        // rather than the build host's Python.
+        const pythonVersion = props.runtime.name.replace(/^python/, "");
+        const platformTag = isArm ? "manylinux2014_aarch64" : "manylinux2014_x86_64";
+        const pipInstallCmd = [
+            "pip install",
+            props.pipPackages.join(" "),
+            "-t /tmp/package",
+            `--platform ${platformTag}`,
+            `--python-version ${pythonVersion}`,
+            "--implementation cp",
+            "--only-binary=:all:",
+            "--quiet",
+            "--upgrade",
+        ].join(" ");
+
+        // -----------------------------------------------------------------
+        // 2. Upload function source as an S3 asset
+        // -----------------------------------------------------------------
+        // The install command is folded into the asset hash on top of the directory
+        // fingerprint: build.sh decides whether to rebuild by diffing the project's
+        // source.location, and the pins reach the build only through the inline
+        // BuildSpec, so a pins-only edit would otherwise be skipped and leave the
+        // previously built wheels deployed. The hash also keys artifactKey below, so
+        // the Lambda's code location moves with the pins too.
         const sourceAsset = new s3assets.Asset(this, "Source", {
             path: props.directory,
             exclude: excludes,
+            assetHashType: cdk.AssetHashType.CUSTOM,
+            assetHash: cdk.FileSystem.fingerprint(props.directory, {
+                exclude: excludes,
+                extraHash: pipInstallCmd,
+            }),
         });
 
         // -----------------------------------------------------------------
-        // 2. Artifact bucket (create or reuse)
+        // 3. Artifact bucket (create or reuse)
         // -----------------------------------------------------------------
         const artifactBucket =
             props.artifactBucket ??
@@ -114,28 +148,8 @@ export class CodeBuildPipBundle extends Construct {
         const artifactKey = `pip-bundle-output/${id}/${sourceAsset.assetHash}/bundle.zip`;
 
         // -----------------------------------------------------------------
-        // 3. CodeBuild project
+        // 4. CodeBuild project
         // -----------------------------------------------------------------
-        const isArm = props.architecture === lambda.Architecture.ARM_64;
-
-        // Lambda runtime name is "python3.14" → "3.14". Wheels for compiled
-        // extensions (e.g. pydantic_core) must match the target ABI exactly,
-        // so pip is forced to resolve wheels for the Lambda runtime + arch
-        // rather than the build host's Python.
-        const pythonVersion = props.runtime.name.replace(/^python/, "");
-        const platformTag = isArm ? "manylinux2014_aarch64" : "manylinux2014_x86_64";
-        const pipInstallCmd = [
-            "pip install",
-            props.pipPackages.join(" "),
-            "-t /tmp/package",
-            `--platform ${platformTag}`,
-            `--python-version ${pythonVersion}`,
-            "--implementation cp",
-            "--only-binary=:all:",
-            "--quiet",
-            "--upgrade",
-        ].join(" ");
-
         const buildSpec = codebuild.BuildSpec.fromObject({
             version: "0.2",
             phases: {

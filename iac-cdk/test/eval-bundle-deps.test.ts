@@ -5,12 +5,15 @@
 // T2 — the judge bundle's pip dependencies. BuilderStack is synthesized with the same props
 // bin/aca.ts passes, which is cheap: the stack holds only CodeBuild projects and buckets, so
 // nothing here bundles a Lambda. The pip flags live in the project's inline BuildSpec — a JSON
-// string inside an Fn::Join, so the assertions read the flattened command text.
+// string inside an Fn::Join, so the assertions read the flattened command text. The second
+// describe covers the other half: those flags only take effect if editing them moves the source
+// asset hash, which is what build.sh diffs and what the judge Lambda's code key is built from.
 
 import * as cdk from "aws-cdk-lib";
 import { Template } from "aws-cdk-lib/assertions";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
 
 import { BuilderStack } from "../lib/builder-stack";
@@ -64,11 +67,14 @@ function synthBuilder(architecture: lambda.Architecture): Template {
 
 // A stack holding nothing but the bundle, so pipPackages can be varied — BuilderStack hardcodes
 // them. Wired exactly as BuilderStack wires it, id included, so logical ids match.
-function synthBundle(pipPackages: string[]): { template: Template; artifactKey: string } {
+function synthBundle(
+    pipPackages: string[],
+    directory: string = EXECUTOR_DIR,
+): { template: Template; artifactKey: string } {
     const app = new cdk.App();
     const stack = new cdk.Stack(app, STACK_NAME);
     const bundle = new CodeBuildPipBundle(stack, BUNDLE_ID, {
-        directory: EXECUTOR_DIR,
+        directory,
         pipPackages,
         runtime: lambda.Runtime.PYTHON_3_14,
         architecture: lambda.Architecture.X86_64,
@@ -86,6 +92,15 @@ function bundleProject(template: Template): Record<string, any> {
         throw new Error(`Expected exactly one ${BUNDLE_ID} project, found ${matches.length}`);
     }
     return matches[0];
+}
+
+// The S3 source path build.sh reads back as `projects[0].source.location`.
+function sourceLocation(template: Template): string {
+    const location = bundleProject(template).Properties?.Source?.Location;
+    if (location === undefined) {
+        throw new Error(`${BUNDLE_ID} project carries no S3 source location`);
+    }
+    return JSON.stringify(location);
 }
 
 function buildSpecText(project: Record<string, any>): string {
@@ -219,9 +234,9 @@ describe("the judge bundle's pip dependencies (T2)", () => {
     });
 });
 
-describe("changing the bundle's pipPackages replaces nothing (T2)", () => {
+describe("a pins-only edit reaches the deployed bundle (T2)", () => {
     const pinned = ["strands-agents-evals==0.1.8", "openai==2.48.0"];
-    const other = ["strands-agents-evals==0.1.2"];
+    const other = ["strands-agents-evals==0.1.2", "openai==2.48.0"];
 
     test("the CodeBuild project keeps its name and logical id", () => {
         const before = synthBundle(other).template;
@@ -232,23 +247,53 @@ describe("changing the bundle's pipPackages replaces nothing (T2)", () => {
         expect(bundleProject(after).Properties.Name).toEqual(bundleProject(before).Properties.Name);
     });
 
-    test("the artifact key the judge Lambda reads is unchanged", () => {
-        expect(synthBundle(pinned).artifactKey).toEqual(synthBundle(other).artifactKey);
+    test("the source location build.sh diffs moves with the pins", () => {
+        // build.sh skips a project whose source.location matches its last successful build, and
+        // the pins only ever reach the build through the inline BuildSpec — so unless the pins
+        // feed the source asset hash, a pins-only bump deploys the previously built wheels.
+        expect(sourceLocation(synthBundle(pinned).template)).not.toEqual(
+            sourceLocation(synthBundle(other).template),
+        );
+        expect(sourceLocation(synthBundle(pinned).template)).toEqual(
+            sourceLocation(synthBundle(pinned).template),
+        );
     });
 
-    test("the BuildSpec is the only property that differs", () => {
+    test("the artifact key the judge Lambda reads moves with the pins", () => {
+        // Code.fromBucket pins no object version, so an unchanged key means CloudFormation
+        // leaves the function pointing at the zip it already deployed.
+        expect(synthBundle(pinned).artifactKey).not.toEqual(synthBundle(other).artifactKey);
+        expect(synthBundle(pinned).artifactKey).toEqual(synthBundle(pinned).artifactKey);
+    });
+
+    test("the source hash still tracks the directory contents, not just the pins", () => {
+        const directory = fs.mkdtempSync(path.join(os.tmpdir(), "pip-bundle-source-"));
+        try {
+            const handler = path.join(directory, "index.py");
+            fs.writeFileSync(handler, "def handler(event, context):\n    return 1\n");
+            const before = synthBundle(pinned, directory).artifactKey;
+            fs.writeFileSync(handler, "def handler(event, context):\n    return 2\n");
+            expect(synthBundle(pinned, directory).artifactKey).not.toEqual(before);
+        } finally {
+            fs.rmSync(directory, { recursive: true, force: true });
+        }
+    });
+
+    test("the BuildSpec and the source asset reference are all that differ", () => {
         const before = synthBundle(other).template.toJSON().Resources;
         const after = synthBundle(pinned).template.toJSON().Resources;
-        const withoutBuildSpec = (resources: any) => {
+        // The asset key reaches the project's Source and the GetObject grant CDK derives from it.
+        const normalized = (resources: any) => {
             const copy = JSON.parse(JSON.stringify(resources));
             for (const resource of Object.values<any>(copy)) {
                 if (resource.Type === "AWS::CodeBuild::Project") {
                     delete resource.Properties.Source.BuildSpec;
                 }
             }
-            return copy;
+            return JSON.parse(JSON.stringify(copy).replace(/[0-9a-f]{64}/g, "<asset-hash>"));
         };
-        expect(withoutBuildSpec(after)).toEqual(withoutBuildSpec(before));
+        expect(JSON.stringify(after)).toMatch(/[0-9a-f]{64}/);
+        expect(normalized(after)).toEqual(normalized(before));
         expect(after).not.toEqual(before);
     });
 });
