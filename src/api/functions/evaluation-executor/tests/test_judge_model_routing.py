@@ -36,6 +36,10 @@ from shared import mantle_support
 
 _REGION = "us-west-2"
 _PASS_THRESHOLD = 0.5
+# Named rather than inlined so the scanner suppression sits on one line that black
+# cannot reflow: as an inline literal, black wraps the assert and moves the pragma
+# to the closing paren, leaving the string itself flagged.
+_FAKE_MINTED_TOKEN = "mantle-token"  # pragma: allowlist secret  # not a credential
 
 # The Responses builder does `from strands.models.openai_responses import
 # OpenAIResponsesModel` inside the function, so the class is patched at its
@@ -186,8 +190,8 @@ def test_mantle_anthropic_judge_reaches_the_messages_surface():
         _patched_model_class("AnthropicModel", anthropic_cls),
     ):
         with patch.object(
-            mantle_support, "mint_token", return_value="mantle-token"
-        ):  # pragma: allowlist secret  # mock minted token, not real
+            mantle_support, "mint_token", return_value=_FAKE_MINTED_TOKEN
+        ):
             with _stub_evaluator("HelpfulnessEvaluator") as stub_cls:
                 result = _evaluate(
                     runner, "HelpfulnessEvaluator", trajectory=_TRAJECTORY
@@ -196,9 +200,7 @@ def test_mantle_anthropic_judge_reaches_the_messages_surface():
     _, kwargs = anthropic_cls.call_args
     assert kwargs["model_id"] == model_id
     assert kwargs["max_tokens"] == JUDGE_MAX_TOKENS
-    assert (
-        kwargs["client_args"]["api_key"] == "mantle-token"
-    )  # pragma: allowlist secret  # mock minted token, not real
+    assert kwargs["client_args"]["api_key"] == _FAKE_MINTED_TOKEN
     # FR8: no reasoning budget, so no thinking/output_config; this surface also
     # drops temperature outright.
     assert kwargs["params"] == {}
@@ -214,8 +216,8 @@ def test_mantle_passthrough_chat_judge_forwards_the_pinned_temperature():
 
     with _mantle_catalog(model_id), _patched_model_class("OpenAIModel", openai_cls):
         with patch.object(
-            mantle_support, "mint_token", return_value="mantle-token"
-        ):  # pragma: allowlist secret  # mock minted token, not real
+            mantle_support, "mint_token", return_value=_FAKE_MINTED_TOKEN
+        ):
             with _stub_evaluator("OutputEvaluator") as stub_cls:
                 result = _evaluate(runner, "OutputEvaluator")
 
@@ -225,9 +227,7 @@ def test_mantle_passthrough_chat_judge_forwards_the_pinned_temperature():
         "max_tokens": JUDGE_MAX_TOKENS,
         "temperature": JUDGE_TEMPERATURE,
     }
-    assert (
-        kwargs["client_args"]["api_key"] == "mantle-token"
-    )  # pragma: allowlist secret  # mock minted token, not real
+    assert kwargs["client_args"]["api_key"] == _FAKE_MINTED_TOKEN
     assert _judge_model_given_to(stub_cls) is openai_cls.return_value
     assert result.status == "scored"
 
@@ -253,8 +253,8 @@ def test_the_evaluator_receives_a_real_model_instance_that_serializes_to_the_id(
 
     with _mantle_catalog(*catalog):
         with patch.object(
-            mantle_support, "mint_token", return_value="mantle-token"
-        ):  # pragma: allowlist secret  # mock minted token, not real
+            mantle_support, "mint_token", return_value=_FAKE_MINTED_TOKEN
+        ):
             with _real_evaluator_without_inference("HelpfulnessEvaluator") as built:
                 result = _evaluate(
                     runner, "HelpfulnessEvaluator", trajectory=_TRAJECTORY
