@@ -14,9 +14,10 @@ import {
     Table,
 } from "@cloudscape-design/components";
 import { generateClient } from "aws-amplify/api";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import { useEvaluationRunWatcher } from "../../../common/hooks/use-evaluation-run-watcher";
 import { Evaluator, EvaluatorRun } from "../../../common/types";
 import { Utils } from "../../../common/utils";
 import { listEvaluatorRuns as listEvaluatorRunsQuery } from "../../../graphql/queries";
@@ -27,6 +28,11 @@ interface RunHistoryModalProps {
     onDismiss: () => void;
     evaluator: Evaluator;
 }
+
+const IN_FLIGHT_RUN_STATUSES = ["Running", "Queued"];
+
+const isRunInFlight = (run: EvaluatorRun): boolean =>
+    IN_FLIGHT_RUN_STATUSES.includes(run.status);
 
 const getStatusType = (
     status?: string,
@@ -58,24 +64,65 @@ export default function RunHistoryModal({
     const [runs, setRuns] = useState<EvaluatorRun[]>([]);
     const [isLoading, setIsLoading] = useState(false);
 
+    // a watcher refetch can resolve after unmount, or after the modal is closed
+    const isMounted = useRef(true);
+    const hasLoaded = useRef(false);
+    // bumped per read, per local write and on close; only the newest generation may be applied
+    const generation = useRef(0);
+
+    useEffect(() => {
+        isMounted.current = true;
+        return () => {
+            isMounted.current = false;
+        };
+    }, []);
+
     const fetchRuns = useCallback(async () => {
-        setIsLoading(true);
+        const readGeneration = ++generation.current;
+        setIsLoading(!hasLoaded.current);
         try {
             const result = await apiClient.graphql({
                 query: listEvaluatorRunsQuery,
                 variables: { evaluatorId: evaluator.evaluatorId },
             });
-            setRuns((result.data?.listEvaluatorRuns || []) as EvaluatorRun[]);
+            if (!isMounted.current || readGeneration !== generation.current) return;
+
+            const fetched = (result.data?.listEvaluatorRuns || []) as EvaluatorRun[];
+            // a failed query answers `[]` too (`evaluation-resolver/index.py:165-167`), so an
+            // empty response may not retire a run this list still shows in flight: FR9
+            setRuns((prev) =>
+                fetched.length === 0 && prev.some(isRunInFlight) ? prev : fetched,
+            );
+            hasLoaded.current = true;
         } catch (error) {
             console.error(Utils.getErrorMessage(error));
         } finally {
-            setIsLoading(false);
+            if (isMounted.current) setIsLoading(false);
         }
     }, [apiClient, evaluator.evaluatorId]);
 
     useEffect(() => {
-        if (visible) fetchRuns();
+        if (visible) {
+            void fetchRuns();
+            return;
+        }
+        // the session ends on close: a read still in flight may not apply, and the next
+        // open loads from scratch rather than settling on the previous open's rows
+        generation.current += 1;
+        hasLoaded.current = false;
     }, [visible, fetchRuns]);
+
+    /** In-flight runs from the fetched list — the modal's own data, no extra query. */
+    const inFlightRunIds = useMemo(
+        () => runs.filter(isRunInFlight).map((run) => run.runId),
+        [runs],
+    );
+
+    useEvaluationRunWatcher({
+        evaluatorId: visible ? evaluator.evaluatorId : null,
+        runIds: inFlightRunIds,
+        onRefetch: fetchRuns,
+    });
 
     const openRunResults = (run: EvaluatorRun) => {
         navigate(
@@ -91,6 +138,7 @@ export default function RunHistoryModal({
                 query: deleteEvaluatorRunMutation,
                 variables: { evaluatorId: evaluator.evaluatorId, runId: run.runId },
             });
+            generation.current += 1;
             setRuns((prev) => prev.filter((r) => r.runId !== run.runId));
         } catch (error) {
             console.error("Failed to delete run:", error);
@@ -193,10 +241,7 @@ export default function RunHistoryModal({
                             <SpaceBetween direction="horizontal" size="xs">
                                 <Button
                                     variant="inline-link"
-                                    disabled={
-                                        item.status === "Running" ||
-                                        item.status === "Queued"
-                                    }
+                                    disabled={isRunInFlight(item)}
                                     onClick={() => openRunResults(item)}
                                 >
                                     View Results
