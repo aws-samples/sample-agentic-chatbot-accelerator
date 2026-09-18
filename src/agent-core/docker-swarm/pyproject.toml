@@ -5,12 +5,14 @@ description = "AgentCore collaborative swarm container dependencies."
 requires-python = ">=3.13"
 dependencies = [
     "strands-agents[openai,anthropic]==1.50.1",
-    "strands-agents-evals==0.1.2",
-    "bedrock-agentcore>=1.8",
-    "mcp-proxy-for-aws==1.2.0",
-    "pydantic==2.12.3",
+    "strands-agents-evals==0.1.17",
+    # Upper bound is load-bearing — see src/agent-core/docker/pyproject.toml for why
+    # this pin and strands-agents have to move together.
+    "bedrock-agentcore>=1.18.1,<1.19",
+    "mcp-proxy-for-aws==1.7.0",
+    "pydantic==2.13.5",
     "boto3>=1.42.86",
-    "aws-opentelemetry-distro==0.10.1",
+    "aws-opentelemetry-distro==0.15.0",
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
 ]

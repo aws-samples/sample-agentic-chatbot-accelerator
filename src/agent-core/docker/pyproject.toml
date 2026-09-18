@@ -4,13 +4,20 @@ version = "2.0.0"
 description = "AgentCore single-agent container dependencies."
 requires-python = ">=3.13"
 dependencies = [
+    # strands-agents and bedrock-agentcore are a coupled pair — see the upper bound
+    # on agentcore below before moving either.
     "strands-agents[bidi,a2a,openai,anthropic]==1.50.1",
-    "strands-agents-evals==0.1.2",
-    "bedrock-agentcore>=1.8",
-    "mcp-proxy-for-aws==1.2.0",
-    "pydantic==2.12.3",
+    "strands-agents-evals==0.1.17",
+    # Upper bound, not just a floor: agentcore 1.23.1's strands session manager
+    # imports `strands.experimental.bidi.hooks`, which only exists from
+    # strands-agents 1.56.0, and declares no floor of its own. `shared.agentcore_memory`
+    # imports that session manager at container start, so an unbounded resolve
+    # produces an image that dies on the first import. Move both pins together.
+    "bedrock-agentcore>=1.18.1,<1.19",
+    "mcp-proxy-for-aws==1.7.0",
+    "pydantic==2.13.5",
     "boto3>=1.42.86",
-    "aws-opentelemetry-distro==0.14.1",
+    "aws-opentelemetry-distro==0.15.0",
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
 ]

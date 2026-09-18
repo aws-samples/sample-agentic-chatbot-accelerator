@@ -135,6 +135,14 @@ export class Authentication extends Construct {
                 id: "AwsSolutions-COG3",
                 reason: "Premium security features not required because this project is for demo only.",
             },
+            {
+                // COG8 supersedes COG3: Cognito replaced `advancedSecurityMode` with
+                // feature plans, and the Plus plan is the paid tier that carries threat
+                // protection. Added by cdk-nag 2.38, so it errors on any stack written
+                // before that — the suppression, not the plan, is the deliberate choice.
+                id: "AwsSolutions-COG8",
+                reason: "Plus tier is a paid feature plan; this project is for demo only and should not force its cost on anyone deploying it.",
+            },
         ]);
         NagSuppressions.addResourceSuppressions(userPool.node.findChild("smsRole"), [
             {

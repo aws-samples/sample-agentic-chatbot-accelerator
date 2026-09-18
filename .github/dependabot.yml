@@ -1,14 +1,33 @@
 # .github/dependabot.yml
-# Dependabot is intentionally disabled — dependencies are managed manually.
+# Dependabot *version* updates are intentionally disabled — dependencies are
+# managed manually, in one sweep, because several pins here are coupled and a
+# per-package PR resolves them into combinations that do not work together
+# (strands-agents/bedrock-agentcore, and the judge bundle's openai/anthropic).
+#
+# `open-pull-requests-limit: 0` is what disables them. It does NOT disable
+# Dependabot *security* updates: those ignore the limit, are raised against any
+# manifest Dependabot detects — including iac-cdk/, src/user-interface/react-app/
+# and cli/, which are not even registered below — and cannot be turned off from
+# this file at all. To stop those, turn off "Dependabot security updates" in the
+# repository settings (Settings → Advanced Security), or narrow them there.
+# So a PR arriving despite this file is expected, not a misconfiguration.
 version: 2
 updates:
+  # The `cooldown` blocks below keep a freshly published version from being
+  # adopted for a week, so a compromised release has time to be pulled. They bind
+  # version updates only — like the limit above, they are ignored by security
+  # updates, by design: a security fix should not sit behind a delay.
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
       interval: "monthly"
     open-pull-requests-limit: 0
+    cooldown:
+      default-days: 7
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
       interval: "monthly"
     open-pull-requests-limit: 0
+    cooldown:
+      default-days: 7
