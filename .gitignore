@@ -29,6 +29,7 @@ local/
 !src/api/functions/resolvers/*.js
 !src/api/functions/resolvers/favorite-runtime-resolvers/*.js
 !src/api/functions/resolvers/runtime-update/*.js
+!src/api/functions/resolvers/evaluation-update/*.js
 
 # User interface
 src/user-interface/react-app/dist

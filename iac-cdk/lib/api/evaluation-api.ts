@@ -398,6 +398,35 @@ export class EvaluationApi extends Construct {
             });
         });
 
+        // Subscription/Mutation for evaluation run status notifications. Created here rather
+        // than in a shared construct so the evaluatorConfig gate takes the resolvers with it.
+        const noneDataSource = props.api.addNoneDataSource("evaluation-none-ds", {
+            name: "evaluation-relay-source",
+        });
+        noneDataSource.createResolver("PublishEvaluationUpdateResolver", {
+            typeName: "Mutation",
+            fieldName: "publishEvaluationUpdate",
+            code: appsync.Code.fromAsset(
+                path.join(
+                    __dirname,
+                    "../../../src/api/functions/resolvers/evaluation-update/publish.js",
+                ),
+            ),
+            runtime: appsync.FunctionRuntime.JS_1_0_0,
+        });
+        noneDataSource.createResolver("ReceiveEvaluationUpdateResolver", {
+            typeName: "Subscription",
+            fieldName: "receiveEvaluationUpdate",
+            code: appsync.Code.fromAsset(
+                path.join(
+                    __dirname,
+                    "../../../src/api/functions/resolvers/evaluation-update/subscribe.js",
+                ),
+            ),
+            runtime: appsync.FunctionRuntime.JS_1_0_0,
+        });
+        this.operations.push("publishEvaluationUpdate", "receiveEvaluationUpdate");
+
         this.evaluationResolver = evaluationResolver;
         this.evaluationExecutor = evaluationExecutor;
         this.evaluationsBucket = evaluationsBucket;
