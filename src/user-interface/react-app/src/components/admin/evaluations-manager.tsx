@@ -18,21 +18,83 @@ import {
     StatusIndicator,
     Table,
 } from "@cloudscape-design/components";
-import { useCallback, useContext, useEffect, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { generateClient } from "aws-amplify/api";
 import { AppContext } from "../../common/app-context";
+import { useEvaluationRunWatcher } from "../../common/hooks/use-evaluation-run-watcher";
 import { Evaluator } from "../../common/types";
 import { Utils } from "../../common/utils";
 import { deleteEvaluator as deleteEvaluatorMutation, startEvaluatorRun as startEvaluatorRunMutation } from "../../graphql/mutations";
-import { listEvaluators as listEvaluatorsQuery, getEvaluatorRun as getEvaluatorRunQuery } from "../../graphql/queries";
+import { listEvaluators as listEvaluatorsQuery } from "../../graphql/queries";
 import DeleteEvaluatorModal from "./evaluations/delete-evaluator-modal";
 import ViewEvaluatorModal from "./evaluations/view-evaluator-modal";
 import RunHistoryModal from "./evaluations/run-history-modal";
 
+const IN_FLIGHT_RUN_STATUSES = ["Running", "Queued"];
+
 export interface EvaluationsManagerProps {
     readonly toolsOpen: boolean;
+}
+
+interface InFlightRun {
+    readonly evaluatorId: string;
+    readonly runId: string;
+}
+
+/**
+ * Merge the in-flight runs a list response shows into the already tracked ones.
+ *
+ * `listEvaluators` answers with the complete set or, when the scan fails, an empty
+ * array — so an empty list is no evidence that a tracked run ended: FR5, FR9.
+ */
+function reconcileInFlightRuns(tracked: InFlightRun[], evaluators: Evaluator[]): InFlightRun[] {
+    const next = new Map(tracked.map(run => [run.evaluatorId, run]));
+
+    if (evaluators.length > 0) {
+        const listed = new Set(evaluators.map(e => e.evaluatorId));
+        for (const run of tracked) {
+            if (!listed.has(run.evaluatorId)) next.delete(run.evaluatorId);
+        }
+    }
+
+    for (const evaluator of evaluators) {
+        const isInFlight = IN_FLIGHT_RUN_STATUSES.includes(evaluator.lastRunStatus ?? "");
+        if (isInFlight && evaluator.lastRunId) {
+            next.set(evaluator.evaluatorId, {
+                evaluatorId: evaluator.evaluatorId,
+                runId: evaluator.lastRunId,
+            });
+        } else if (!isInFlight) {
+            next.delete(evaluator.evaluatorId);
+        }
+    }
+
+    const merged = [...next.values()];
+    const unchanged =
+        merged.length === tracked.length &&
+        merged.every(
+            (run, i) =>
+                run.evaluatorId === tracked[i].evaluatorId && run.runId === tracked[i].runId
+        );
+    return unchanged ? tracked : merged;
+}
+
+interface EvaluationRunWatcherProps {
+    readonly evaluatorId: string;
+    readonly runId: string;
+    readonly onRefetch: () => void | Promise<void>;
+}
+
+function EvaluationRunWatcher(props: EvaluationRunWatcherProps) {
+    useEvaluationRunWatcher({
+        evaluatorId: props.evaluatorId,
+        runIds: [props.runId],
+        onRefetch: props.onRefetch,
+    });
+
+    return null;
 }
 
 
@@ -50,20 +112,37 @@ export default function EvaluationsManager(props: EvaluationsManagerProps) {
     const [showViewModal, setShowViewModal] = useState(false);
     const [showHistoryModal, setShowHistoryModal] = useState(false);
     const [isRunning, setIsRunning] = useState(false);
-    // Polling tracks a specific (evaluatorId, runId) pair.
-    const [pollingRun, setPollingRun] = useState<{ evaluatorId: string; runId: string } | null>(null);
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    /** Runs still in flight, derived from the fetched evaluator list — no persisted client state. */
+    const [trackedRuns, setTrackedRuns] = useState<InFlightRun[]>([]);
 
-    const apiClient = generateClient();
+    const apiClient = useMemo(() => generateClient(), []);
+    // a watcher refetch can resolve after unmount
+    const isMounted = useRef(true);
+    const hasLoaded = useRef(false);
+    // bumped per read and per local write; only the newest generation may be applied: FR5
+    const generation = useRef(0);
+
+    useEffect(() => {
+        isMounted.current = true;
+        return () => {
+            isMounted.current = false;
+        };
+    }, []);
 
     const fetchEvaluators = useCallback(async () => {
         if (!appContext) return;
 
+        const readGeneration = ++generation.current;
+
         try {
-            setIsLoading(true);
+            setIsLoading(!hasLoaded.current);
             const result = await apiClient.graphql({ query: listEvaluatorsQuery });
+            if (!isMounted.current || readGeneration !== generation.current) return;
+
             const data = result.data?.listEvaluators || [];
             // Map GraphQL response to Evaluator type
-            setEvaluators(data.map((item: any) => ({
+            const fetched: Evaluator[] = data.map((item: any) => ({
                 evaluatorId: item.evaluatorId,
                 name: item.name,
                 description: item.description,
@@ -83,58 +162,42 @@ export default function EvaluationsManager(props: EvaluationsManagerProps) {
                 lastRunPassedCases: item.lastRunPassedCases,
                 lastRunFailedCases: item.lastRunFailedCases,
                 lastRunAt: item.lastRunAt,
-            })));
+            }));
+
+            setEvaluators(fetched);
+            // the action buttons read lastRunId off the selection, so it follows the refetched
+            // rows — but an empty list cannot prove a selected row is gone: FR5
+            if (fetched.length > 0) {
+                setSelectedItems(prev =>
+                    prev
+                        .map(selected => fetched.find(e => e.evaluatorId === selected.evaluatorId))
+                        .filter((e): e is Evaluator => e !== undefined)
+                );
+            }
+            hasLoaded.current = true;
         } catch (error) {
             console.log(Utils.getErrorMessage(error));
         } finally {
-            setIsLoading(false);
+            if (isMounted.current) setIsLoading(false);
         }
     }, [appContext, apiClient]);
 
     useEffect(() => {
         fetchEvaluators();
-    }, [props.toolsOpen]);
+    }, [props.toolsOpen, fetchEvaluators]);
 
-    // Poll for status updates when a run is in progress
     useEffect(() => {
-        if (!pollingRun) return;
+        setTrackedRuns(prev => reconcileInFlightRuns(prev, evaluators));
+    }, [evaluators]);
 
-        const pollInterval = setInterval(async () => {
-            try {
-                const result = await apiClient.graphql({
-                    query: getEvaluatorRunQuery,
-                    variables: { evaluatorId: pollingRun.evaluatorId, runId: pollingRun.runId }
-                });
-
-                const runData = result.data?.getEvaluatorRun;
-                if (runData) {
-                    const updated = {
-                        lastRunId: runData.runId,
-                        lastRunStatus: runData.status,
-                        lastRunPassedCases: runData.passedCases ?? undefined,
-                        lastRunFailedCases: runData.failedCases ?? undefined,
-                        lastRunAt: runData.completedAt ?? runData.startedAt ?? undefined,
-                    };
-
-                    setEvaluators(prev => prev.map(e =>
-                        e.evaluatorId === pollingRun.evaluatorId ? { ...e, ...updated } : e
-                    ));
-                    setSelectedItems(prev => prev.map(e =>
-                        e.evaluatorId === pollingRun.evaluatorId ? { ...e, ...updated } : e
-                    ));
-
-                    // Stop polling when the run is no longer in progress
-                    if (runData.status !== "Running" && runData.status !== "Queued") {
-                        setPollingRun(null);
-                    }
-                }
-            } catch (error) {
-                console.error("Polling failed:", error);
-            }
-        }, 2000); // Poll every 2 seconds
-
-        return () => clearInterval(pollInterval);
-    }, [pollingRun, apiClient]);
+    const handleRefresh = useCallback(async () => {
+        setIsRefreshing(true);
+        try {
+            await fetchEvaluators();
+        } finally {
+            if (isMounted.current) setIsRefreshing(false);
+        }
+    }, [fetchEvaluators]);
 
     const handleRunEvaluation = async () => {
         if (selectedItems.length !== 1) return;
@@ -161,15 +224,14 @@ export default function EvaluationsManager(props: EvaluationsManagerProps) {
                 lastRunFailedCases: 0,
                 lastRunAt: run.startedAt ?? undefined,
             };
+            // the Running pointer is already written, so reads issued before it are stale: FR5
+            generation.current += 1;
             setEvaluators(prev => prev.map(e =>
                 e.evaluatorId === evaluator.evaluatorId ? { ...e, ...updated } : e
             ));
             setSelectedItems(prev => prev.map(e =>
                 e.evaluatorId === evaluator.evaluatorId ? { ...e, ...updated } : e
             ));
-
-            // Start polling for this run's status
-            setPollingRun({ evaluatorId: evaluator.evaluatorId, runId: run.runId });
 
             console.log(`Started run ${run.runId} for ${evaluator.name}`);
         } catch (error) {
@@ -205,7 +267,10 @@ export default function EvaluationsManager(props: EvaluationsManagerProps) {
             });
 
             // Remove from local list
+            generation.current += 1;
             setEvaluators(prev => prev.filter(e => e.evaluatorId !== evaluator.evaluatorId));
+            // the one absence an empty list response cannot report: FR9
+            setTrackedRuns(prev => prev.filter(r => r.evaluatorId !== evaluator.evaluatorId));
             setSelectedItems([]);
             setShowDeleteModal(false);
         } catch (error) {
@@ -316,6 +381,15 @@ export default function EvaluationsManager(props: EvaluationsManagerProps) {
 
     return (
         <>
+            {trackedRuns.map(run => (
+                <EvaluationRunWatcher
+                    key={run.evaluatorId}
+                    evaluatorId={run.evaluatorId}
+                    runId={run.runId}
+                    onRefetch={fetchEvaluators}
+                />
+            ))}
+
             <Container header="Agent Evaluations">
                 <Table
                     {...collectionProps}
@@ -364,7 +438,8 @@ export default function EvaluationsManager(props: EvaluationsManagerProps) {
                                     <Button
                                         iconName="refresh"
                                         variant="inline-link"
-                                        onClick={fetchEvaluators}
+                                        onClick={handleRefresh}
+                                        loading={isRefreshing}
                                     >
                                         Refresh
                                     </Button>
