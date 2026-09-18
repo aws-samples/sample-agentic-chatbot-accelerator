@@ -275,6 +275,47 @@ export class EvaluationApi extends Construct {
             }),
         );
 
+        // Grant EvaluationExecutor Bedrock Mantle inference permissions for the LLM
+        // judge. Models on the bedrock-mantle endpoint are reached via CreateInference
+        // on the `project` resource type — a distinct action namespace the bedrock:*
+        // actions above do NOT cover. ListModels backs the dynamic catalog fetch in
+        // mantle_support.get_mantle_model_ids: without it the GET /v1/models call 401s,
+        // the catalog comes back empty, and EVERY judge model silently falls back to
+        // Converse. Mirrors the agent runtime role (`agent-core/index.ts`).
+        evaluationExecutor.addToRolePolicy(
+            new iam.PolicyStatement({
+                sid: "BedrockMantleInference",
+                effect: iam.Effect.ALLOW,
+                actions: ["bedrock-mantle:CreateInference", "bedrock-mantle:ListModels"],
+                resources: [`arn:aws:bedrock-mantle:${stack.region}:${stack.account}:project/*`],
+                conditions: {
+                    StringEquals: {
+                        "aws:ResourceAccount": stack.account,
+                    },
+                },
+            }),
+        );
+
+        // Separate statement because AWS requires this permission-only action to be
+        // scoped to "*"; folding it into the `project/*` statement above grants
+        // nothing. The SHORT_TERM bearer token minted by aws_bedrock_token_generator
+        // inherits this role's permissions, so effective access stays bounded by
+        // BedrockMantleInference.
+        evaluationExecutor.addToRolePolicy(
+            new iam.PolicyStatement({
+                sid: "BedrockMantleCallWithBearerToken",
+                effect: iam.Effect.ALLOW,
+                actions: ["bedrock-mantle:CallWithBearerToken"],
+                resources: ["*"],
+            }),
+        );
+
+        // COUPLING: no sts:AssumeRole grant here, because neither
+        // `shared.defaultEnvironmentVariables` nor the environment block above sets
+        // `bedrockAccessRoleArn`. Adding it arms the cross-account branch in
+        // `base_factory.create_model`, which would then fail on the Converse path
+        // without a matching sts:AssumeRole statement.
+
         // Grant EvaluationExecutor permission to publish to AppSync (for progress updates)
         evaluationExecutor.addToRolePolicy(
             new iam.PolicyStatement({
@@ -382,7 +423,7 @@ export class EvaluationApi extends Construct {
             [
                 {
                     id: "AwsSolutions-IAM5",
-                    reason: "Lambda needs wildcard permissions for DynamoDB, S3, Bedrock AgentCore, AppSync and evaluation models",
+                    reason: 'Lambda needs wildcard permissions for DynamoDB, S3, Bedrock AgentCore, AppSync and evaluation models; bedrock-mantle:CallWithBearerToken is a permission-only action AWS requires to be scoped to "*"',
                 },
                 {
                     id: "AwsSolutions-IAM4",

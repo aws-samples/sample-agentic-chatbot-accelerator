@@ -48,7 +48,7 @@ export class BuilderStack extends cdk.Stack {
     // Pip layer
     public readonly boto3Layer: CodeBuildPipLayer;
 
-    // Pip bundle — evaluation executor (source + strands-agents-evals)
+    // Pip bundle — evaluation executor (source + the judge's SDKs)
     public readonly evaluationExecutorBundle: CodeBuildPipBundle;
 
     // Npm build — React app. Undefined when deployUserInterface is false.
@@ -111,11 +111,21 @@ export class BuilderStack extends cdk.Stack {
         });
 
         // -----------------------------------------------------------------
-        // Pip bundle — evaluation executor Lambda (source + strands-agents-evals)
+        // Pip bundle — evaluation executor Lambda (source + the judge's SDKs)
         // -----------------------------------------------------------------
         this.evaluationExecutorBundle = new CodeBuildPipBundle(this, "EvalExecutorBundle", {
             directory: path.join(__dirname, "../../src/api/functions/evaluation-executor"),
-            pipPackages: ["strands-agents-evals"],
+            // All four pinned: the judge relies on the evals SDK's
+            // `model: Union[Model, str, None]` signature, and unpinned pip resolves
+            // openai 3.x / anthropic 1.x — majors outside the range strands' own
+            // extras allow. Named directly rather than via
+            // `strands-agents[openai,anthropic]` so strands stays transitive.
+            pipPackages: [
+                "strands-agents-evals==0.1.8",
+                "openai==2.48.0",
+                "anthropic==0.120.0",
+                "aws-bedrock-token-generator==1.1.0",
+            ],
             runtime: pythonRuntime,
             architecture: props.lambdaArchitecture,
         });

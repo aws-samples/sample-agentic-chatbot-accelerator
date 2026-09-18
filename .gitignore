@@ -53,6 +53,9 @@ tmp*
 # Graphql copy pasted file
 src/api/functions/notify-runtime-update/graphql.ts
 
+# Model-routing modules copied into the evaluation-executor bundle
+src/api/functions/evaluation-executor/shared/
+
 # Demo MCP servers
 CustomMcpServer/
 

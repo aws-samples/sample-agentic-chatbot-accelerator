@@ -17,6 +17,17 @@ So a latency problem in chat is not an AppSync problem, and adding a resolver wi
 
 Edit the source. The copy is overwritten, and an edit there is silently lost at the next deploy.
 
+## The evaluation-executor's `shared/` is generated
+
+Same footgun, Python edition. `make copy-model-routing` copies four modules — `base_factory.py`, `mantle_support.py`, `stream_types.py`, `base_constants.py` — from `src/agent-core/shared/` into `functions/evaluation-executor/shared/`, plus an empty `__init__.py`, before **every** deploy (prerequisite of `deploy` and `tf-deploy`). The whole directory is gitignored.
+
+`src/agent-core/shared/` is the only editable source. The copy is overwritten on every deploy, so an edit there is silently lost.
+
+Two things it is easy to get wrong:
+
+- The `__init__.py` is synthesized empty, never copied — the real one eagerly imports `bedrock-agentcore` and the MCP stack, neither of which is in the Lambda bundle.
+- The copy has to happen before `cdk synth`, because the bundle's `artifactKey` embeds the asset hash computed at synth time. Copy afterwards and `build.sh` sees no diff, so the bundle ships without the module.
+
 ## State machines
 
 `state-machines/` holds the runtime lifecycle: `create-agentcore-runtime.json`, `delete-agentcore-runtime.json`, `delete-agentcore-endpoints.json`.

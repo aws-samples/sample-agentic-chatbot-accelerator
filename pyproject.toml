@@ -30,6 +30,11 @@ dev = [
     "fastapi>=0.136.1",
     "pytest>=9.1.0",
     "pytest-asyncio>=1.4.0",
+    # Bounded to the range strands-agents' own `anthropic` extra declares
+    # (>=0.21,<1.0). Unbounded, this resolves 1.x — a different major from the
+    # `anthropic==0.120.0` the judge bundle ships, so the tests would exercise an
+    # SDK that never reaches a Lambda.
+    "anthropic>=0.21,<1.0",
 ]
 
 [tool.uv]
