@@ -43,6 +43,9 @@ interface InFlightRun {
     readonly runId: string;
 }
 
+const hasInFlightRun = (evaluator: Evaluator): boolean =>
+    IN_FLIGHT_RUN_STATUSES.includes(evaluator.lastRunStatus ?? "");
+
 /**
  * Merge the in-flight runs a list response shows into the already tracked ones.
  *
@@ -60,7 +63,7 @@ function reconcileInFlightRuns(tracked: InFlightRun[], evaluators: Evaluator[]):
     }
 
     for (const evaluator of evaluators) {
-        const isInFlight = IN_FLIGHT_RUN_STATUSES.includes(evaluator.lastRunStatus ?? "");
+        const isInFlight = hasInFlightRun(evaluator);
         if (isInFlight && evaluator.lastRunId) {
             next.set(evaluator.evaluatorId, {
                 evaluatorId: evaluator.evaluatorId,
@@ -79,6 +82,22 @@ function reconcileInFlightRuns(tracked: InFlightRun[], evaluators: Evaluator[]):
                 run.evaluatorId === tracked[i].evaluatorId && run.runId === tracked[i].runId
         );
     return unchanged ? tracked : merged;
+}
+
+/**
+ * Re-point the selection at the rendered rows, dropping selections those rows no longer hold.
+ *
+ * Derived from the rows rather than from a list response, so a response the rows refused
+ * cannot leave the action bar acting on a row that is no longer displayed: FR5.
+ */
+function reselect(selected: Evaluator[], evaluators: Evaluator[]): Evaluator[] {
+    const next = selected
+        .map(item => evaluators.find(e => e.evaluatorId === item.evaluatorId))
+        .filter((e): e is Evaluator => e !== undefined);
+
+    const unchanged =
+        next.length === selected.length && next.every((e, i) => e === selected[i]);
+    return unchanged ? selected : next;
 }
 
 interface EvaluationRunWatcherProps {
@@ -164,16 +183,11 @@ export default function EvaluationsManager(props: EvaluationsManagerProps) {
                 lastRunAt: item.lastRunAt,
             }));
 
-            setEvaluators(fetched);
-            // the action buttons read lastRunId off the selection, so it follows the refetched
-            // rows — but an empty list cannot prove a selected row is gone: FR5
-            if (fetched.length > 0) {
-                setSelectedItems(prev =>
-                    prev
-                        .map(selected => fetched.find(e => e.evaluatorId === selected.evaluatorId))
-                        .filter((e): e is Evaluator => e !== undefined)
-                );
-            }
+            // a failed scan answers `[]` too (`evaluation-resolver/index.py:130-132`), so an
+            // empty response may not retire rows this table still shows in flight: FR5, FR9
+            setEvaluators(prev =>
+                fetched.length === 0 && prev.some(hasInFlightRun) ? prev : fetched
+            );
             hasLoaded.current = true;
         } catch (error) {
             console.log(Utils.getErrorMessage(error));
@@ -188,6 +202,7 @@ export default function EvaluationsManager(props: EvaluationsManagerProps) {
 
     useEffect(() => {
         setTrackedRuns(prev => reconcileInFlightRuns(prev, evaluators));
+        setSelectedItems(prev => reselect(prev, evaluators));
     }, [evaluators]);
 
     const handleRefresh = useCallback(async () => {

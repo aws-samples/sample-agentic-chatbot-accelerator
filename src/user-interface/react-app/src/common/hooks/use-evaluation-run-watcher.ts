@@ -7,18 +7,20 @@
 // Hook: useEvaluationRunWatcher
 //
 // Owns the transport and the recovery policy for evaluation run-status
-// changes: an AppSync subscription, a re-read on reconnect, and bounded
-// backoff polling when the real-time path is unhealthy.
+// changes: an AppSync subscription, a re-read on reconnect, and a safety-net
+// poll whose interval depends on the health of the real-time path.
 //
 import { CONNECTION_STATE_CHANGE, ConnectionState, generateClient } from "aws-amplify/api";
 import { Hub } from "aws-amplify/utils";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { receiveEvaluationUpdate } from "../../graphql/subscriptions";
 
-/** First fallback poll delay, doubling to POLL_MAX_MS. */
+/** First poll delay while the real-time path is unhealthy, doubling to POLL_MAX_MS. */
 const POLL_INITIAL_MS = 5_000;
-/** Ceiling for the fallback poll backoff. Not a give-up timeout — polling continues at this interval. */
+/** Ceiling for the unhealthy backoff. Not a give-up timeout — polling continues at this interval. */
 const POLL_MAX_MS = 30_000;
+/** Flat poll interval while the real-time path looks healthy: a publish can fail with no client-visible error. */
+const POLL_HEALTHY_MS = 60_000;
 
 interface ApiHubEventData {
     event: string;
@@ -38,8 +40,9 @@ export interface UseEvaluationRunWatcherOptions {
  * Watch evaluation runs and trigger a re-read whenever their status may have changed.
  *
  * The notification is a hint only — this hook never surfaces the payload, because
- * DynamoDB is the source of truth (ADR 0007). Polling is a fallback, entered when the
- * subscription reports an error and left when a notification is delivered on it.
+ * DynamoDB is the source of truth (ADR 0007). Polling is a safety net that runs for as
+ * long as `runIds` is non-empty; the health of the subscription chooses the interval,
+ * not whether to poll at all.
  * Unsubscribes and clears timers on unmount and whenever `evaluatorId` changes.
  */
 export function useEvaluationRunWatcher(options: UseEvaluationRunWatcherOptions): void {
@@ -107,10 +110,12 @@ export function useEvaluationRunWatcher(options: UseEvaluationRunWatcherOptions)
         });
     }, [evaluatorId, refetch]);
 
+    // polls on a healthy channel too: a swallowed publish failure (FR3) produces no
+    // notification and no subscription error, so health only picks the interval
     useEffect(() => {
-        if (!evaluatorId || !realtimeUnhealthy || runIdsKey.length === 0) return;
+        if (!evaluatorId || runIdsKey.length === 0) return;
 
-        let delayMs = POLL_INITIAL_MS;
+        let delayMs = realtimeUnhealthy ? POLL_INITIAL_MS : POLL_HEALTHY_MS;
         let timer: ReturnType<typeof setTimeout>;
         let stopped = false;
 
@@ -118,7 +123,7 @@ export function useEvaluationRunWatcher(options: UseEvaluationRunWatcherOptions)
             if (stopped) return;
             await refetch();
             if (stopped) return;
-            delayMs = Math.min(delayMs * 2, POLL_MAX_MS);
+            if (realtimeUnhealthy) delayMs = Math.min(delayMs * 2, POLL_MAX_MS);
             timer = setTimeout(() => void tick(), delayMs);
         };
 
