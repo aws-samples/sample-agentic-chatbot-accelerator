@@ -21,7 +21,11 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
+from botocore.exceptions import ClientError
 
+_CLIENT_ERROR = ClientError(
+    {"Error": {"Code": "ProvisionedThroughputExceededException"}}, "UpdateItem"
+)
 _EVALUATOR_ID = "evaluator-1"
 _RUN_ID = "run-1"
 _ENDPOINT = "https://example.appsync-api.us-west-2.amazonaws.com/graphql"
@@ -50,12 +54,14 @@ def wiring(index_module):
     with patch.multiple(
         index_module,
         EVALUATOR_RUNS_TABLE=recorder.runs_table,
+        EVALUATIONS_TABLE=recorder.evaluations_table,
         publish_evaluation_update=recorder.publish,
         _finalize_run=recorder.finalize,
     ):
         yield SimpleNamespace(
             index=index_module,
             runs_table=recorder.runs_table,
+            evaluations_table=recorder.evaluations_table,
             publish=recorder.publish,
             finalize=recorder.finalize,
         )
@@ -150,3 +156,41 @@ class TestPublishBehaviour:
         _progress(wiring, completed=20, total=200, status="Queued")
 
         wiring.publish.assert_called_once_with(_EVALUATOR_ID, _RUN_ID, "Queued")
+
+
+class TestListViewProgress:
+    """The evaluator pointer the manager table reads."""
+
+    def test_a_milestone_advances_the_pointer_counters(self, wiring):
+        _progress(wiring, completed=20, total=200)
+
+        wiring.evaluations_table.update_item.assert_called_once()
+        values = wiring.evaluations_table.update_item.call_args.kwargs[
+            "ExpressionAttributeValues"
+        ]
+        assert values == {":cu": 20, ":tu": 200}
+
+    def test_the_pointer_write_touches_only_the_counters(self, wiring):
+        _progress(wiring, completed=20, total=200)
+
+        expression = wiring.evaluations_table.update_item.call_args.kwargs[
+            "UpdateExpression"
+        ]
+        # a mid-run write must not disturb the run id, status or timestamp the
+        # pointer already holds.
+        for attribute in ("LastRunId", "LastRunStatus", "LastRunAt"):
+            assert attribute not in expression
+
+    def test_a_non_milestone_unit_does_not_write_the_pointer(self, wiring):
+        _progress(wiring, completed=21, total=200)
+
+        wiring.evaluations_table.update_item.assert_not_called()
+
+    def test_a_pointer_write_failure_does_not_fail_the_unit(self, wiring):
+        wiring.evaluations_table.update_item.side_effect = _CLIENT_ERROR
+
+        _progress(wiring, completed=20, total=200)
+
+        # the unit's own progress write already succeeded; losing a list-view
+        # refinement must not re-run it.
+        wiring.publish.assert_called_once()

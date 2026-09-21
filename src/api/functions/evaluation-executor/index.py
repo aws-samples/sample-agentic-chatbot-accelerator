@@ -831,6 +831,7 @@ def _update_progress(
             logger.info(f"Run {run_id} all units complete: {completed}/{total}")
             _finalize_run(evaluator_id, run_id, item)
         elif _is_progress_milestone(completed, total):
+            _update_last_run_progress(evaluator_id, completed, total)
             _notify_run_status(evaluator_id, run_id, str(item.get("Status", "Running")))
 
     except ClientError as e:
@@ -1099,6 +1100,37 @@ def _save_aggregated_results(
     except ClientError as e:
         logger.error(f"Failed to save aggregated results: {e}")
         return ""
+
+
+def _update_last_run_progress(
+    evaluator_id: str,
+    completed: int,
+    total: int,
+) -> None:
+    """Advance the list view's unit counters; never touch the rest of the pointer.
+
+    Writes only the two counters, so a mid-run update cannot disturb the run id,
+    status or timestamp the pointer already holds. Swallows its own failure: the
+    unit's progress is already durable, and losing a list-view refinement must
+    not re-run a completed unit.
+
+    Args:
+        evaluator_id (str): Partition key of the run's evaluator.
+        completed (int): Units finished so far.
+        total (int): Units the run expects in all.
+    """
+    if not EVALUATIONS_TABLE:
+        return
+    try:
+        EVALUATIONS_TABLE.update_item(
+            Key={"EvaluatorName": evaluator_id},
+            UpdateExpression=(
+                "SET LastRunCompletedUnits = :cu, LastRunTotalUnits = :tu"
+            ),
+            ExpressionAttributeValues={":cu": completed, ":tu": total},
+        )
+    except ClientError as e:
+        logger.warning(f"Failed to update last-run progress: {e}")
 
 
 def _update_last_run_pointer(

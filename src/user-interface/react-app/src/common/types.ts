@@ -66,6 +66,9 @@ export interface Evaluator {
     // Denormalized pointer to the most recent run (for the list view)
     lastRunId?: string;
     lastRunStatus?: string;
+    // Unit progress for a run still in flight; the counts below arrive at finalize.
+    lastRunCompletedUnits?: number;
+    lastRunTotalUnits?: number;
     lastRunPassedCases?: number;
     lastRunFailedCases?: number;
     lastRunAt?: string;

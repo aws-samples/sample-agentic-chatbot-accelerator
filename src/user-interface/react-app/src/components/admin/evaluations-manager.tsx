@@ -178,6 +178,8 @@ export default function EvaluationsManager(props: EvaluationsManagerProps) {
                 updatedAt: item.updatedAt,
                 lastRunId: item.lastRunId,
                 lastRunStatus: item.lastRunStatus,
+                lastRunCompletedUnits: item.lastRunCompletedUnits,
+                lastRunTotalUnits: item.lastRunTotalUnits,
                 lastRunPassedCases: item.lastRunPassedCases,
                 lastRunFailedCases: item.lastRunFailedCases,
                 lastRunAt: item.lastRunAt,
@@ -235,6 +237,10 @@ export default function EvaluationsManager(props: EvaluationsManagerProps) {
             const updated = {
                 lastRunId: run.runId,
                 lastRunStatus: run.status,
+                // seeded from the run so the cell reads "0/N completed" rather than
+                // "0/0" until the first milestone write lands
+                lastRunCompletedUnits: 0,
+                lastRunTotalUnits: run.totalUnits ?? 0,
                 lastRunPassedCases: 0,
                 lastRunFailedCases: 0,
                 lastRunAt: run.startedAt ?? undefined,
@@ -583,14 +589,27 @@ export default function EvaluationsManager(props: EvaluationsManagerProps) {
                         {
                             id: "results",
                             header: "Last Results",
-                            cell: (item) => (
-                                item.lastRunPassedCases !== undefined || item.lastRunFailedCases !== undefined ? (
+                            // While the run is in flight the pass/fail counts are still 0 —
+                            // they are written at finalize — so report units done instead of
+                            // claiming "0/0 passed" for a run that has judged nothing yet.
+                            cell: (item) =>
+                                hasInFlightRun(item) ? (
                                     <span>
-                                        {item.lastRunPassedCases || 0}/{(item.lastRunPassedCases || 0) + (item.lastRunFailedCases || 0)} passed
+                                        {item.lastRunCompletedUnits || 0}/
+                                        {item.lastRunTotalUnits || 0} completed
                                     </span>
-                                ) : "-"
-                            ),
-                            width: 120,
+                                ) : item.lastRunPassedCases !== undefined ||
+                                  item.lastRunFailedCases !== undefined ? (
+                                    <span>
+                                        {item.lastRunPassedCases || 0}/
+                                        {(item.lastRunPassedCases || 0) +
+                                            (item.lastRunFailedCases || 0)}{" "}
+                                        passed
+                                    </span>
+                                ) : (
+                                    "-"
+                                ),
+                            width: 140,
                         },
                         {
                             id: "createdAt",
