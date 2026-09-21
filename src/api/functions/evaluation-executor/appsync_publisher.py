@@ -65,6 +65,13 @@ def publish_evaluation_update(evaluator_id: str, run_id: str, status: str) -> bo
         )
         return False
 
+    if not endpoint.startswith("https://"):
+        logger.warning(
+            f"APPSYNC_API_ENDPOINT is not an https endpoint, skipping notification: {endpoint}",
+            extra=log_context,
+        )
+        return False
+
     body = json.dumps(
         {
             "query": _MUTATION,
@@ -78,7 +85,11 @@ def publish_evaluation_update(evaluator_id: str, run_id: str, status: str) -> bo
 
     try:
         request = _sign(endpoint, body)
-        with urllib.request.urlopen(request, timeout=_TIMEOUT_SECONDS) as response:
+        # scheme is pinned to https above, so no file:/ or custom scheme reaches urlopen
+        # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
+        with urllib.request.urlopen(
+            request, timeout=_TIMEOUT_SECONDS
+        ) as response:  # nosec B310
             payload = json.loads(response.read() or b"{}")
         # AppSync answers authorization and validation failures with HTTP 200 plus
         # an errors[] body.

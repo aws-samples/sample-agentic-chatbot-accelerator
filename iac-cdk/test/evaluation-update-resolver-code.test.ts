@@ -223,6 +223,9 @@ function stagedCode(assemblyDir: string, template: any, typeName: string, fieldN
     const location = JSON.stringify(resolvers[0].Properties.CodeS3Location);
     const asset = /([0-9a-f]{64})\.js/.exec(location);
     if (!asset) throw new Error(`No file asset in CodeS3Location ${location}`);
+    // the interpolated segment is a 64-hex asset hash this test just matched out of the
+    // template it synthesized itself — there is no external input anywhere in this file
+    // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
     return fs.readFileSync(path.join(assemblyDir, `asset.${asset[1]}.js`), "utf8");
 }
 
@@ -239,6 +242,7 @@ describe("the deployed resolver code is the code under test", () => {
     ])("%s.%s deploys %s", (typeName, fieldName, file) => {
         expect(
             stagedCode(synthesized.assemblyDir, synthesized.template, typeName, fieldName),
+            // nosemgrep: javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal
         ).toEqual(fs.readFileSync(path.join(RESOLVER_DIR, file), "utf8"));
     });
 });
