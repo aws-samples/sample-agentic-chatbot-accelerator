@@ -19,6 +19,11 @@ output "operations" {
     "listEvaluatorRuns",
     "getEvaluatorRun",
     "getEvaluatorTestCases",
+    # Resolved by this module's None data source, so the proxy loop must not claim
+    # them. receiveEvaluationUpdate is defensive: that loop reads the Query and
+    # Mutation blocks only, so no Subscription was ever proxied.
+    "publishEvaluationUpdate",
+    "receiveEvaluationUpdate",
   ]
 }
 

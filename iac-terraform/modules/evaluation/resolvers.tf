@@ -7,6 +7,7 @@ Evaluation Module - AppSync Resolvers
 Creates:
 - Lambda data source for the evaluation resolver
 - Resolvers for 11 evaluation GraphQL operations
+- None data source and JS resolvers for the run-status notification pair
 */
 
 # -----------------------------------------------------------------------------
@@ -135,4 +136,52 @@ resource "aws_appsync_resolver" "get_evaluator_test_cases" {
   type        = "Query"
   field       = "getEvaluatorTestCases"
   data_source = aws_appsync_datasource.evaluation.name
+}
+
+# -----------------------------------------------------------------------------
+# None Data Source + JS Resolvers for Run-Status Notifications
+# -----------------------------------------------------------------------------
+
+resource "aws_appsync_datasource" "evaluation_none" {
+  api_id = var.appsync_api_id
+  name   = "evaluation_relay_source"
+  type   = "NONE"
+}
+
+# Mutation.publishEvaluationUpdate was resolved by the http_api_resolver proxy loop
+# until this module claimed it in outputs.tf. AppSync allows one resolver per
+# type+field, and only api_id/type/field force replacement — so on an environment
+# that has already applied the proxy version, move the existing resolver into this
+# address before applying, or the create races the destroy:
+#   terraform state mv \
+#     'module.http_api_resolver.aws_appsync_resolver.mutation_resolvers["publishEvaluationUpdate"]' \
+#     'module.evaluation.aws_appsync_resolver.publish_evaluation_update'
+resource "aws_appsync_resolver" "publish_evaluation_update" {
+  api_id      = var.appsync_api_id
+  type        = "Mutation"
+  field       = "publishEvaluationUpdate"
+  data_source = aws_appsync_datasource.evaluation_none.name
+  kind        = "UNIT"
+
+  code = file("${local.functions_dir}/resolvers/evaluation-update/publish.js")
+
+  runtime {
+    name            = "APPSYNC_JS"
+    runtime_version = "1.0.0"
+  }
+}
+
+resource "aws_appsync_resolver" "receive_evaluation_update" {
+  api_id      = var.appsync_api_id
+  type        = "Subscription"
+  field       = "receiveEvaluationUpdate"
+  data_source = aws_appsync_datasource.evaluation_none.name
+  kind        = "UNIT"
+
+  code = file("${local.functions_dir}/resolvers/evaluation-update/subscribe.js")
+
+  runtime {
+    name            = "APPSYNC_JS"
+    runtime_version = "1.0.0"
+  }
 }
