@@ -399,7 +399,7 @@ export class EvaluationApi extends Construct {
         });
 
         // Subscription/Mutation for evaluation run status notifications. Created here rather
-        // than in a shared construct so the evaluatorConfig gate takes the resolvers with it.
+        // than in a shared construct so the resolvers stay with the feature they belong to.
         const noneDataSource = props.api.addNoneDataSource("evaluation-none-ds", {
             name: "evaluation-relay-source",
         });

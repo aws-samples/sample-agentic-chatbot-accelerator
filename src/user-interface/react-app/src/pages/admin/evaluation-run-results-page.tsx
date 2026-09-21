@@ -137,7 +137,8 @@ export default function EvaluationRunResultsPage() {
     const isRunInFlight = run?.status === "Running" || run?.status === "Queued";
 
     useEvaluationRunWatcher({
-        evaluatorId,
+        // no run can start from this page, so a terminal run needs no transport at all
+        evaluatorId: isRunInFlight ? evaluatorId : null,
         runIds: isRunInFlight && runId ? [runId] : [],
         onRefetch: loadRun,
     });
