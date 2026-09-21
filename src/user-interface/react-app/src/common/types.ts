@@ -66,6 +66,9 @@ export interface Evaluator {
     // Denormalized pointer to the most recent run (for the list view)
     lastRunId?: string;
     lastRunStatus?: string;
+    // Unit progress for a run still in flight; the counts below arrive at finalize.
+    lastRunCompletedUnits?: number;
+    lastRunTotalUnits?: number;
     lastRunPassedCases?: number;
     lastRunFailedCases?: number;
     lastRunAt?: string;
@@ -91,6 +94,10 @@ export interface EvaluatorRun {
     runtimeVersion?: string;
     // Status: Queued, Running, Completed, Failed
     status: string;
+    // Units = (case, repetition) executions. The only counters that advance
+    // while the run is in progress; everything below is written at finalize.
+    completedUnits?: number;
+    totalUnits?: number;
     totalCases?: number;
     passedCases?: number;
     failedCases?: number;

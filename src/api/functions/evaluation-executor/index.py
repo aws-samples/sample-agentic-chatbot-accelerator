@@ -137,6 +137,10 @@ class DecimalEncoder(json.JSONEncoder):
 # "Running" forever (finalize triggers only when CompletedUnits == TotalUnits).
 _MAX_RECEIVE_COUNT = 3
 
+# Progress notifications per run, roughly: the step is TotalUnits // this. Bounds
+# the cost of a long run, since every notification is a re-read per open surface.
+_PROGRESS_NOTIFY_STEPS = 10
+
 
 @tracer.capture_method
 def process_record(record: SQSRecord):
@@ -767,6 +771,29 @@ def _save_test_case_result(
         logger.error(f"Failed to save unit result to S3: {e}")
 
 
+def _is_progress_milestone(completed: int, total: int) -> bool:
+    """Whether this unit count is one the UI should be told about.
+
+    Units arrive across many Lambda invocations, so there is no in-process
+    counter to throttle against — the milestone is derived from the atomic
+    post-increment count alone. The step scales with the run so a long run
+    notifies about as often as a short one.
+
+    Args:
+        completed (int): Units finished, from the update's ALL_NEW response.
+        total (int): Units the run expects in all.
+
+    Returns:
+        bool: True on a step boundary. The final unit is excluded: finalize
+            publishes the terminal status itself.
+    """
+    if total <= 0 or completed >= total:
+        return False
+
+    step = max(1, total // _PROGRESS_NOTIFY_STEPS)
+    return completed % step == 0
+
+
 @tracer.capture_method
 def _update_progress(
     evaluator_id: str,
@@ -803,6 +830,9 @@ def _update_progress(
         if completed >= total > 0:
             logger.info(f"Run {run_id} all units complete: {completed}/{total}")
             _finalize_run(evaluator_id, run_id, item)
+        elif _is_progress_milestone(completed, total):
+            _update_last_run_progress(evaluator_id, completed, total)
+            _notify_run_status(evaluator_id, run_id, str(item.get("Status", "Running")))
 
     except ClientError as e:
         logger.error(f"Failed to update progress: {e}")
@@ -1070,6 +1100,37 @@ def _save_aggregated_results(
     except ClientError as e:
         logger.error(f"Failed to save aggregated results: {e}")
         return ""
+
+
+def _update_last_run_progress(
+    evaluator_id: str,
+    completed: int,
+    total: int,
+) -> None:
+    """Advance the list view's unit counters; never touch the rest of the pointer.
+
+    Writes only the two counters, so a mid-run update cannot disturb the run id,
+    status or timestamp the pointer already holds. Swallows its own failure: the
+    unit's progress is already durable, and losing a list-view refinement must
+    not re-run a completed unit.
+
+    Args:
+        evaluator_id (str): Partition key of the run's evaluator.
+        completed (int): Units finished so far.
+        total (int): Units the run expects in all.
+    """
+    if not EVALUATIONS_TABLE:
+        return
+    try:
+        EVALUATIONS_TABLE.update_item(
+            Key={"EvaluatorName": evaluator_id},
+            UpdateExpression=(
+                "SET LastRunCompletedUnits = :cu, LastRunTotalUnits = :tu"
+            ),
+            ExpressionAttributeValues={":cu": completed, ":tu": total},
+        )
+    except ClientError as e:
+        logger.warning(f"Failed to update last-run progress: {e}")
 
 
 def _update_last_run_pointer(

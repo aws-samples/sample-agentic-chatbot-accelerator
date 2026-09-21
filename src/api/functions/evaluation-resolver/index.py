@@ -448,7 +448,14 @@ def start_evaluator_run(evaluatorId: str) -> Optional[dict]:
 
     # Update the evaluator's denormalized "last run" pointer for the list view.
     _update_last_run_pointer(
-        evaluatorId, run_id, "Running", timestamp, passed=0, failed=0
+        evaluatorId,
+        run_id,
+        "Running",
+        timestamp,
+        passed=0,
+        failed=0,
+        completed_units=0,
+        total_units=total_units,
     )
 
     if not EVALUATION_QUEUE_URL:
@@ -641,8 +648,14 @@ def _update_last_run_pointer(
     timestamp: str,
     passed: int,
     failed: int,
+    completed_units: int = 0,
+    total_units: int = 0,
 ) -> None:
-    """Update the evaluator's denormalized last-run summary."""
+    """Update the evaluator's denormalized last-run summary.
+
+    The unit counters are reset here rather than left to the executor, so a new
+    run cannot briefly show the previous run's progress in the list view.
+    """
     if not EVALUATIONS_TABLE:
         return
     try:
@@ -650,7 +663,8 @@ def _update_last_run_pointer(
             Key={"EvaluatorName": evaluator_id},
             UpdateExpression=(
                 "SET LastRunId = :rid, LastRunStatus = :st, LastRunAt = :ts, "
-                "LastRunPassedCases = :p, LastRunFailedCases = :f"
+                "LastRunPassedCases = :p, LastRunFailedCases = :f, "
+                "LastRunCompletedUnits = :cu, LastRunTotalUnits = :tu"
             ),
             ExpressionAttributeValues={
                 ":rid": run_id,
@@ -658,6 +672,8 @@ def _update_last_run_pointer(
                 ":ts": timestamp,
                 ":p": passed,
                 ":f": failed,
+                ":cu": completed_units,
+                ":tu": total_units,
             },
         )
     except ClientError as err:
@@ -771,6 +787,8 @@ def _format_evaluator(item: dict, include_run_detail: bool = False) -> dict:
         "updatedAt": item.get("UpdatedAt"),
         "lastRunId": item.get("LastRunId"),
         "lastRunStatus": item.get("LastRunStatus"),
+        "lastRunCompletedUnits": _to_int(item.get("LastRunCompletedUnits")),
+        "lastRunTotalUnits": _to_int(item.get("LastRunTotalUnits")),
         "lastRunPassedCases": _to_int(item.get("LastRunPassedCases")),
         "lastRunFailedCases": _to_int(item.get("LastRunFailedCases")),
         "lastRunAt": item.get("LastRunAt"),
@@ -836,6 +854,8 @@ def _format_run(item: Optional[dict], include_results: bool = False) -> Optional
         "testCasesCount": _to_int(item.get("TestCasesCount")),
         "resultsS3Path": results_s3_path,
         "status": item.get("Status"),
+        "completedUnits": _to_int(item.get("CompletedUnits")),
+        "totalUnits": _to_int(item.get("TotalUnits")),
         "totalCases": _to_int(item.get("TotalCases")),
         "passedCases": _to_int(item.get("PassedCases")),
         "failedCases": _to_int(item.get("FailedCases")),

@@ -209,6 +209,10 @@ type Evaluator @aws_cognito_user_pools {
     # The full run state/results live on EvaluatorRun.
     lastRunId: String
     lastRunStatus: String
+    # Unit progress, so the list view can report a run in flight. The pass/fail
+    # counts below are written only at finalize.
+    lastRunCompletedUnits: Int
+    lastRunTotalUnits: Int
     lastRunPassedCases: Int
     lastRunFailedCases: Int
     lastRunAt: AWSDateTime
@@ -260,6 +264,10 @@ type EvaluatorRun @aws_cognito_user_pools {
     resultsS3Path: String
     # Status: Queued, Running, Completed, Failed
     status: String!
+    # Units finished so far. Advances while the run is in progress, unlike the
+    # pass/fail counts below, which are written only at finalize.
+    completedUnits: Int
+    totalUnits: Int
     totalCases: Int
     passedCases: Int
     failedCases: Int

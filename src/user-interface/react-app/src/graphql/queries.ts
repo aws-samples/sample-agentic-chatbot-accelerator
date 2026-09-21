@@ -349,6 +349,8 @@ export const listEvaluators = /* GraphQL */ `query ListEvaluators {
     updatedAt
     lastRunId
     lastRunStatus
+    lastRunCompletedUnits
+    lastRunTotalUnits
     lastRunPassedCases
     lastRunFailedCases
     lastRunAt
@@ -416,6 +418,8 @@ export const getEvaluator = /* GraphQL */ `query GetEvaluator($evaluatorId: ID!)
     updatedAt
     lastRunId
     lastRunStatus
+    lastRunCompletedUnits
+    lastRunTotalUnits
     lastRunPassedCases
     lastRunFailedCases
     lastRunAt
@@ -482,6 +486,8 @@ export const listEvaluatorRuns = /* GraphQL */ `query ListEvaluatorRuns($evaluat
     testCasesCount
     resultsS3Path
     status
+    completedUnits
+    totalUnits
     totalCases
     passedCases
     failedCases
@@ -546,6 +552,8 @@ export const getEvaluatorRun = /* GraphQL */ `query GetEvaluatorRun($evaluatorId
     testCasesCount
     resultsS3Path
     status
+    completedUnits
+    totalUnits
     totalCases
     passedCases
     failedCases

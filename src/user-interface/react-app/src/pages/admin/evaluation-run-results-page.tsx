@@ -325,6 +325,13 @@ function RunResultsContent({
     );
     const selectedCase = selectedItems[0];
 
+    // Pass/fail counts are written only at finalize, while TotalCases is written at
+    // run creation — so mid-run the derivations below would report every case as
+    // failed and a red 0.0% pass rate. Suppress them until the run has produced them.
+    const isInFlight = run.status === "Running" || run.status === "Queued";
+    const completedUnits = run.completedUnits ?? 0;
+    const totalUnits = run.totalUnits ?? 0;
+
     const passRate =
         results.totalCases > 0
             ? (results.passedCases / results.totalCases) * 100
@@ -370,12 +377,24 @@ function RunResultsContent({
                                 {results.status}
                             </StatusIndicator>
                         </div>
-                        <div>
-                            <Box variant="awsui-key-label">Pass Rate</Box>
-                            <StatusIndicator type={getPassRateColor(passRate)}>
-                                {passRate.toFixed(1)}%
-                            </StatusIndicator>
-                        </div>
+                        {isInFlight ? (
+                            <div>
+                                <Box variant="awsui-key-label">Progress</Box>
+                                <StatusIndicator type="loading">
+                                    {completedUnits} of {totalUnits} test runs
+                                    completed
+                                </StatusIndicator>
+                            </div>
+                        ) : (
+                            <div>
+                                <Box variant="awsui-key-label">Pass Rate</Box>
+                                <StatusIndicator
+                                    type={getPassRateColor(passRate)}
+                                >
+                                    {passRate.toFixed(1)}%
+                                </StatusIndicator>
+                            </div>
+                        )}
                         <div>
                             <Box variant="awsui-key-label">Duration</Box>
                             <Box>{formatDuration(results.totalTimeMs)}</Box>
@@ -386,25 +405,31 @@ function RunResultsContent({
                             <Box variant="awsui-key-label">Total Test Cases</Box>
                             <Box>{results.totalCases}</Box>
                         </div>
-                        <div>
-                            <Box variant="awsui-key-label">Passed</Box>
-                            <Box color="text-status-success">
-                                {results.passedCases}
-                            </Box>
-                        </div>
-                        <div>
-                            <Box variant="awsui-key-label">Failed</Box>
-                            <Box color="text-status-error">{failedCount}</Box>
-                        </div>
-                        {skippedCount > 0 && (
-                            <div>
-                                <Box variant="awsui-key-label">
-                                    Skipped (not applicable)
-                                </Box>
-                                <Box color="text-status-inactive">
-                                    {skippedCount}
-                                </Box>
-                            </div>
+                        {!isInFlight && (
+                            <>
+                                <div>
+                                    <Box variant="awsui-key-label">Passed</Box>
+                                    <Box color="text-status-success">
+                                        {results.passedCases}
+                                    </Box>
+                                </div>
+                                <div>
+                                    <Box variant="awsui-key-label">Failed</Box>
+                                    <Box color="text-status-error">
+                                        {failedCount}
+                                    </Box>
+                                </div>
+                                {skippedCount > 0 && (
+                                    <div>
+                                        <Box variant="awsui-key-label">
+                                            Skipped (not applicable)
+                                        </Box>
+                                        <Box color="text-status-inactive">
+                                            {skippedCount}
+                                        </Box>
+                                    </div>
+                                )}
+                            </>
                         )}
                     </SpaceBetween>
                     {/* Run provenance: which agent runtime/endpoint/version ran */}

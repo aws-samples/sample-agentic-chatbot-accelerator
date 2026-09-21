@@ -307,6 +307,8 @@ export const createEvaluator = /* GraphQL */ `mutation CreateEvaluator($input: C
     updatedAt
     lastRunId
     lastRunStatus
+    lastRunCompletedUnits
+    lastRunTotalUnits
     lastRunPassedCases
     lastRunFailedCases
     lastRunAt
@@ -374,6 +376,8 @@ export const updateEvaluator = /* GraphQL */ `mutation UpdateEvaluator($evaluato
     updatedAt
     lastRunId
     lastRunStatus
+    lastRunCompletedUnits
+    lastRunTotalUnits
     lastRunPassedCases
     lastRunFailedCases
     lastRunAt
@@ -447,6 +451,8 @@ export const startEvaluatorRun = /* GraphQL */ `mutation StartEvaluatorRun($eval
     testCasesCount
     resultsS3Path
     status
+    completedUnits
+    totalUnits
     totalCases
     passedCases
     failedCases
@@ -519,6 +525,8 @@ export const runEvaluation = /* GraphQL */ `mutation RunEvaluation($evaluatorId:
     updatedAt
     lastRunId
     lastRunStatus
+    lastRunCompletedUnits
+    lastRunTotalUnits
     lastRunPassedCases
     lastRunFailedCases
     lastRunAt
