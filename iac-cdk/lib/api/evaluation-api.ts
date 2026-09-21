@@ -403,7 +403,11 @@ export class EvaluationApi extends Construct {
         const noneDataSource = props.api.addNoneDataSource("evaluation-none-ds", {
             name: "evaluation-relay-source",
         });
-        noneDataSource.createResolver("PublishEvaluationUpdateResolver", {
+        // Scope and id match the proxy resolver HttpApiBackend used to create for this field, so
+        // switching it to the NONE source is an in-place DataSourceName update rather than a
+        // second resolver on Mutation.publishEvaluationUpdate (design §5, logical IDs unchanged).
+        props.api.createResolver("publishEvaluationUpdate-resolver", {
+            dataSource: noneDataSource,
             typeName: "Mutation",
             fieldName: "publishEvaluationUpdate",
             code: appsync.Code.fromAsset(

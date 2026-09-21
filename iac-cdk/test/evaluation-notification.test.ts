@@ -84,18 +84,26 @@ function dataSourceTypeByName(template: Template): Record<string, string> {
     );
 }
 
-function resolverFor(template: Template, typeName: string, fieldName: string): Resource {
-    const matches = Object.values(template.findResources("AWS::AppSync::Resolver")).filter(
-        (resolver: Resource) =>
-            resolver.Properties?.TypeName === typeName &&
-            resolver.Properties?.FieldName === fieldName,
+function resolverEntryFor(
+    template: Template,
+    typeName: string,
+    fieldName: string,
+): [string, Resource] {
+    const matches = Object.entries(template.findResources("AWS::AppSync::Resolver")).filter(
+        ([, resolver]) =>
+            (resolver as Resource).Properties?.TypeName === typeName &&
+            (resolver as Resource).Properties?.FieldName === fieldName,
     );
     if (matches.length !== 1) {
         throw new Error(
             `Expected exactly one ${typeName}.${fieldName} resolver, got ${matches.length}`,
         );
     }
-    return matches[0];
+    return matches[0] as [string, Resource];
+}
+
+function resolverFor(template: Template, typeName: string, fieldName: string): Resource {
+    return resolverEntryFor(template, typeName, fieldName)[1];
 }
 
 function executorFunction(template: Template): Resource {
@@ -141,6 +149,13 @@ const EXISTING_RESOLVER_LOGICAL_IDS = [
     "ApiRunEvaluationResolver",
     "ApiDeleteEvaluatorRunResolver",
 ];
+
+// Mutation.publishEvaluationUpdate was already resolvable before this story: HttpApiBackend's
+// schema-driven loop created a proxy resolver as `<api>/publishEvaluationUpdate-resolver`. The NONE
+// resolver reuses that scope and id so CloudFormation updates DataSourceName in place. Re-scoping
+// or renaming it makes the deploy a create-then-delete, which AppSync rejects — one resolver per
+// Type.Field.
+const PUBLISH_RESOLVER_LOGICAL_ID = "ApipublishEvaluationUpdateresolver";
 
 const EXPECTED_EXECUTOR_ENV_KEYS = [
     "ACCOUNT_ID",
@@ -209,6 +224,11 @@ describe("evaluation notification resolvers (T1)", () => {
             .map(([logicalId]) => withoutHash(logicalId));
 
         expect(lambdaBacked.sort()).toEqual([...EXISTING_RESOLVER_LOGICAL_IDS].sort());
+    });
+
+    test("publishEvaluationUpdate keeps the logical id its proxy resolver had", () => {
+        const [logicalId] = resolverEntryFor(template, "Mutation", "publishEvaluationUpdate");
+        expect(withoutHash(logicalId)).toEqual(PUBLISH_RESOLVER_LOGICAL_ID);
     });
 
     test("the executor role gained no permission beyond the appsync:GraphQL it already had", () => {
