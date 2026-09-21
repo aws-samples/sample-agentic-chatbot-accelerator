@@ -482,6 +482,8 @@ export const listEvaluatorRuns = /* GraphQL */ `query ListEvaluatorRuns($evaluat
     testCasesCount
     resultsS3Path
     status
+    completedUnits
+    totalUnits
     totalCases
     passedCases
     failedCases
@@ -546,6 +548,8 @@ export const getEvaluatorRun = /* GraphQL */ `query GetEvaluatorRun($evaluatorId
     testCasesCount
     resultsS3Path
     status
+    completedUnits
+    totalUnits
     totalCases
     passedCases
     failedCases

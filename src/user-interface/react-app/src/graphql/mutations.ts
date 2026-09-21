@@ -447,6 +447,8 @@ export const startEvaluatorRun = /* GraphQL */ `mutation StartEvaluatorRun($eval
     testCasesCount
     resultsS3Path
     status
+    completedUnits
+    totalUnits
     totalCases
     passedCases
     failedCases

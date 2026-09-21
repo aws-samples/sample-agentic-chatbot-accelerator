@@ -91,6 +91,10 @@ export interface EvaluatorRun {
     runtimeVersion?: string;
     // Status: Queued, Running, Completed, Failed
     status: string;
+    // Units = (case, repetition) executions. The only counters that advance
+    // while the run is in progress; everything below is written at finalize.
+    completedUnits?: number;
+    totalUnits?: number;
     totalCases?: number;
     passedCases?: number;
     failedCases?: number;

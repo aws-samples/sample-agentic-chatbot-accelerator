@@ -836,6 +836,8 @@ def _format_run(item: Optional[dict], include_results: bool = False) -> Optional
         "testCasesCount": _to_int(item.get("TestCasesCount")),
         "resultsS3Path": results_s3_path,
         "status": item.get("Status"),
+        "completedUnits": _to_int(item.get("CompletedUnits")),
+        "totalUnits": _to_int(item.get("TotalUnits")),
         "totalCases": _to_int(item.get("TotalCases")),
         "passedCases": _to_int(item.get("PassedCases")),
         "failedCases": _to_int(item.get("FailedCases")),
