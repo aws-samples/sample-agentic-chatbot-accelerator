@@ -23,7 +23,7 @@ import {
     Table,
 } from "@cloudscape-design/components";
 import CopyToClipboard from "@cloudscape-design/components/copy-to-clipboard";
-import { useCallback, useContext, useEffect, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { v4 as uuidv4 } from "uuid";
 
@@ -58,7 +58,7 @@ export interface AgentManagerProps {
     readonly toolsOpen: boolean;
 }
 
-export default function AgentCoreEndpointManager(props: AgentManagerProps) {
+export default function AgentCoreEndpointManager(_props: AgentManagerProps) {
     const appContext = useContext(AppContext);
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
@@ -86,37 +86,73 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
     } | null>(null);
 
     // functions
-    const apiClient = generateClient();
-
-    const fetchAgents = useCallback(async () => {
-        if (!appContext) return;
-
-        try {
-            setIsLoading(true);
-            const result = await apiClient.graphql({ query: listRuntimeAgentsQuery });
-            setAgents(result.data.listRuntimeAgents || []);
-        } catch (error) {
-            console.log(Utils.getErrorMessage(error));
-        } finally {
-            setIsLoading(false);
-        }
-    }, [appContext, apiClient]);
+    const apiClient = useMemo(() => generateClient(), []);
+    // a watcher refetch can resolve after unmount
+    const isMounted = useRef(true);
+    const hasLoaded = useRef(false);
+    // bumped per read and per local mutation; only the newest generation may be applied: FR10
+    const generation = useRef(0);
+    // shared by concurrent callers so M watchers issue one read: FR11
+    const inFlightRead = useRef<Promise<void> | null>(null);
 
     useEffect(() => {
-        fetchAgents();
-    }, [props.toolsOpen]);
+        isMounted.current = true;
+        return () => {
+            isMounted.current = false;
+        };
+    }, []);
+
+    /** Discard reads issued before a local mutation, including one already in flight: FR10 */
+    const invalidateReads = useCallback(() => {
+        generation.current += 1;
+        inFlightRead.current = null;
+    }, []);
+
+    /**
+     * Re-read the authoritative agent list. Single-flight: concurrent callers receive the
+     * in-flight promise, and an answer from a superseded generation is dropped.
+     */
+    const fetchAgents = useCallback((): Promise<void> => {
+        if (!appContext) return Promise.resolve();
+        if (inFlightRead.current) return inFlightRead.current;
+
+        const readGeneration = ++generation.current;
+        setIsLoading(!hasLoaded.current);
+
+        const read = (async () => {
+            try {
+                const result = await apiClient.graphql({ query: listRuntimeAgentsQuery });
+                if (!isMounted.current || readGeneration !== generation.current) return;
+
+                const fetched = result.data.listRuntimeAgents || [];
+                // a throttled read is indistinguishable from an empty account: FR9
+                setAgents((prev) => (fetched.length === 0 && prev.length > 0 ? prev : fetched));
+                hasLoaded.current = true;
+            } catch (error) {
+                console.log(Utils.getErrorMessage(error));
+            } finally {
+                if (isMounted.current) setIsLoading(false);
+            }
+        })().finally(() => {
+            if (inFlightRead.current === read) inFlightRead.current = null;
+        });
+
+        inFlightRead.current = read;
+        return read;
+    }, [appContext, apiClient]);
 
     // Update selectedItems when agents data changes
     useEffect(() => {
-        if (selectedItems.length > 0) {
-            const updatedSelectedItems = selectedItems
+        setSelectedItems((prev) => {
+            const next = prev
                 .map((selectedItem) =>
                     agents.find((agent) => agent.agentRuntimeId === selectedItem.agentRuntimeId),
                 )
                 .filter((item): item is RuntimeSummary => item !== undefined);
 
-            setSelectedItems(updatedSelectedItems);
-        }
+            const unchanged = next.length === prev.length && next.every((a, i) => a === prev[i]);
+            return unchanged ? prev : next;
+        });
     }, [agents]);
 
     const fetchFavoriteRuntime = useCallback(async () => {
@@ -137,11 +173,10 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
         }
     }, [apiClient]);
 
-    // Update useEffect to fetch favorite runtime
     useEffect(() => {
         fetchAgents();
         fetchFavoriteRuntime();
-    }, [props.toolsOpen]);
+    }, []);
 
     const handleSetFavorite = async (agent: RuntimeSummary) => {
         const qualifierToVersion = JSON.parse(agent.qualifierToVersion);
@@ -224,6 +259,7 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
                     architectureType: (agent.architectureType ?? "SINGLE") as ArchitectureType,
                 },
             });
+            invalidateReads();
 
             await new Promise((resolve) => setTimeout(resolve, 2000));
             setShowUpdateContainerModal(false);
@@ -340,6 +376,7 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
                         description: data.description,
                     },
                 });
+                invalidateReads();
                 setShowTagModal(false);
                 await fetchAgents(); // Refresh the list
             } catch (error) {
@@ -455,6 +492,7 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
                         }),
                     ),
                 );
+                invalidateReads();
 
                 await new Promise((resolve) => setTimeout(resolve, 2000));
                 setShowDeleteModal(false);
@@ -493,6 +531,7 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
                             agentRuntimeId: agent.agentRuntimeId,
                         },
                     });
+                    invalidateReads();
 
                     await new Promise((resolve) => setTimeout(resolve, 2000));
 
@@ -513,6 +552,7 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
                             endpointNames: selectedQualifiers,
                         },
                     });
+                    invalidateReads();
 
                     await new Promise((resolve) => setTimeout(resolve, 2000));
 
