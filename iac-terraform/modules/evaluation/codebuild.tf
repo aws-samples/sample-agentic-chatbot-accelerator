@@ -27,11 +27,12 @@ locals {
   # otherwise change neither this hash nor the S3 key, and the Lambda would keep
   # a stale zip built from the previous routing code. `fileset` on a missing
   # directory yields an empty set, so a fresh clone that has not run
-  # `make copy-model-routing` still plans.
+  # `make copy-model-routing` still plans. Both levels glob rather than list
+  # files, so a module added next to index.py is covered without an edit here.
   executor_source_hash = sha256(join("", concat(
     [
-      filesha256("${local.executor_source_dir}/evaluator.py"),
-      filesha256("${local.executor_source_dir}/index.py"),
+      for f in sort(tolist(fileset(local.executor_source_dir, "*.py"))) :
+      filesha256("${local.executor_source_dir}/${f}")
     ],
     [
       for f in sort(tolist(fileset("${local.executor_source_dir}/shared", "*.py"))) :

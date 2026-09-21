@@ -18,10 +18,11 @@ import {
     Tabs,
 } from "@cloudscape-design/components";
 import { generateClient } from "aws-amplify/api";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { CHATBOT_NAME } from "../../common/constants";
+import { useEvaluationRunWatcher } from "../../common/hooks/use-evaluation-run-watcher";
 import useOnFollow from "../../common/hooks/use-on-follow";
 import {
     EvaluationRepetition,
@@ -81,35 +82,66 @@ export default function EvaluationRunResultsPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [run, setRun] = useState<EvaluatorRun | null>(null);
 
+    // a watcher refetch can resolve after unmount
+    const isMounted = useRef(true);
+    const hasLoaded = useRef(false);
+    // bumped per read; only the newest generation may be applied: FR5
+    const generation = useRef(0);
+
+    useEffect(() => {
+        isMounted.current = true;
+        return () => {
+            isMounted.current = false;
+        };
+    }, []);
+
+    /** Re-read this run. Extracted from the mount effect so the watcher can call it. */
+    const loadRun = useCallback(async (): Promise<void> => {
+        if (!evaluatorId || !runId) return;
+
+        const readGeneration = ++generation.current;
+        setIsLoading(!hasLoaded.current);
+        try {
+            const result = await apiClient.graphql({
+                query: getEvaluatorRunQuery,
+                variables: { evaluatorId, runId },
+            });
+            if (!isMounted.current || readGeneration !== generation.current) return;
+
+            const runData = result.data?.getEvaluatorRun;
+            if (!runData) {
+                // a failed read answers null too (`evaluation-resolver/index.py:539-548`),
+                // so only the first load may read it as "no such run": FR7
+                if (!hasLoaded.current) navigate("/evaluations");
+                return;
+            }
+            setRun(runData as EvaluatorRun);
+            hasLoaded.current = true;
+        } catch (error) {
+            console.error(Utils.getErrorMessage(error));
+            if (isMounted.current && !hasLoaded.current) navigate("/evaluations");
+        } finally {
+            if (isMounted.current) setIsLoading(false);
+        }
+    }, [evaluatorId, runId, apiClient, navigate]);
+
     useEffect(() => {
         if (!evaluatorId || !runId) {
             navigate("/evaluations");
             return;
         }
 
-        const load = async () => {
-            setIsLoading(true);
-            try {
-                const result = await apiClient.graphql({
-                    query: getEvaluatorRunQuery,
-                    variables: { evaluatorId, runId },
-                });
-                const runData = result.data?.getEvaluatorRun;
-                if (!runData) {
-                    navigate("/evaluations");
-                    return;
-                }
-                setRun(runData as EvaluatorRun);
-            } catch (error) {
-                console.error(Utils.getErrorMessage(error));
-                navigate("/evaluations");
-            } finally {
-                setIsLoading(false);
-            }
-        };
+        void loadRun();
+    }, [evaluatorId, runId, navigate, loadRun]);
 
-        load();
-    }, [evaluatorId, runId, apiClient, navigate]);
+    const isRunInFlight = run?.status === "Running" || run?.status === "Queued";
+
+    useEvaluationRunWatcher({
+        // no run can start from this page, so a terminal run needs no transport at all
+        evaluatorId: isRunInFlight ? evaluatorId : null,
+        runIds: isRunInFlight && runId ? [runId] : [],
+        onRefetch: loadRun,
+    });
 
     const summary = useMemo(() => (run ? toSummary(run) : null), [run]);
 

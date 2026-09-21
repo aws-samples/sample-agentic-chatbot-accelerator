@@ -34,6 +34,12 @@ function synthTemplate(): Template {
     return Template.fromStack(acaStack);
 }
 
+let memoizedTemplate: Template | undefined;
+function appTemplate(): Template {
+    memoizedTemplate ??= synthTemplate();
+    return memoizedTemplate;
+}
+
 // The UserInterface construct writes aws-exports.json via s3deploy.Source.jsonData(),
 // which becomes a BucketDeployment asset: the JSON is emitted to a file under the synth
 // output dir (cdk.out) rather than inlined in the CFN template. Synthesize the app to a
@@ -89,7 +95,7 @@ describe("configuration-bundles migration (T11)", () => {
     let template: Template;
 
     beforeAll(() => {
-        template = synthTemplate();
+        template = appTemplate();
     });
 
     test("no runtime-config DynamoDB table remains", () => {
@@ -224,5 +230,67 @@ describe("deployUserInterface gate — BuilderStack (T4)", () => {
             return copy;
         };
         expect(withoutReact(off)).toEqual(withoutReact(on));
+    });
+});
+
+// Story-level seam for the evaluation notification wiring: EvaluationApi pushes the two field
+// names into `operations`, and lib/api/index.ts spreads that array into HttpApiBackend's
+// `operationToExclude`. The two constructs never meet in a per-task test, so only a full-stack
+// synth can show whether the push actually suppresses the proxy resolver — and AppSync accepts
+// at most one resolver per Type.Field, so a missed exclusion is a deploy failure, not a routing
+// mistake.
+describe("evaluation notification routing (story-level)", () => {
+    type Resource = Record<string, any>;
+
+    let template: Template;
+
+    beforeAll(() => {
+        template = appTemplate();
+    });
+
+    const resolversFor = (typeName: string, fieldName: string): Resource[] =>
+        Object.values(template.findResources("AWS::AppSync::Resolver")).filter(
+            (resolver: Resource) =>
+                resolver.Properties?.TypeName === typeName &&
+                resolver.Properties?.FieldName === fieldName,
+        );
+
+    const dataSourceTypeByName = (): Record<string, string> =>
+        Object.fromEntries(
+            Object.values(template.findResources("AWS::AppSync::DataSource")).map(
+                (ds: Resource) => [ds.Properties.Name, ds.Properties.Type],
+            ),
+        );
+
+    test.each([
+        ["Mutation", "publishEvaluationUpdate"],
+        ["Subscription", "receiveEvaluationUpdate"],
+    ])("%s.%s is resolved exactly once in the deployed stack", (typeName, fieldName) => {
+        expect(resolversFor(typeName, fieldName)).toHaveLength(1);
+    });
+
+    test("publishEvaluationUpdate is relayed by the NONE data source, not the proxy Lambda", () => {
+        const [resolver] = resolversFor("Mutation", "publishEvaluationUpdate");
+        expect(dataSourceTypeByName()[resolver.Properties.DataSourceName]).toEqual("NONE");
+    });
+
+    test("the schema-driven proxy loop did run, so a missed exclusion would be visible", () => {
+        // Control for the assertions above: HttpApiBackend resolves every Mutation field it was
+        // not told to exclude, so an unexcluded publishEvaluationUpdate would show up as a
+        // second resolver rather than as none at all.
+        const [resolver] = resolversFor("Mutation", "deleteSession");
+        expect(dataSourceTypeByName()[resolver.Properties.DataSourceName]).toEqual("AWS_LAMBDA");
+    });
+
+    test("no subscription field gained a second resolver", () => {
+        const perField = new Map<string, number>();
+        for (const resolver of Object.values(
+            template.findResources("AWS::AppSync::Resolver"),
+        ) as Resource[]) {
+            if (resolver.Properties?.TypeName !== "Subscription") continue;
+            const field = resolver.Properties.FieldName;
+            perField.set(field, (perField.get(field) ?? 0) + 1);
+        }
+        expect([...perField.values()].filter((count) => count > 1)).toHaveLength(0);
     });
 });

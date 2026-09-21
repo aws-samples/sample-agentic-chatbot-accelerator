@@ -22,6 +22,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Optional, Tuple, Union
 
 import boto3
+from appsync_publisher import publish_evaluation_update
 from aws_lambda_powertools import Logger, Tracer
 from aws_lambda_powertools.utilities.data_classes import SQSEvent, event_source
 from aws_lambda_powertools.utilities.data_classes.sqs_event import SQSRecord
@@ -889,6 +890,9 @@ def _finalize_run(evaluator_id: str, run_id: str, item: dict) -> None:
     except Exception as e:
         logger.exception(f"Failed to finalize run: {e}")
         _update_run_failed(evaluator_id, run_id, str(e))
+        return
+
+    _notify_run_status(evaluator_id, run_id, "Completed")
 
 
 def _aggregate_case(units: list[dict], pass_threshold: float = 0.8) -> dict:
@@ -1119,6 +1123,19 @@ def _update_run_failed(evaluator_id: str, run_id: str, error_message: str) -> No
     except ClientError as e:
         logger.error(f"Failed to update run status: {e}")
     _update_last_run_pointer(evaluator_id, run_id, "Failed", timestamp, 0, 0)
+
+    _notify_run_status(evaluator_id, run_id, "Failed")
+
+
+def _notify_run_status(evaluator_id: str, run_id: str, status: str) -> None:
+    """Announce a terminal run status to AppSync, after the run record is durable."""
+    try:
+        publish_evaluation_update(evaluator_id, run_id, status)
+    except Exception as e:  # a notification never changes the run outcome (FR3)
+        logger.warning(
+            f"Failed to publish run status: {e}",
+            extra={"evaluatorId": evaluator_id, "runId": run_id, "status": status},
+        )
 
 
 # ========================= Handler ========================= #
