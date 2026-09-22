@@ -23,7 +23,7 @@ import {
     Table,
 } from "@cloudscape-design/components";
 import CopyToClipboard from "@cloudscape-design/components/copy-to-clipboard";
-import { useCallback, useContext, useEffect, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { v4 as uuidv4 } from "uuid";
 
@@ -47,24 +47,53 @@ import {
     listAgentVersions as listAgentVersionsQuery,
     listRuntimeAgents as listRuntimeAgentsQuery,
 } from "../../graphql/queries";
-import { receiveUpdateNotification } from "../../graphql/subscriptions";
 import DeleteAgentModal from "./agent-core/delete-agent-modal";
 import RowActions, { RowActionId } from "./agent-core/row-actions";
 import { isTransientStatus } from "./agent-core/runtime-status";
+import RuntimeUpdateWatcher from "./agent-core/runtime-update-watcher";
 import TagVersionModal from "./agent-core/tag-version-modal";
 import ViewVersionModal, { VersionInfo } from "./agent-core/view-version-modal";
+
+/**
+ * How long an unresolved seed stays in the in-flight set before being dropped. Bounds a forged
+ * or stale seed; server-reported transient rows are never bounded (ADR 0007).
+ */
+const SEED_TTL_MS = 60_000;
+
+/** A client-side guess that an agent is in flight, pending confirmation from a read. */
+interface InFlightSeed {
+    readonly agentName: string;
+    /** Status this client had already seen when it guessed; `null` when the row was absent. */
+    readonly seenStatus: string | null;
+    /** `Date.now()` past which the seed is discarded. */
+    readonly expiresAt: number;
+}
+
+/** Seeds a read has neither contradicted nor outlived: still showing `seenStatus`, or still absent. */
+function unresolvedSeeds(
+    seeds: InFlightSeed[],
+    fetched: RuntimeSummary[],
+    now: number,
+): InFlightSeed[] {
+    return seeds.filter((seed) => {
+        if (seed.expiresAt <= now) return false;
+        const row = fetched.find((agent) => agent.agentName === seed.agentName);
+        return row === undefined || row.status === seed.seenStatus;
+    });
+}
 
 export interface AgentManagerProps {
     readonly toolsOpen: boolean;
 }
 
-export default function AgentCoreEndpointManager(props: AgentManagerProps) {
+export default function AgentCoreEndpointManager(_props: AgentManagerProps) {
     const appContext = useContext(AppContext);
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
 
     // States
     const [agents, setAgents] = useState<RuntimeSummary[]>([]);
+    const [seeds, setSeeds] = useState<InFlightSeed[]>([]);
     const [selectedItems, setSelectedItems] = useState<RuntimeSummary[]>([]);
     const [preferences, setPreferences] = useState({ pageSize: 20 });
     const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -86,37 +115,142 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
     } | null>(null);
 
     // functions
-    const apiClient = generateClient();
-
-    const fetchAgents = useCallback(async () => {
-        if (!appContext) return;
-
-        try {
-            setIsLoading(true);
-            const result = await apiClient.graphql({ query: listRuntimeAgentsQuery });
-            setAgents(result.data.listRuntimeAgents || []);
-        } catch (error) {
-            console.log(Utils.getErrorMessage(error));
-        } finally {
-            setIsLoading(false);
-        }
-    }, [appContext, apiClient]);
+    const apiClient = useMemo(() => generateClient(), []);
+    // a watcher refetch can resolve after unmount
+    const isMounted = useRef(true);
+    const hasLoaded = useRef(false);
+    // bumped per read and per local mutation; only the newest generation may be applied: FR10
+    const generation = useRef(0);
+    // shared by concurrent callers so M watchers issue one read: FR11
+    const inFlightRead = useRef<Promise<void> | null>(null);
+    // a read resolving a render behind still has to see the newest seeds: FR9
+    const seedsRef = useRef<InFlightSeed[]>(seeds);
+    // at most one consecutive empty read is distrusted, so the guard cannot become a fixed point: FR9
+    const consecutiveEmptyReads = useRef(0);
 
     useEffect(() => {
-        fetchAgents();
-    }, [props.toolsOpen]);
+        isMounted.current = true;
+        return () => {
+            isMounted.current = false;
+        };
+    }, []);
+
+    /** Discard reads issued before a local mutation, including one already in flight: FR10 */
+    const invalidateReads = useCallback(() => {
+        generation.current += 1;
+        inFlightRead.current = null;
+    }, []);
+
+    const replaceSeeds = useCallback((next: InFlightSeed[]) => {
+        seedsRef.current = next;
+        setSeeds(next);
+    }, []);
+
+    /** Record a locally-initiated operation so its row is watched before the status write lands. */
+    const seedAgent = useCallback(
+        (agentName: string, seenStatus: string | null): void => {
+            if (!agentName) return;
+
+            replaceSeeds([
+                ...seedsRef.current.filter((seed) => seed.agentName !== agentName),
+                { agentName, seenStatus, expiresAt: Date.now() + SEED_TTL_MS },
+            ]);
+        },
+        [replaceSeeds],
+    );
+
+    /**
+     * Names to watch: every agent the server reports as transient, plus unexpired seeds.
+     * Recomputed from `agents` + `seeds` — never persisted.
+     */
+    const inFlightAgentNames = useMemo<string[]>(() => {
+        const now = Date.now();
+        const names = new Set(
+            agents
+                .filter((agent) => isTransientStatus(agent.status))
+                .map((agent) => agent.agentName),
+        );
+        for (const seed of seeds) {
+            if (seed.expiresAt > now) names.add(seed.agentName);
+        }
+        return [...names];
+    }, [agents, seeds]);
+
+    /**
+     * Whether a destructive or mutating action must be withheld from this row: the server reports
+     * a control-plane op, or a local one is still unconfirmed by a read. Gates controls only —
+     * a seed never feeds a rendered status (ADR 0007): FR16
+     */
+    const isActionWithheld = useCallback(
+        (agent: RuntimeSummary): boolean => {
+            const now = Date.now();
+            return (
+                isTransientStatus(agent.status) ||
+                seeds.some((seed) => seed.agentName === agent.agentName && seed.expiresAt > now)
+            );
+        },
+        [seeds],
+    );
+
+    /**
+     * Re-read the authoritative agent list. Single-flight: concurrent callers receive the
+     * in-flight promise, and an answer from a superseded generation is dropped.
+     */
+    const fetchAgents = useCallback((): Promise<void> => {
+        if (!appContext) return Promise.resolve();
+        if (inFlightRead.current) return inFlightRead.current;
+
+        const readGeneration = ++generation.current;
+        setIsLoading(!hasLoaded.current);
+
+        const read = (async () => {
+            try {
+                const result = await apiClient.graphql({ query: listRuntimeAgentsQuery });
+                if (!isMounted.current || readGeneration !== generation.current) return;
+
+                const fetched = result.data.listRuntimeAgents || [];
+                const outstanding = unresolvedSeeds(seedsRef.current, fetched, Date.now());
+                if (outstanding.length !== seedsRef.current.length) replaceSeeds(outstanding);
+
+                consecutiveEmptyReads.current =
+                    fetched.length === 0 ? consecutiveEmptyReads.current + 1 : 0;
+
+                setAgents((prev) => {
+                    // a throttled read is indistinguishable from an empty account, and `prev` is
+                    // the only synchronously fresh view of what the server reports as transient: FR9
+                    const tracked =
+                        outstanding.length > 0 ||
+                        prev.some((agent) => isTransientStatus(agent.status));
+                    return fetched.length === 0 && tracked && consecutiveEmptyReads.current === 1
+                        ? prev
+                        : fetched;
+                });
+                hasLoaded.current = true;
+            } catch (error) {
+                console.log(Utils.getErrorMessage(error));
+            } finally {
+                if (isMounted.current) setIsLoading(false);
+            }
+        })().finally(() => {
+            if (inFlightRead.current === read) inFlightRead.current = null;
+        });
+
+        inFlightRead.current = read;
+        return read;
+    }, [appContext, apiClient, replaceSeeds]);
 
     // Update selectedItems when agents data changes
     useEffect(() => {
-        if (selectedItems.length > 0) {
-            const updatedSelectedItems = selectedItems
+        setSelectedItems((prev) => {
+            const next = prev
                 .map((selectedItem) =>
                     agents.find((agent) => agent.agentRuntimeId === selectedItem.agentRuntimeId),
                 )
                 .filter((item): item is RuntimeSummary => item !== undefined);
 
-            setSelectedItems(updatedSelectedItems);
-        }
+            const unchanged = next.length === prev.length && next.every((a, i) => a === prev[i]);
+            return unchanged ? prev : next;
+        });
     }, [agents]);
 
     const fetchFavoriteRuntime = useCallback(async () => {
@@ -137,11 +271,10 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
         }
     }, [apiClient]);
 
-    // Update useEffect to fetch favorite runtime
     useEffect(() => {
         fetchAgents();
         fetchFavoriteRuntime();
-    }, [props.toolsOpen]);
+    }, []);
 
     const handleSetFavorite = async (agent: RuntimeSummary) => {
         const qualifierToVersion = JSON.parse(agent.qualifierToVersion);
@@ -202,9 +335,10 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
     // This does NOT rebuild from source (see ADR 0005) and does NOT open the wizard.
     const handleUpdateContainer = async (agent: RuntimeSummary) => {
         // Re-validate at confirm time: a background refresh can flip the row to a
-        // transient status while the modal is open.
-        if (isTransientStatus(agent.status)) {
-            console.warn("Skipping update: runtime is in a transient status.");
+        // transient status while the modal is open, and the state machines only publish
+        // at the end, so a just-started op is visible as a seed long before a status: FR16
+        if (isActionWithheld(agent)) {
+            console.warn("Skipping update: runtime has a control-plane operation in flight.");
             return;
         }
 
@@ -224,11 +358,11 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
                     architectureType: (agent.architectureType ?? "SINGLE") as ArchitectureType,
                 },
             });
+            invalidateReads();
 
-            await new Promise((resolve) => setTimeout(resolve, 2000));
             setShowUpdateContainerModal(false);
-            await fetchAgents(); // surface the "Updating" status
-            subscribeToAgentUpdate(agent.agentName);
+            seedAgent(agent.agentName, agent.status);
+            await fetchAgents();
         } catch (error) {
             console.error("Failed to update container:", error);
         } finally {
@@ -267,42 +401,16 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
         }
     };
 
-    // Handle subscription for newly created agents via URL params
+    // The wizard hands the new agent's name over in the URL; the row may not exist yet, so the
+    // param is consumed once into a seed and the derived set takes over from there.
     useEffect(() => {
-        const subscribeAgent = searchParams.get("subscribeAgent");
-        if (subscribeAgent) {
-            // Clear the URL param
-            setSearchParams({}, { replace: true });
+        const subscribeAgent = searchParams.get("subscribeAgent")?.trim();
+        if (!subscribeAgent) return;
 
-            // Wait a bit for the agent to appear in the list
-            const setupSubscription = async () => {
-                await new Promise((resolve) => setTimeout(resolve, 2000));
-                await fetchAgents();
-
-                const subscription = apiClient
-                    .graphql({
-                        query: receiveUpdateNotification,
-                        variables: { agentName: subscribeAgent },
-                    })
-                    .subscribe({
-                        next: (data) => {
-                            if (
-                                data.data?.receiveUpdateNotification?.agentName === subscribeAgent
-                            ) {
-                                fetchAgents(); // Refresh to show "Ready" status
-                                subscription.unsubscribe();
-                            }
-                        },
-                        error: (error) => {
-                            console.error("Subscription error:", error);
-                            subscription.unsubscribe();
-                        },
-                    });
-            };
-
-            setupSubscription();
-        }
-    }, [searchParams, setSearchParams, apiClient, fetchAgents]);
+        setSearchParams({}, { replace: true });
+        seedAgent(subscribeAgent, null);
+        void fetchAgents();
+    }, [searchParams, setSearchParams, seedAgent, fetchAgents]);
 
     const handleTagVersion = async (agent: RuntimeSummary) => {
         setShowTagModal(true);
@@ -340,6 +448,7 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
                         description: data.description,
                     },
                 });
+                invalidateReads();
                 setShowTagModal(false);
                 await fetchAgents(); // Refresh the list
             } catch (error) {
@@ -395,35 +504,12 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
         return JSON.parse(result.data.getRuntimeConfigurationByVersion);
     };
 
-    // Refresh the list once the control plane reports an update for `agentName`.
-    // Deletes go through a Step Function, so the row lingers in "Deleting" until
-    // the notification arrives; we resync then and tear the subscription down.
-    const subscribeToAgentUpdate = (agentName: string) => {
-        const subscription = apiClient
-            .graphql({
-                query: receiveUpdateNotification,
-                variables: { agentName },
-            })
-            .subscribe({
-                next: (data) => {
-                    if (data.data?.receiveUpdateNotification?.agentName === agentName) {
-                        fetchAgents();
-                        subscription.unsubscribe();
-                    }
-                },
-                error: (error) => {
-                    console.error("Subscription error:", error);
-                    subscription.unsubscribe();
-                },
-            });
-    };
-
     const handleDelete = async (deleteMode: "all" | "specific", selectedQualifiers?: string[]) => {
         // Re-validate at confirm time: a background fetchAgents() can flip the
         // selection to a transient status while the modal is open. Never fire a
-        // delete against a runtime with a control-plane op in flight.
-        if (selectedItems.some((a) => isTransientStatus(a.status))) {
-            console.warn("Skipping delete: a selected runtime is in a transient status.");
+        // delete against a runtime with a control-plane op in flight: FR16
+        if (selectedItems.some(isActionWithheld)) {
+            console.warn("Skipping delete: a selected runtime has an operation in flight.");
             return;
         }
 
@@ -455,12 +541,11 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
                         }),
                     ),
                 );
+                invalidateReads();
 
-                await new Promise((resolve) => setTimeout(resolve, 2000));
                 setShowDeleteModal(false);
+                selectedItems.forEach((agent) => seedAgent(agent.agentName, agent.status));
                 await fetchAgents();
-
-                selectedItems.forEach((agent) => subscribeToAgentUpdate(agent.agentName));
             } else if (selectedItems.length === 1) {
                 const agent = selectedItems[0];
 
@@ -493,16 +578,13 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
                             agentRuntimeId: agent.agentRuntimeId,
                         },
                     });
-
-                    await new Promise((resolve) => setTimeout(resolve, 2000));
+                    invalidateReads();
 
                     // Close modal immediately (same as specific deletion)
                     setShowDeleteModal(false);
 
-                    // Fetch agents to show "Deleting" status
+                    seedAgent(agent.agentName, agent.status);
                     await fetchAgents();
-
-                    subscribeToAgentUpdate(agent.agentName);
                 } else if (deleteMode === "specific" && selectedQualifiers) {
                     // Delete specific endpoints
                     await apiClient.graphql({
@@ -513,14 +595,12 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
                             endpointNames: selectedQualifiers,
                         },
                     });
-
-                    await new Promise((resolve) => setTimeout(resolve, 2000));
+                    invalidateReads();
 
                     setShowDeleteModal(false);
 
+                    seedAgent(agent.agentName, agent.status);
                     await fetchAgents();
-
-                    subscribeToAgentUpdate(agent.agentName);
                 }
             }
         } catch (error) {
@@ -619,6 +699,14 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
 
     return (
         <>
+            {inFlightAgentNames.map((agentName) => (
+                <RuntimeUpdateWatcher
+                    key={agentName}
+                    agentName={agentName}
+                    onRefetch={fetchAgents}
+                />
+            ))}
+
             <Container header="AgentCore Runtime Manager">
                 <Table
                     {...collectionProps}
@@ -690,7 +778,7 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
                                         variant="inline-link"
                                         disabled={
                                             selectedItems.length === 0 ||
-                                            selectedItems.some((a) => isTransientStatus(a.status))
+                                            selectedItems.some(isActionWithheld)
                                         }
                                         onClick={() => setShowDeleteModal(true)}
                                     >
@@ -819,7 +907,7 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
                             cell: (item) => (
                                 <StatusIndicator
                                     type={
-                                        item.status.toLowerCase().endsWith("ing")
+                                        isTransientStatus(item.status)
                                             ? "loading"
                                             : item.status.toLowerCase() === "broken" ||
                                                 item.status.toLocaleLowerCase().includes("failed")
@@ -837,7 +925,11 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
                             id: "actions",
                             header: "Actions",
                             cell: (item) => (
-                                <RowActions item={item} onAction={handleRowAction} />
+                                <RowActions
+                                    item={item}
+                                    onAction={handleRowAction}
+                                    busy={isActionWithheld(item)}
+                                />
                             ),
                             width: 100,
                         },
@@ -892,7 +984,7 @@ export default function AgentCoreEndpointManager(props: AgentManagerProps) {
                                     variant="primary"
                                     onClick={() => handleUpdateContainer(selectedItems[0])}
                                     loading={isUpdatingContainer}
-                                    disabled={isTransientStatus(selectedItems[0].status)}
+                                    disabled={isActionWithheld(selectedItems[0])}
                                 >
                                     Update container
                                 </Button>
