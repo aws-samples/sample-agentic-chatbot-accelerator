@@ -125,6 +125,8 @@ export default function AgentCoreEndpointManager(_props: AgentManagerProps) {
     const inFlightRead = useRef<Promise<void> | null>(null);
     // a read resolving a render behind still has to see the newest seeds: FR9
     const seedsRef = useRef<InFlightSeed[]>(seeds);
+    // at most one consecutive empty read is distrusted, so the guard cannot become a fixed point: FR9
+    const consecutiveEmptyReads = useRef(0);
 
     useEffect(() => {
         isMounted.current = true;
@@ -175,6 +177,22 @@ export default function AgentCoreEndpointManager(_props: AgentManagerProps) {
     }, [agents, seeds]);
 
     /**
+     * Whether a destructive or mutating action must be withheld from this row: the server reports
+     * a control-plane op, or a local one is still unconfirmed by a read. Gates controls only —
+     * a seed never feeds a rendered status (ADR 0007): FR16
+     */
+    const isActionWithheld = useCallback(
+        (agent: RuntimeSummary): boolean => {
+            const now = Date.now();
+            return (
+                isTransientStatus(agent.status) ||
+                seeds.some((seed) => seed.agentName === agent.agentName && seed.expiresAt > now)
+            );
+        },
+        [seeds],
+    );
+
+    /**
      * Re-read the authoritative agent list. Single-flight: concurrent callers receive the
      * in-flight promise, and an answer from a superseded generation is dropped.
      */
@@ -194,10 +212,19 @@ export default function AgentCoreEndpointManager(_props: AgentManagerProps) {
                 const outstanding = unresolvedSeeds(seedsRef.current, fetched, Date.now());
                 if (outstanding.length !== seedsRef.current.length) replaceSeeds(outstanding);
 
-                // a throttled read is indistinguishable from an empty account: FR9
-                setAgents((prev) =>
-                    fetched.length === 0 && outstanding.length > 0 ? prev : fetched,
-                );
+                consecutiveEmptyReads.current =
+                    fetched.length === 0 ? consecutiveEmptyReads.current + 1 : 0;
+
+                setAgents((prev) => {
+                    // a throttled read is indistinguishable from an empty account, and `prev` is
+                    // the only synchronously fresh view of what the server reports as transient: FR9
+                    const tracked =
+                        outstanding.length > 0 ||
+                        prev.some((agent) => isTransientStatus(agent.status));
+                    return fetched.length === 0 && tracked && consecutiveEmptyReads.current === 1
+                        ? prev
+                        : fetched;
+                });
                 hasLoaded.current = true;
             } catch (error) {
                 console.log(Utils.getErrorMessage(error));
@@ -308,9 +335,10 @@ export default function AgentCoreEndpointManager(_props: AgentManagerProps) {
     // This does NOT rebuild from source (see ADR 0005) and does NOT open the wizard.
     const handleUpdateContainer = async (agent: RuntimeSummary) => {
         // Re-validate at confirm time: a background refresh can flip the row to a
-        // transient status while the modal is open.
-        if (isTransientStatus(agent.status)) {
-            console.warn("Skipping update: runtime is in a transient status.");
+        // transient status while the modal is open, and the state machines only publish
+        // at the end, so a just-started op is visible as a seed long before a status: FR16
+        if (isActionWithheld(agent)) {
+            console.warn("Skipping update: runtime has a control-plane operation in flight.");
             return;
         }
 
@@ -479,9 +507,9 @@ export default function AgentCoreEndpointManager(_props: AgentManagerProps) {
     const handleDelete = async (deleteMode: "all" | "specific", selectedQualifiers?: string[]) => {
         // Re-validate at confirm time: a background fetchAgents() can flip the
         // selection to a transient status while the modal is open. Never fire a
-        // delete against a runtime with a control-plane op in flight.
-        if (selectedItems.some((a) => isTransientStatus(a.status))) {
-            console.warn("Skipping delete: a selected runtime is in a transient status.");
+        // delete against a runtime with a control-plane op in flight: FR16
+        if (selectedItems.some(isActionWithheld)) {
+            console.warn("Skipping delete: a selected runtime has an operation in flight.");
             return;
         }
 
@@ -750,7 +778,7 @@ export default function AgentCoreEndpointManager(_props: AgentManagerProps) {
                                         variant="inline-link"
                                         disabled={
                                             selectedItems.length === 0 ||
-                                            selectedItems.some((a) => isTransientStatus(a.status))
+                                            selectedItems.some(isActionWithheld)
                                         }
                                         onClick={() => setShowDeleteModal(true)}
                                     >
@@ -897,7 +925,11 @@ export default function AgentCoreEndpointManager(_props: AgentManagerProps) {
                             id: "actions",
                             header: "Actions",
                             cell: (item) => (
-                                <RowActions item={item} onAction={handleRowAction} />
+                                <RowActions
+                                    item={item}
+                                    onAction={handleRowAction}
+                                    busy={isActionWithheld(item)}
+                                />
                             ),
                             width: 100,
                         },
@@ -952,7 +984,7 @@ export default function AgentCoreEndpointManager(_props: AgentManagerProps) {
                                     variant="primary"
                                     onClick={() => handleUpdateContainer(selectedItems[0])}
                                     loading={isUpdatingContainer}
-                                    disabled={isTransientStatus(selectedItems[0].status)}
+                                    disabled={isActionWithheld(selectedItems[0])}
                                 >
                                     Update container
                                 </Button>
