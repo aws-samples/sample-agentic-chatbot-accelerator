@@ -20,56 +20,7 @@ import {
 } from "@cloudscape-design/components";
 import { useState } from "react";
 import { KnowledgeBaseCreationData } from "./types";
-
-// Set of dangerous keys that could lead to prototype pollution
-const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
-
-// Helper function to check for prototype pollution attacks
-const isSafePropertyKey = (key: string): boolean => {
-    return !DANGEROUS_KEYS.has(key);
-};
-
-// Safe deep property setter that prevents prototype pollution using recursion
-const safeDeepSetRecursive = (
-    obj: Record<string, any>,
-    keys: readonly string[],
-    keyIndex: number,
-    value: any,
-): Record<string, any> => {
-    // Base case: we've reached the final key
-    if (keyIndex === keys.length - 1) {
-        const finalKey = keys[keyIndex];
-        return { ...obj, [finalKey]: value };
-    }
-
-    // Recursive case: need to go deeper
-    const currentKey = keys[keyIndex];
-    const currentValue = Object.prototype.hasOwnProperty.call(obj, currentKey)
-        ? obj[currentKey]
-        : null;
-    const nestedObj =
-        typeof currentValue === "object" && currentValue !== null
-            ? currentValue
-            : Object.create(null);
-
-    return {
-        ...obj,
-        [currentKey]: safeDeepSetRecursive(nestedObj, keys, keyIndex + 1, value),
-    };
-};
-
-// Safe deep property setter that prevents prototype pollution
-const safeDeepSet = <T extends Record<string, any>>(obj: T, path: string, value: any): T => {
-    const keys = path.split(".");
-
-    // Validate all keys upfront
-    if (!keys.every(isSafePropertyKey)) {
-        console.error("Invalid property path detected - potential prototype pollution");
-        return obj;
-    }
-
-    return safeDeepSetRecursive(obj, keys, 0, value) as T;
-};
+import { safeDeepSet } from "./wizard-utils";
 
 interface KnowledgeBaseCreationWizardProps {
     onSubmit: (config: KnowledgeBaseCreationData) => void;

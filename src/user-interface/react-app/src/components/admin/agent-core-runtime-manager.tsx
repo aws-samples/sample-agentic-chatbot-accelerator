@@ -691,7 +691,15 @@ export default function AgentCoreEndpointManager(_props: AgentManagerProps) {
             noMatch: (
                 <EmptyState
                     title="No matches"
-                    action={<Button onClick={() => actions.setFiltering("")}>Clear filter</Button>}
+                    action={
+                        <Button
+                            onClick={() =>
+                                actions.setPropertyFiltering({ tokens: [], operation: "and" })
+                            }
+                        >
+                            Clear filter
+                        </Button>
+                    }
                 />
             ),
         },

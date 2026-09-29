@@ -346,7 +346,7 @@ export default function KBManager(props: KBManagerProps) {
                     </SpaceBetween>{" "}
                 </Box>
             }
-            header={"Delete Knowledge Bases" + (selectedItems.length > 1 ? "s" : "")}
+            header={"Delete Knowledge Base" + (selectedItems.length > 1 ? "s" : "")}
         >
             <SpaceBetween direction="vertical" size="m">
                 {delStatus && (
