@@ -279,7 +279,7 @@ export default function DocumentManager(props: DocumentManagerProps) {
                 }
 
                 if (Date.now() - startTime >= TIMEOUT) {
-                    throw new Error("Polling timed out after 3O minutes");
+                    throw new Error("Polling timed out after 30 minutes");
                 }
 
                 await new Promise((resolve) => setTimeout(resolve, POLLING_INTERVAL));
@@ -314,7 +314,7 @@ export default function DocumentManager(props: DocumentManagerProps) {
                 }
 
                 if (Date.now() - startTime >= TIMEOUT) {
-                    throw new Error("Polling timed out after 10 minutes");
+                    throw new Error("Polling timed out after 30 minutes");
                 }
 
                 await new Promise((resolve) => setTimeout(resolve, POLLING_INTERVAL));
@@ -510,7 +510,7 @@ export default function DocumentManager(props: DocumentManagerProps) {
                     </SpaceBetween>{" "}
                 </Box>
             }
-            header={"Delete session" + (selectedItems.length > 1 ? "s" : "")}
+            header={"Delete document" + (selectedItems.length > 1 ? "s" : "")}
         >
             {"Do you want to delete"}{" "}
             {selectedItems.length == 1

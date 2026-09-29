@@ -109,6 +109,10 @@ const ChatInputPanel = forwardRef<ChatInputPanelHandle, ChatInputPanelProps>(fun
     const messageHistoryRef = useRef<ChatBotHistoryItem[]>([]);
     const wsConnectionRef = useRef<WebSocketAgentConnection | null>(null);
     const promptInputRef = useRef<PromptInputProps.Ref>(null);
+    // Socket callbacks outlive the render that registered them, so they read
+    // `running` through a ref rather than the stale prop.
+    const runningRef = useRef(props.running);
+    runningRef.current = props.running;
     const client = generateClient();
 
     // Expose imperative handle so chat.tsx can close the text WS before voice mode
@@ -346,7 +350,7 @@ const ChatInputPanel = forwardRef<ChatInputPanelHandle, ChatInputPanelProps>(fun
                 console.error("WebSocket error:", errorMessage);
                 // Only write errors to the message history if we're actively running
                 // (not during initial connection or session restore)
-                if (props.running) {
+                if (runningRef.current) {
                     const response: ChatBotMessageResponse = {
                         action: ChatBotAction.Error,
                         data: {

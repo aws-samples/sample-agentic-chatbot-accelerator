@@ -385,7 +385,15 @@ export default function EvaluationsManager(props: EvaluationsManagerProps) {
             noMatch: (
                 <EmptyState
                     title="No matches"
-                    action={<Button onClick={() => actions.setFiltering("")}>Clear filter</Button>}
+                    action={
+                        <Button
+                            onClick={() =>
+                                actions.setPropertyFiltering({ tokens: [], operation: "and" })
+                            }
+                        >
+                            Clear filter
+                        </Button>
+                    }
                 />
             ),
         },

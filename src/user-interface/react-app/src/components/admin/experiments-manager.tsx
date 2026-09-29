@@ -10,6 +10,7 @@ import {
     Header,
     KeyValuePairs,
     Link,
+    Modal,
     Pagination,
     Popover,
     SpaceBetween,
@@ -291,6 +292,7 @@ export default function ExperimentsManager() {
     const [experiments, setExperiments] = useState<Experiment[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedItems, setSelectedItems] = useState<Experiment[]>([]);
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [currentPageIndex, setCurrentPageIndex] = useState(1);
     const [error, setError] = useState<string | null>(null);
     const [sortingColumn, setSortingColumn] = useState<TableProps.SortingColumn<Experiment>>({
@@ -332,6 +334,7 @@ export default function ExperimentsManager() {
     };
 
     const handleDelete = async () => {
+        setShowDeleteModal(false);
         if (selectedItems.length === 0) return;
 
         setLoading(true);
@@ -539,7 +542,10 @@ export default function ExperimentsManager() {
                                     loading={loading}
                                     ariaLabel="Refresh experiments"
                                 />
-                                <Button onClick={handleDelete} disabled={selectedItems.length === 0}>
+                                <Button
+                                    onClick={() => setShowDeleteModal(true)}
+                                    disabled={selectedItems.length === 0}
+                                >
                                     Delete
                                 </Button>
                                 <Button variant="primary" onClick={() => navigate("/experiments/create")}>
@@ -584,6 +590,28 @@ export default function ExperimentsManager() {
                     />
                 }
             />
+
+            <Modal
+                visible={showDeleteModal}
+                onDismiss={() => setShowDeleteModal(false)}
+                header={"Delete experiment" + (selectedItems.length > 1 ? "s" : "")}
+                footer={
+                    <Box float="right">
+                        <SpaceBetween direction="horizontal" size="xs">
+                            <Button variant="link" onClick={() => setShowDeleteModal(false)}>
+                                Cancel
+                            </Button>
+                            <Button variant="primary" onClick={handleDelete}>
+                                Delete
+                            </Button>
+                        </SpaceBetween>
+                    </Box>
+                }
+            >
+                {selectedItems.length === 1
+                    ? `Do you want to delete the experiment "${selectedItems[0].name}"?`
+                    : `Do you want to delete ${selectedItems.length} experiments?`}
+            </Modal>
 
             {/* Show details when exactly one experiment is selected */}
             {selectedItems.length === 1 && (
