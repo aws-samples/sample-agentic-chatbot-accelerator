@@ -8,10 +8,6 @@ export class Utils {
         return "Unknown error";
     }
     /* eslint-enable  @typescript-eslint/no-explicit-any */
-
-    static isFunction(value: unknown): value is Function {
-        return typeof value === "function";
-    }
 }
 
 /**

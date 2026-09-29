@@ -180,14 +180,6 @@ export interface PredefinedStateClass {
     fields: string[];
 }
 
-/** Metadata for a predefined structured output model available in the backend registry. */
-export interface PredefinedStructuredOutput {
-    key: string;
-    label: string;
-    description: string;
-    fields: string[];
-}
-
 export interface AgentAsToolDefinition {
     runtimeId: string;
     endpoint: string;

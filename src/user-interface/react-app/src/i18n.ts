@@ -11,15 +11,8 @@ i18n.use(initReactI18next).init({
     resources: {
         en: {
             ACA: {
-                "CHATBOT.CONFIGURATION.NEW_BUTTON": "New configuration",
-                "CHATBOT.CONFIGURATION.REFRESH_BUTTON": "Refresh",
-                "CHATBOT.CONFIGURATION.VIEW_BUTTON": "View",
-                "CHATBOT.CONFIGURATION.DELETE_BUTTON": "Delete",
-                "CHATBOT.CONFIGURATION.NO_MATCH_MSG": "No matching configurations found",
                 "CHATBOT.CONFIGURATION.CANCEL_BUTTON": "Cancel",
-                "CHATBOT.CONFIGURATION.OK_BUTTON": "OK",
                 "CHATBOT.CONFIGURATION.SAVE_BUTTON": "Create",
-                "CHATBOT.CONFIGURATION.EMPTY_MSG": "No configurations",
                 //
                 "CHATBOT.SESSIONS.CANCEL_BUTTON": "Cancel",
                 "CHATBOT.SESSIONS.OK_BUTTON": "OK",
@@ -61,7 +54,6 @@ i18n.use(initReactI18next).init({
                     "Response execution time is displayed for each AI response",
                 "CHATBOT.PLAYGROUND.VIEW_CHUNK_MSG": "View",
                 "CHATBOT.PLAYGROUND.LOADING_MSG": "Loading session",
-                "CHATBOT.PLAYGROUND.NEW_THREAD_MSG": "New Thread",
                 // --- Gen-AI patterns (Cloudscape) ---
                 // T1 — Progressive steps for tool actions
                 "CHATBOT.PLAYGROUND.STEPS_HEADER": "Steps",
@@ -69,8 +61,6 @@ i18n.use(initReactI18next).init({
                 "CHATBOT.PLAYGROUND.STEPS_PERFORMED_other": "Performed {{count}} steps",
                 // T2 — Thinking pattern for reasoning
                 "CHATBOT.PLAYGROUND.THINKING_ACTIVE": "Thinking",
-                "CHATBOT.PLAYGROUND.THINKING_DONE_one": "Thought for {{count}} second",
-                "CHATBOT.PLAYGROUND.THINKING_DONE_other": "Thought for {{count}} seconds",
                 "CHATBOT.PLAYGROUND.THINKING_LABEL": "Reasoning",
                 // T3 — Support prompts (empty-state starters)
                 "CHATBOT.PLAYGROUND.STARTERS_ARIA": "Suggested prompts",
@@ -82,13 +72,10 @@ i18n.use(initReactI18next).init({
                 "CHATBOT.PLAYGROUND.REGENERATE": "Regenerate response",
                 // T5 — Artifact previews (structured output + sources)
                 "CHATBOT.PLAYGROUND.STRUCTURED_OUTPUT_LABEL": "Structured output",
-                "CHATBOT.PLAYGROUND.STRUCTURED_OUTPUT_DESC": "Structured data returned by the agent",
                 "CHATBOT.PLAYGROUND.SOURCES_LABEL": "Sources",
                 "CHATBOT.PLAYGROUND.ARTIFACT_COPY": "Copy",
                 "CHATBOT.PLAYGROUND.ARTIFACT_COPIED": "Copied",
                 "CHATBOT.PLAYGROUND.ARTIFACT_COPY_ERROR": "Failed to copy",
-                "CHATBOT.PLAYGROUND.ARTIFACT_EXPAND": "Expand",
-                "CHATBOT.PLAYGROUND.OPEN_SOURCE": "Open source",
                 // T6 — Conversational history (in-chat)
                 "CHATBOT.PLAYGROUND.HISTORY_TITLE": "Conversations",
                 "CHATBOT.PLAYGROUND.HISTORY_DRAWER_ARIA": "Conversation history",
@@ -134,12 +121,7 @@ i18n.use(initReactI18next).init({
                 "ADMIN.AGENTCORE.HELP_TIPS_4":
                     "Click on agent names or runtime IDs to copy them to clipboard",
                 //
-                "COMMON.INFO.GET_STARTED_MSG": "Get started!",
-                "COMMON.INFO.DUMMY_MSG": "Lorem Ipsum...",
-                "COMMON.INFO.HOME_BUTTON.": "Home",
                 "COMMON.INFO.LOADING_MSG": "Loading",
-                "COMMON.INFO.CANCEL_BUTTON": "Cancel",
-                "COMMON.INFO.APP_DESCRIPTION": "Agentic Chatbot Accelerator...",
                 "COMMON.ERRORS.LOAD_ERROR_MSG": "Error loading configuration from",
                 "COMMON.ERRORS.NOT_FOUND_MSG": "The page you are looking for does not exist.",
             },

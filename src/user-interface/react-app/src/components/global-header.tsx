@@ -9,6 +9,7 @@ import { ButtonDropdownProps, TopNavigation } from "@cloudscape-design/component
 import { Mode } from "@cloudscape-design/global-styles";
 import { fetchUserAttributes, getCurrentUser, signOut } from "aws-amplify/auth";
 import { useEffect, useState } from "react";
+import { clearCredentials } from "../aws-credentials";
 import { CHATBOT_NAME } from "../common/constants";
 import { StorageHelper } from "../common/helpers/storage-helper";
 import useOnFollow from "../common/hooks/use-on-follow";
@@ -24,6 +25,7 @@ export default function GlobalHeader() {
             const result = await getCurrentUser();
 
             if (!result || Object.keys(result).length === 0) {
+                clearCredentials();
                 signOut();
                 return;
             }
@@ -66,6 +68,7 @@ export default function GlobalHeader() {
         if (detail.id === "signout") {
             StorageHelper.setUserName("");
             StorageHelper.setUserInitials("XX");
+            clearCredentials();
             signOut();
         }
     };

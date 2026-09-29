@@ -82,7 +82,7 @@ export default function VoiceConversationView({
         [agentRuntimeId, qualifier, sessionId, appContext, availableAgents],
     );
 
-    const { isRecording, isConnected, conversationTurns, activeSpeaker, startVoice, stopVoice, disconnectVoice: _disconnectVoice, error } =
+    const { isRecording, isConnected, conversationTurns, activeSpeaker, startVoice, stopVoice, error } =
         useVoiceAgent(voiceOptions);
 
     const client = useMemo(() => generateClient(), []);

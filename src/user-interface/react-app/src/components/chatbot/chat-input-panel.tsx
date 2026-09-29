@@ -6,8 +6,7 @@
 import { Button, FormField, Select, SpaceBetween, StatusIndicator } from "@cloudscape-design/components";
 import PromptInput, { PromptInputProps } from "@cloudscape-design/components/prompt-input";
 import { generateClient } from "aws-amplify/api";
-import { Dispatch, SetStateAction, forwardRef, useContext, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
-import { ReadyState } from "react-use-websocket";
+import { Dispatch, SetStateAction, forwardRef, useContext, useEffect, useImperativeHandle, useRef, useState } from "react";
 
 import { fetchUserAttributes } from "aws-amplify/auth";
 import { AppContext } from "../../common/app-context";
@@ -32,6 +31,15 @@ import {
 } from "./types";
 import { appendToolAction, markToolComplete, updateMessageHistoryRef } from "./utils";
 import { resolveRuntimeVersion } from "../../common/utils";
+
+// Values match WebSocket.readyState, plus UNINSTANTIATED before the first connect.
+enum ReadyState {
+    UNINSTANTIATED = -1,
+    CONNECTING = 0,
+    OPEN = 1,
+    CLOSING = 2,
+    CLOSED = 3,
+}
 
 export interface ChatInputPanelProps {
     running: boolean;
@@ -63,8 +71,6 @@ export interface ChatInputPanelProps {
 
 export abstract class ChatScrollState {
     static userHasScrolled = false;
-    static skipNextScrollEvent = false;
-    static skipNextHistoryUpdate = false;
     /** Set to true when a new message is sent; triggers scroll-to-user-message */
     static scrollToUserMessage = false;
 }
@@ -413,11 +419,6 @@ const ChatInputPanel = forwardRef<ChatInputPanelHandle, ChatInputPanelProps>(fun
 
     useEffect(() => {
         const onWindowScroll = () => {
-            if (ChatScrollState.skipNextScrollEvent) {
-                ChatScrollState.skipNextScrollEvent = false;
-                return;
-            }
-
             const isScrollToTheEnd =
                 Math.abs(
                     window.innerHeight + window.scrollY - document.documentElement.scrollHeight,
@@ -436,16 +437,6 @@ const ChatInputPanel = forwardRef<ChatInputPanelHandle, ChatInputPanelProps>(fun
             window.removeEventListener("scroll", onWindowScroll);
         };
     }, []);
-
-    // NOTE: Window-level auto-scroll on messageHistory change has been removed.
-    // Scroll management is now handled entirely by the container-level logic in chat.tsx.
-    useLayoutEffect(() => {
-        if (ChatScrollState.skipNextHistoryUpdate) {
-            ChatScrollState.skipNextHistoryUpdate = false;
-            return;
-        }
-        // No auto-scroll during streaming — handled by chat.tsx container scroll
-    }, [props.messageHistory]);
 
     const generateMessageId = (messageNumber: number): string => {
         const uuid = crypto.randomUUID();

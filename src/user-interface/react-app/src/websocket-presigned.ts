@@ -33,7 +33,7 @@ export interface ConnectOptions {
     accountId: string;
     /** Qualifier / endpoint name (e.g. "DEFAULT") */
     qualifier: string;
-    /** Connection mode — "text" for `/ws`, "voice" for `/ws/voice` */
+    /** Connection mode. Both modes use `/ws`; voice is entered by sending `voice_init` first. */
     mode: "text" | "voice";
     /** App configuration with region + Cognito IDs */
     config: {
@@ -86,7 +86,6 @@ async function createPresignedUrl(
     agentRuntimeArn: string,
     qualifier: string,
     sessionId: string,
-    _mode: "text" | "voice",
     config: ConnectOptions["config"],
 ): Promise<string> {
     const region = config.aws_project_region;
@@ -153,7 +152,6 @@ export async function connectToAgent(options: ConnectOptions): Promise<WebSocket
         agentRuntimeArn,
         options.qualifier,
         sessionId,
-        options.mode,
         options.config,
     );
 
