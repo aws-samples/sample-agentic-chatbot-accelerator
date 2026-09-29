@@ -3,7 +3,6 @@
 //
 // This is AWS Content subject to the terms of the Customer Agreement
 // ----------------------------------------------------------------------
-import { generateClient } from "aws-amplify/api";
 import { useContext, useEffect, useMemo, useState } from "react";
 
 import {
@@ -33,7 +32,8 @@ import {
     listAgentEndpoints as listAgentEndpointsQuery,
     listRuntimeAgents as listRuntimeAgentsQuery,
 } from "../../graphql/queries";
-import { groupModelOptionsByProvider } from "./wizard-utils";
+import { groupModelOptionsByProvider, toModelOptions, wizardI18nStrings } from "./wizard-utils";
+import { apiClient } from "../../common/api-client";
 
 // Configuration for a single evaluator instance
 export interface EvaluatorConfig {
@@ -134,22 +134,15 @@ export default function CreateEvaluatorWizard({
     isEditMode = false,
 }: CreateEvaluatorWizardProps) {
     const appConfig = useContext(AppContext);
-    const apiClient = useMemo(() => generateClient(), []);
 
     // Get evaluator config from app config (CDK config)
     const evaluatorAppConfig: EvaluatorConfigType | undefined = appConfig?.evaluatorConfig;
 
     // State for model options
-    const [modelOptions, setModelOptions] = useState<{ label: string; value: string }[]>([]);
-
-    useEffect(() => {
-        if (evaluatorAppConfig?.supportedModels && appConfig) {
-            const models = Object.entries(evaluatorAppConfig.supportedModels).map(
-                ([label, value]) => ({ label, value: value as string }),
-            );
-            setModelOptions(models);
-        }
-    }, [evaluatorAppConfig, appConfig]);
+    const modelOptions = useMemo(
+        () => toModelOptions(evaluatorAppConfig?.supportedModels),
+        [evaluatorAppConfig],
+    );
 
     // Get default rubrics from config
     const defaultRubrics = useMemo(() => {
@@ -211,7 +204,7 @@ export default function CreateEvaluatorWizard({
         };
 
         fetchAgents();
-    }, [appConfig, apiClient]);
+    }, [appConfig]);
 
     // When editing, the stored evaluator only has the agent *name* (the backend
     // doesn't persist the runtime id). The agent dropdown is keyed on
@@ -254,7 +247,7 @@ export default function CreateEvaluatorWizard({
         };
 
         fetchEndpoints();
-    }, [config.agentRuntimeId, apiClient]);
+    }, [config.agentRuntimeId]);
 
     // Parse test cases from JSON string
     const parseTestCasesJson = (jsonText: string): { cases: TestCase[]; error: string } => {
@@ -1022,22 +1015,15 @@ export default function CreateEvaluatorWizard({
     return (
         <>
             <Wizard
-                i18nStrings={{
-                    stepNumberLabel: (stepNumber) => `Step ${stepNumber}`,
-                    collapsedStepsLabel: (stepNumber, stepsCount) =>
-                        `Step ${stepNumber} of ${stepsCount}`,
-                    navigationAriaLabel: "Steps",
-                    cancelButton: "Cancel",
-                    previousButton: "Previous",
-                    nextButton: "Next",
-                    submitButton: isCreating
+                i18nStrings={wizardI18nStrings(
+                    isCreating
                         ? isEditMode
                             ? "Saving..."
                             : "Creating..."
                         : isEditMode
                           ? "Save Changes"
                           : "Create Evaluator",
-                }}
+                )}
                 onNavigate={({ detail }) => setActiveStepIndex(detail.requestedStepIndex)}
                 activeStepIndex={activeStepIndex}
                 onCancel={onCancel}

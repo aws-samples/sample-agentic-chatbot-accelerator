@@ -3,6 +3,9 @@
 //
 // SPDX-License-Identifier: MIT-0
 // ----------------------------------------------------------------------
+import { WizardProps } from "@cloudscape-design/components";
+import { Dispatch, SetStateAction } from "react";
+import { AgentCoreRuntimeConfiguration, GraphOrchestratorConfig } from "./types";
 
 // Set of dangerous keys that could lead to prototype pollution
 const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
@@ -295,3 +298,146 @@ export function getDefaultReasoningEffort(modelId: string): string | null {
 export function isReasoningEffortAccepted(modelId: string, effort: string): boolean {
     return getReasoningCapability(modelId)?.efforts.includes(effort) ?? false;
 }
+
+type ModelInferenceParameters = AgentCoreRuntimeConfiguration["modelInferenceParameters"];
+
+/** AgentConfigSection's model props, bound to a config that holds `modelInferenceParameters`. */
+export function bindModelParams<T extends { modelInferenceParameters: ModelInferenceParameters }>(
+    params: ModelInferenceParameters,
+    setConfig: Dispatch<SetStateAction<T>>,
+) {
+    const update = (fn: (p: ModelInferenceParameters) => ModelInferenceParameters) =>
+        setConfig((prev) => ({
+            ...prev,
+            modelInferenceParameters: fn(prev.modelInferenceParameters),
+        }));
+    return {
+        modelId: params.modelId,
+        temperature: params.parameters.temperature,
+        maxTokens: params.parameters.maxTokens,
+        reasoningBudget: params.reasoningBudget,
+        onModelChange: (modelId: string) =>
+            update((p) => {
+                // Keep the effort only if the NEW model accepts the value already
+                // selected. Sharing a reasoning "type" is not enough: Opus 4.8's xhigh
+                // is rejected by Sonnet 5, which documents only low/medium/high.
+                const keepBudget =
+                    p.reasoningBudget != null &&
+                    isReasoningEffortAccepted(modelId, p.reasoningBudget);
+                return { ...p, modelId, ...(keepBudget ? {} : { reasoningBudget: undefined }) };
+            }),
+        onTemperatureChange: (temperature: number) =>
+            update((p) => ({ ...p, parameters: { ...p.parameters, temperature } })),
+        onMaxTokensChange: (maxTokens: number) =>
+            update((p) => ({ ...p, parameters: { ...p.parameters, maxTokens } })),
+        onReasoningBudgetChange: (reasoningBudget: string | undefined) =>
+            update((p) => ({ ...p, reasoningBudget })),
+    };
+}
+
+// AgentCore caps runtime names at 48 characters. Only single agents get an A2A twin
+// runtime named `<name>_a2a`, so their names must leave room for the suffix.
+export const AGENT_NAME_MAX_LENGTH = 48;
+export const SINGLE_AGENT_NAME_MAX_LENGTH = AGENT_NAME_MAX_LENGTH - "_a2a".length;
+
+/** Validation message for an agent name, or "" when valid. */
+export function agentNameError(name: string, maxLength: number): string {
+    if (name.trim() === "") return "Agent name is required";
+    if (!new RegExp(`^[a-zA-Z][a-zA-Z0-9_]{0,${maxLength - 1}}$`).test(name)) {
+        const limit =
+            maxLength < AGENT_NAME_MAX_LENGTH
+                ? `max ${maxLength} characters; the A2A twin runtime appends '_a2a' and the combined name must fit AgentCore's ${AGENT_NAME_MAX_LENGTH}-char limit`
+                : `max ${maxLength} characters`;
+        return `Agent name must start with a letter and contain only letters, numbers, and underscores (${limit})`;
+    }
+    return "";
+}
+
+/** Limits shared by the swarm and graph orchestrators; swarm adds maxHandoffs. */
+export const DEFAULT_ORCHESTRATOR_LIMITS: GraphOrchestratorConfig = {
+    maxIterations: 50,
+    executionTimeoutSeconds: 300,
+    nodeTimeoutSeconds: 60,
+};
+export const DEFAULT_MAX_HANDOFFS = 15;
+
+export const orchestratorTimeoutsValid = (o: GraphOrchestratorConfig): boolean =>
+    o.executionTimeoutSeconds > 0 &&
+    o.nodeTimeoutSeconds > 0 &&
+    o.nodeTimeoutSeconds <= o.executionTimeoutSeconds;
+
+export const wizardI18nStrings = (submitButton: string): WizardProps.I18nStrings => ({
+    stepNumberLabel: (stepNumber) => `Step ${stepNumber}`,
+    collapsedStepsLabel: (stepNumber, stepsCount) => `Step ${stepNumber} of ${stepsCount}`,
+    navigationAriaLabel: "Steps",
+    cancelButton: "Cancel",
+    previousButton: "Previous",
+    nextButton: "Next",
+    submitButton,
+});
+
+export const KB_TOOL_PREFIX = "retrieve_from_kb_";
+
+interface ToolSelectionConfig {
+    tools?: string[];
+    toolParameters?: Record<string, any>;
+    mcpServers?: string[];
+}
+
+/** Add/remove handlers for the tools, knowledge bases and MCP servers of an agent config. */
+export function toolSelectionActions<T extends ToolSelectionConfig>(
+    config: T,
+    setConfig: Dispatch<SetStateAction<T>>,
+) {
+    const tools = config.tools ?? [];
+    const mcpServers = config.mcpServers ?? [];
+    const addToolWithParameters = (toolName: string, parameters: Record<string, any>) =>
+        setConfig((prev) => ({
+            ...prev,
+            tools: [...(prev.tools ?? []), toolName],
+            toolParameters: { ...(prev.toolParameters ?? {}), [toolName]: parameters },
+        }));
+    return {
+        addTool: (toolName: string | undefined) => {
+            if (!toolName || toolName === "retrieve_from_kb" || tools.includes(toolName)) return;
+            addToolWithParameters(toolName, {});
+        },
+        removeTool: (toolName: string) =>
+            setConfig((prev) => {
+                const toolParameters = { ...(prev.toolParameters ?? {}) };
+                delete toolParameters[toolName];
+                return {
+                    ...prev,
+                    tools: (prev.tools ?? []).filter((t) => t !== toolName),
+                    toolParameters,
+                };
+            }),
+        addKnowledgeBase: (kbId: string | undefined) => {
+            if (!kbId) return;
+            const toolName = `${KB_TOOL_PREFIX}${kbId}`;
+            if (tools.includes(toolName)) return;
+            addToolWithParameters(toolName, {
+                retrieval_cfg: { vectorSearchConfiguration: { numberOfResults: "5" } },
+                kb_id: kbId,
+            });
+        },
+        addMcpServer: (serverName: string | undefined) => {
+            if (!serverName || mcpServers.includes(serverName)) return;
+            setConfig((prev) => ({
+                ...prev,
+                mcpServers: [...(prev.mcpServers ?? []), serverName],
+            }));
+        },
+        removeMcpServer: (serverName: string) =>
+            setConfig((prev) => ({
+                ...prev,
+                mcpServers: (prev.mcpServers ?? []).filter((s) => s !== serverName),
+            })),
+    };
+}
+
+/** Select options from an `aws-exports` model map of label → model id. */
+export const toModelOptions = (
+    models: Record<string, unknown> | null | undefined,
+): { label: string; value: string }[] =>
+    Object.entries(models ?? {}).map(([label, value]) => ({ label, value: value as string }));

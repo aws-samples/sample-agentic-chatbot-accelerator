@@ -17,6 +17,7 @@ import {
 import { useEffect, useState } from "react";
 import { RuntimeSummary } from "../../../API";
 import { isTransientStatus } from "./runtime-status";
+import { parseQualifierMap } from "../../../common/utils";
 
 interface DeleteAgentModalProps {
     visible: boolean;
@@ -48,7 +49,7 @@ export default function DeleteAgentModal({
     // In multi mode there is no picker, so this stays empty.
     const qualifiers = isMulti
         ? []
-        : Object.keys(JSON.parse(singleItem.qualifierToVersion)).filter(
+        : Object.keys(parseQualifierMap(singleItem.qualifierToVersion)).filter(
               (qualifier) => qualifier !== "DEFAULT",
           );
 

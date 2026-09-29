@@ -8,7 +8,6 @@ import { useCollection } from "@cloudscape-design/collection-hooks";
 import {
     Box,
     Button,
-    CollectionPreferences,
     Container,
     FileUpload,
     Flashbar,
@@ -27,7 +26,6 @@ import { useCallback, useContext, useEffect, useState } from "react";
 import { AppContext } from "../../common/app-context";
 import { Utils } from "../../common/utils";
 
-import { generateClient } from "aws-amplify/api";
 import { uploadData } from "aws-amplify/storage";
 
 import { KnowledgeBase, S3DataSource, S3Document } from "../../API";
@@ -54,6 +52,9 @@ import { MetadataUpdateManager } from "./configure/metadata-config";
 import { MetadataConfig, OperationStatus } from "./configure/types";
 
 import { ResponseStatus } from "../../API";
+import { PageSizePreferences, TableEmptyState } from "../table-parts";
+import ConfirmModal from "../confirm-modal";
+import { apiClient } from "../../common/api-client";
 
 type StatusMessage = {
     status: OperationStatus;
@@ -61,6 +62,21 @@ type StatusMessage = {
 };
 export interface DocumentManagerProps {
     readonly toolsOpen: boolean;
+}
+
+/** Resolve once `check` returns true; a failing check or the timeout rejects. */
+async function pollUntil(
+    check: () => Promise<boolean>,
+    intervalMs: number,
+    timeoutMs: number,
+): Promise<void> {
+    const startTime = Date.now();
+    while (!(await check())) {
+        if (Date.now() - startTime >= timeoutMs) {
+            throw new Error(`Polling timed out after ${timeoutMs / 60000} minutes`);
+        }
+        await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
 }
 
 export default function DocumentManager(props: DocumentManagerProps) {
@@ -102,7 +118,6 @@ export default function DocumentManager(props: DocumentManagerProps) {
     >(undefined);
 
     // --------------------------------------------------------------------------------------------- //
-    const apiClient = generateClient();
 
     const fetchKnowledgeBases = useCallback(async () => {
         if (!appContext) return;
@@ -170,27 +185,6 @@ export default function DocumentManager(props: DocumentManagerProps) {
         })();
     }, [selectedKB, selectedDS]);
 
-    const EmptyState = ({
-        title,
-        subtitle,
-        action,
-    }: {
-        title: string;
-        subtitle?: string;
-        action: React.ReactNode;
-    }) => {
-        return (
-            <Box textAlign="center" color="inherit">
-                <Box variant="strong" textAlign="center" color="inherit">
-                    {title}
-                </Box>
-                <Box variant="p" padding={{ bottom: "s" }} color="inherit">
-                    {subtitle}
-                </Box>
-                {action}
-            </Box>
-        );
-    }; //
     const { items, actions, collectionProps, filterProps, filteredItemsCount, paginationProps } =
         useCollection(documents, {
             pagination: { pageSize: preferences.pageSize },
@@ -205,7 +199,7 @@ export default function DocumentManager(props: DocumentManagerProps) {
             },
             filtering: {
                 empty: (
-                    <EmptyState
+                    <TableEmptyState
                         title={`No documents found in the data source ${selectedDS?.name}`}
                         action={
                             <Button onClick={() => setUploadModalVisible(true)}>
@@ -215,7 +209,7 @@ export default function DocumentManager(props: DocumentManagerProps) {
                     />
                 ),
                 noMatch: (
-                    <EmptyState
+                    <TableEmptyState
                         title="No matches"
                         action={
                             <Button onClick={() => actions.setFiltering("")}>Clear filter</Button>
@@ -225,103 +219,54 @@ export default function DocumentManager(props: DocumentManagerProps) {
             },
         });
 
-    const pollForProcessStarted = async (
-        prefix: string,
-        selectedFiles: File[],
-    ): Promise<boolean> => {
-        const POLLING_INTERVAL = 3000;
-        const TIMEOUT = 5 * 60 * 1000;
-        const startTime = Date.now();
+    const toObjectNames = (prefix: string, files: File[]) =>
+        files.map((file) => `${prefix}/${file.name}`);
 
-        while (true) {
-            try {
+    const pollForProcessStarted = (prefix: string, selectedFiles: File[]) =>
+        pollUntil(
+            async () => {
                 const result = await apiClient.graphql({
                     query: checkOnProcessStartedQuery,
-                    variables: {
-                        s3ObjectNames: selectedFiles.map((file) => `${prefix}/${file.name}`),
-                    },
+                    variables: { s3ObjectNames: toObjectNames(prefix, selectedFiles) },
                 });
+                return result.data.checkOnProcessStarted === true;
+            },
+            3000,
+            5 * 60 * 1000,
+        );
 
-                if (result.data.checkOnProcessStarted === true) {
-                    return true;
-                }
-
-                if (Date.now() - startTime >= TIMEOUT) {
-                    throw new Error("Polling timed out after 5 minutes");
-                }
-
-                await new Promise((resolve) => setTimeout(resolve, POLLING_INTERVAL));
-            } catch (error) {
-                // If query fails, stop polling and throw the error
-                throw error;
-            }
-        }
-    };
-    const pollForProcessCompleted = async (
-        prefix: string,
-        selectedFiles: File[],
-    ): Promise<boolean> => {
-        const POLLING_INTERVAL = 10000;
-        const TIMEOUT = 30 * 60 * 1000;
-        const startTime = Date.now();
-
-        while (true) {
-            try {
+    const pollForProcessCompleted = (prefix: string, selectedFiles: File[]) =>
+        pollUntil(
+            async () => {
                 const result = await apiClient.graphql({
                     query: checkOnProcessCompletedQuery,
-                    variables: {
-                        s3ObjectNames: selectedFiles.map((file) => `${prefix}/${file.name}`),
-                    },
+                    variables: { s3ObjectNames: toObjectNames(prefix, selectedFiles) },
                 });
+                return result.data.checkOnProcessCompleted === true;
+            },
+            10000,
+            30 * 60 * 1000,
+        );
 
-                if (result.data.checkOnProcessCompleted === true) {
-                    return true;
-                }
-
-                if (Date.now() - startTime >= TIMEOUT) {
-                    throw new Error("Polling timed out after 30 minutes");
-                }
-
-                await new Promise((resolve) => setTimeout(resolve, POLLING_INTERVAL));
-            } catch (error) {
-                throw error;
+    const pollForDeletionCompleted = (selectedItems: S3Document[]) => {
+        const s3ObjectNames = selectedItems.map((object) => {
+            const parts = object.uri.replace("s3://", "").split("/");
+            if (parts.length < 2) {
+                throw new Error("Invalid S3 URI format");
             }
-        }
-    };
-    const pollForDeletionCompleted = async (selectedItems: S3Document[]): Promise<boolean> => {
-        const POLLING_INTERVAL = 3000;
-        const TIMEOUT = 30 * 60 * 1000;
-        const startTime = Date.now();
-
-        while (true) {
-            try {
+            return parts.slice(1).join("/");
+        });
+        return pollUntil(
+            async () => {
                 const result = await apiClient.graphql({
                     query: checkOnDocumentsRemovedQuery,
-                    variables: {
-                        s3ObjectNames: selectedItems.map((object) => {
-                            const parts = object.uri.replace("s3://", "").split("/");
-                            if (parts.length < 2) {
-                                throw new Error("Invalid S3 URI format");
-                            }
-
-                            return parts.slice(1).join("/");
-                        }),
-                    },
+                    variables: { s3ObjectNames },
                 });
-
-                if (result.data.checkOnDocumentsRemoved === true) {
-                    return true;
-                }
-
-                if (Date.now() - startTime >= TIMEOUT) {
-                    throw new Error("Polling timed out after 30 minutes");
-                }
-
-                await new Promise((resolve) => setTimeout(resolve, POLLING_INTERVAL));
-            } catch (error) {
-                throw error;
-            }
-        }
+                return result.data.checkOnDocumentsRemoved === true;
+            },
+            3000,
+            30 * 60 * 1000,
+        );
     };
 
     const handleFileUpload = async () => {
@@ -393,7 +338,10 @@ export default function DocumentManager(props: DocumentManagerProps) {
             setTableLoadingText("Fetching documents...");
             await listDocuments();
             setTableLoading(false);
-        } catch (error) {}
+        } catch (error) {
+            setUploadError(Utils.getErrorMessage(error));
+            setTableLoading(false);
+        }
     };
 
     const uploadModal = (
@@ -494,29 +442,18 @@ export default function DocumentManager(props: DocumentManagerProps) {
     };
 
     const deleteModal = (
-        <Modal
-            onDismiss={() => setShowModalDelete(false)}
+        <ConfirmModal
             visible={showModalDelete}
-            footer={
-                <Box float="right">
-                    <SpaceBetween direction="horizontal" size="xs">
-                        {" "}
-                        <Button variant="link" onClick={() => setShowModalDelete(false)}>
-                            {"Cancel"}
-                        </Button>
-                        <Button variant="primary" onClick={deleteSelectedDocuments}>
-                            {"OK"}
-                        </Button>
-                    </SpaceBetween>{" "}
-                </Box>
-            }
+            onDismiss={() => setShowModalDelete(false)}
+            onConfirm={deleteSelectedDocuments}
+            confirmLabel="OK"
             header={"Delete document" + (selectedItems.length > 1 ? "s" : "")}
         >
             {"Do you want to delete"}{" "}
             {selectedItems.length == 1
                 ? `the document "${selectedItems[0].name}"?`
                 : `${selectedItems.length} documents?`}
-        </Modal>
+        </ConfirmModal>
     );
 
     // ---------------------------- //
@@ -767,23 +704,7 @@ export default function DocumentManager(props: DocumentManagerProps) {
                     resizableColumns
                     pagination={<Pagination {...paginationProps} />}
                     preferences={
-                        <CollectionPreferences
-                            onConfirm={({ detail }) =>
-                                setPreferences({ pageSize: detail.pageSize ?? 20 })
-                            }
-                            title="Preferences"
-                            confirmLabel="Confirm"
-                            cancelLabel="Cancel"
-                            preferences={preferences}
-                            pageSizePreference={{
-                                title: "Page size",
-                                options: [
-                                    { value: 10, label: "10" },
-                                    { value: 20, label: "20" },
-                                    { value: 50, label: "50" },
-                                ],
-                            }}
-                        />
+                        <PageSizePreferences preferences={preferences} onChange={setPreferences} />
                     }
                     header={
                         <Header

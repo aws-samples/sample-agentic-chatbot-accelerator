@@ -1,10 +1,12 @@
 export class Utils {
     /* eslint-disable  @typescript-eslint/no-explicit-any */
-    static getErrorMessage(error: any) {
-        if (error.errors) {
+    /** Message from an Amplify GraphQL error (`{ errors: [...] }`), an Error, or a string. */
+    static getErrorMessage(error: any): string {
+        if (error?.errors?.length) {
             return error.errors.map((e: any) => e.message).join(", ");
         }
-
+        if (error instanceof Error && error.message) return error.message;
+        if (typeof error === "string" && error) return error;
         return "Unknown error";
     }
     /* eslint-enable  @typescript-eslint/no-explicit-any */
@@ -23,11 +25,33 @@ export function resolveRuntimeVersion(
     qualifierToVersion: string | null | undefined,
     qualifier: string,
 ): string {
-    if (!qualifierToVersion) return "";
+    const version = parseQualifierMap(qualifierToVersion)[qualifier];
+    return version === undefined || version === null ? "" : String(version);
+}
+
+/** Parse a `qualifierToVersion` JSON string; `{}` when missing or malformed. */
+export function parseQualifierMap(
+    qualifierToVersion: string | null | undefined,
+): Record<string, number | string> {
+    if (!qualifierToVersion) return {};
     try {
-        const version = (JSON.parse(qualifierToVersion) as Record<string, number | string>)[qualifier];
-        return version === undefined || version === null ? "" : String(version);
+        const parsed = JSON.parse(qualifierToVersion);
+        return parsed && typeof parsed === "object" ? parsed : {};
     } catch {
-        return "";
+        return {};
     }
+}
+
+/** Endpoint select options for an agent, always including DEFAULT first if absent. */
+export function getEndpointOptions(
+    agent: { qualifierToVersion?: string | null } | undefined,
+): { label: string; value: string }[] {
+    const options = Object.keys(parseQualifierMap(agent?.qualifierToVersion)).map((key) => ({
+        label: key,
+        value: key,
+    }));
+    if (!options.some((o) => o.value === "DEFAULT")) {
+        options.unshift({ label: "DEFAULT", value: "DEFAULT" });
+    }
+    return options;
 }

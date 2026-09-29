@@ -10,7 +10,6 @@ import {
     Container,
     FormField,
     Header,
-    Input,
     Select,
     SpaceBetween,
     Table,
@@ -21,9 +20,21 @@ import {
     AgentCoreRuntimeConfiguration,
     AgentsAsToolsConfiguration,
 } from "../types";
-import { AdditionalToolsSection, AgentConfigSection } from "../wizard-shared-components";
-import { STEP_MIN_HEIGHT, isReasoningEffortAccepted } from "../wizard-utils";
+import {
+    AdditionalToolsSection,
+    AgentConfigSection,
+    AgentNameField,
+} from "../wizard-shared-components";
+import {
+    bindModelParams,
+    STEP_MIN_HEIGHT,
+    isReasoningEffortAccepted,
+    AGENT_NAME_MAX_LENGTH,
+    agentNameError,
+    toolSelectionActions,
+} from "../wizard-utils";
 import ReviewStep from "./review-step";
+import { getEndpointOptions } from "../../../common/utils";
 
 export interface AgentsAsToolsStepsProps {
     config: AgentCoreRuntimeConfiguration;
@@ -39,31 +50,6 @@ export interface AgentsAsToolsStepsProps {
     availableKnowledgeBases: { label: string; value: string }[];
     knowledgeBaseIsSupported: boolean;
     isCreating: boolean;
-}
-
-/** Helper to get endpoint options for an agent from qualifierToVersion */
-function getEndpointOptions(agentName: string, availableAgents: RuntimeSummary[]) {
-    const agent = availableAgents.find((a) => a.agentName === agentName);
-    const options: { label: string; value: string }[] = [];
-    if (agent?.qualifierToVersion) {
-        try {
-            const qtv = JSON.parse(agent.qualifierToVersion);
-            if (qtv && typeof qtv === "object") {
-                options.push(
-                    ...Object.keys(qtv).map((key) => ({
-                        label: key,
-                        value: key,
-                    })),
-                );
-            }
-        } catch {
-            // ignore parse errors
-        }
-    }
-    if (!options.some((o) => o.value === "DEFAULT")) {
-        options.unshift({ label: "DEFAULT", value: "DEFAULT" });
-    }
-    return options;
 }
 
 export function getAgentsAsToolsSteps({
@@ -83,19 +69,17 @@ export function getAgentsAsToolsSteps({
     // -------------------------------------------------------------------
     // Agent-tool management
     // -------------------------------------------------------------------
+    // A persisted runtimeId is either the HTTP id (just added) or the A2A twin
+    // ARN (loaded from a saved config; rewritten by the AppSync resolver at save
+    // time), so every lookup has to accept both shapes.
+    const isRuntime = (agent: RuntimeSummary, runtimeId: string) =>
+        agent.agentRuntimeId === runtimeId ||
+        (!!agent.agentRuntimeArnA2A && agent.agentRuntimeArnA2A === runtimeId);
+
     const addAgentAsTool = (agentName: string) => {
         const agent = availableAgents.find((a) => a.agentName === agentName);
         if (!agent) return;
-        // The persisted runtimeId may be either the HTTP id (just-added) or
-        // the A2A ARN (loaded from a saved config) — block both shapes.
-        if (
-            agentsAsToolsConfig.agentsAsTools.some(
-                (a) =>
-                    a.runtimeId === agent.agentRuntimeId ||
-                    (!!agent.agentRuntimeArnA2A && a.runtimeId === agent.agentRuntimeArnA2A),
-            )
-        )
-            return;
+        if (agentsAsToolsConfig.agentsAsTools.some((a) => isRuntime(agent, a.runtimeId))) return;
 
         const newTool: AgentAsToolDefinition = {
             runtimeId: agent.agentRuntimeId,
@@ -123,76 +107,19 @@ export function getAgentsAsToolsSteps({
         });
     };
 
-    // Resolve a sub-agent reference back to its display name. New entries
-    // hold the HTTP `agentRuntimeId`; entries loaded from a saved config
-    // hold the A2A twin ARN (rewritten by the AppSync resolver at save time).
-    const getAgentNameByRuntimeId = (runtimeId: string): string => {
-        const agent = availableAgents.find(
-            (a) => a.agentRuntimeId === runtimeId || a.agentRuntimeArnA2A === runtimeId,
-        );
-        return agent?.agentName || runtimeId;
-    };
+    const getAgentNameByRuntimeId = (runtimeId: string): string =>
+        availableAgents.find((a) => isRuntime(a, runtimeId))?.agentName || runtimeId;
 
     // -------------------------------------------------------------------
     // Tool management for the orchestrator
     // -------------------------------------------------------------------
-    const addOrchestratorTool = (toolName: string | undefined) => {
-        if (!toolName) return;
-        const current = agentsAsToolsConfig.tools || [];
-        if (current.includes(toolName)) return;
-        setAgentsAsToolsConfig((prev) => ({
-            ...prev,
-            tools: [...(prev.tools || []), toolName],
-            toolParameters: { ...(prev.toolParameters || {}), [toolName]: {} },
-        }));
-    };
-
-    const removeOrchestratorTool = (toolName: string) => {
-        setAgentsAsToolsConfig((prev) => {
-            const newToolParams = { ...(prev.toolParameters || {}) };
-            delete newToolParams[toolName];
-            return {
-                ...prev,
-                tools: (prev.tools || []).filter((t) => t !== toolName),
-                toolParameters: newToolParams,
-            };
-        });
-    };
-
-    const addOrchestratorKnowledgeBase = (kbId: string | undefined) => {
-        if (!kbId) return;
-        const toolName = `retrieve_from_kb_${kbId}`;
-        const current = agentsAsToolsConfig.tools || [];
-        if (current.includes(toolName)) return;
-        setAgentsAsToolsConfig((prev) => ({
-            ...prev,
-            tools: [...(prev.tools || []), toolName],
-            toolParameters: {
-                ...(prev.toolParameters || {}),
-                [toolName]: {
-                    retrieval_cfg: { vectorSearchConfiguration: { numberOfResults: "5" } },
-                    kb_id: kbId,
-                },
-            },
-        }));
-    };
-
-    const addOrchestratorMcpServer = (serverName: string | undefined) => {
-        if (!serverName) return;
-        const current = agentsAsToolsConfig.mcpServers || [];
-        if (current.includes(serverName)) return;
-        setAgentsAsToolsConfig((prev) => ({
-            ...prev,
-            mcpServers: [...(prev.mcpServers || []), serverName],
-        }));
-    };
-
-    const removeOrchestratorMcpServer = (serverName: string) => {
-        setAgentsAsToolsConfig((prev) => ({
-            ...prev,
-            mcpServers: (prev.mcpServers || []).filter((s) => s !== serverName),
-        }));
-    };
+    const {
+        addTool: addOrchestratorTool,
+        removeTool: removeOrchestratorTool,
+        addKnowledgeBase: addOrchestratorKnowledgeBase,
+        addMcpServer: addOrchestratorMcpServer,
+        removeMcpServer: removeOrchestratorMcpServer,
+    } = toolSelectionActions(agentsAsToolsConfig, setAgentsAsToolsConfig);
 
     // Derive filtered options
     const orchestratorTools = agentsAsToolsConfig.tools || [];
@@ -249,31 +176,12 @@ export function getAgentsAsToolsSteps({
             content: (
                 <div style={{ minHeight: STEP_MIN_HEIGHT }}>
                     <SpaceBetween direction="vertical" size="l">
-                        <Container header={<Header variant="h2">Agent Name</Header>}>
-                            <FormField
-                                label="Agent Name"
-                                description="Enter a unique name for your agents-as-tools orchestrator"
-                                errorText={
-                                    config.agentName.trim() === ""
-                                        ? "Agent name is required"
-                                        : !/^[a-zA-Z][a-zA-Z0-9_]{0,47}$/.test(config.agentName)
-                                          ? "Agent name must start with a letter and contain only letters, numbers, and underscores (max 48 characters)"
-                                          : ""
-                                }
-                            >
-                                <Input
-                                    value={config.agentName}
-                                    onChange={({ detail }) =>
-                                        setConfig((prev) => ({
-                                            ...prev,
-                                            agentName: detail.value,
-                                        }))
-                                    }
-                                    placeholder="Enter agent name..."
-                                    invalid={config.agentName.trim() === ""}
-                                />
-                            </FormField>
-                        </Container>
+                        <AgentNameField
+                            value={config.agentName}
+                            onChange={(agentName) => setConfig((prev) => ({ ...prev, agentName }))}
+                            description="Enter a unique name for your agents-as-tools orchestrator"
+                            maxLength={AGENT_NAME_MAX_LENGTH}
+                        />
 
                         <Container
                             header={
@@ -296,8 +204,8 @@ export function getAgentsAsToolsSteps({
                                             .filter(
                                                 (a) =>
                                                     a.agentName !== config.agentName &&
-                                                    !agentsAsToolsConfig.agentsAsTools.some(
-                                                        (t) => t.runtimeId === a.agentRuntimeId,
+                                                    !agentsAsToolsConfig.agentsAsTools.some((t) =>
+                                                        isRuntime(a, t.runtimeId),
                                                     ),
                                             )
                                             .map((a) => ({
@@ -336,8 +244,8 @@ export function getAgentsAsToolsSteps({
                                                     const name = getAgentNameByRuntimeId(
                                                         item.runtimeId,
                                                     );
-                                                    const agent = availableAgents.find(
-                                                        (a) => a.agentRuntimeId === item.runtimeId,
+                                                    const agent = availableAgents.find((a) =>
+                                                        isRuntime(a, item.runtimeId),
                                                     );
                                                     return (
                                                         <SpaceBetween
@@ -366,8 +274,9 @@ export function getAgentsAsToolsSteps({
                                                         item.runtimeId,
                                                     );
                                                     const options = getEndpointOptions(
-                                                        agentName,
-                                                        availableAgents,
+                                                        availableAgents.find(
+                                                            (a) => a.agentName === agentName,
+                                                        ),
                                                     );
                                                     return (
                                                         <Select
@@ -424,55 +333,10 @@ export function getAgentsAsToolsSteps({
                         <AgentConfigSection
                             label="Orchestrator"
                             modelOptions={modelOptions}
-                            modelId={agentsAsToolsConfig.modelInferenceParameters.modelId}
-                            onModelChange={(modelId) =>
-                                setAgentsAsToolsConfig((prev) => {
-                                    // Keep the effort only if the NEW model accepts the
-                                    // value already selected — see single-agent-steps.
-                                    const budget = prev.modelInferenceParameters.reasoningBudget;
-                                    const keepBudget =
-                                        budget != null &&
-                                        isReasoningEffortAccepted(modelId, budget);
-                                    return {
-                                        ...prev,
-                                        modelInferenceParameters: {
-                                            ...prev.modelInferenceParameters,
-                                            modelId,
-                                            ...(keepBudget ? {} : { reasoningBudget: undefined }),
-                                        },
-                                    };
-                                })
-                            }
-                            temperature={
-                                agentsAsToolsConfig.modelInferenceParameters.parameters.temperature
-                            }
-                            onTemperatureChange={(temperature) =>
-                                setAgentsAsToolsConfig((prev) => ({
-                                    ...prev,
-                                    modelInferenceParameters: {
-                                        ...prev.modelInferenceParameters,
-                                        parameters: {
-                                            ...prev.modelInferenceParameters.parameters,
-                                            temperature,
-                                        },
-                                    },
-                                }))
-                            }
-                            maxTokens={
-                                agentsAsToolsConfig.modelInferenceParameters.parameters.maxTokens
-                            }
-                            onMaxTokensChange={(maxTokens) =>
-                                setAgentsAsToolsConfig((prev) => ({
-                                    ...prev,
-                                    modelInferenceParameters: {
-                                        ...prev.modelInferenceParameters,
-                                        parameters: {
-                                            ...prev.modelInferenceParameters.parameters,
-                                            maxTokens,
-                                        },
-                                    },
-                                }))
-                            }
+                            {...bindModelParams(
+                                agentsAsToolsConfig.modelInferenceParameters,
+                                setAgentsAsToolsConfig,
+                            )}
                             instructions={agentsAsToolsConfig.instructions}
                             onInstructionsChange={(instructions) =>
                                 setAgentsAsToolsConfig((prev) => ({ ...prev, instructions }))
@@ -488,18 +352,6 @@ export function getAgentsAsToolsSteps({
                             useMemory={config.useMemory || false}
                             onUseMemoryChange={(useMemory) =>
                                 setConfig((prev) => ({ ...prev, useMemory }))
-                            }
-                            reasoningBudget={
-                                agentsAsToolsConfig.modelInferenceParameters.reasoningBudget
-                            }
-                            onReasoningBudgetChange={(reasoningBudget) =>
-                                setAgentsAsToolsConfig((prev) => ({
-                                    ...prev,
-                                    modelInferenceParameters: {
-                                        ...prev.modelInferenceParameters,
-                                        reasoningBudget,
-                                    },
-                                }))
                             }
                         />
 
@@ -566,12 +418,9 @@ export function isAgentsAsToolsStepValid(
     config: AgentCoreRuntimeConfiguration,
     agentsAsToolsConfig: AgentsAsToolsConfiguration,
 ): boolean {
-    const agentNamePattern = /^[a-zA-Z][a-zA-Z0-9_]{0,47}$/;
-
     // Step 0: Agents as Tools
     if (stepIndex === 0) {
-        const hasAgentName =
-            config.agentName.trim() !== "" && agentNamePattern.test(config.agentName);
+        const hasAgentName = agentNameError(config.agentName, AGENT_NAME_MAX_LENGTH) === "";
         const hasAgentsAsTools = agentsAsToolsConfig.agentsAsTools.length > 0;
         return hasAgentName && hasAgentsAsTools;
     }

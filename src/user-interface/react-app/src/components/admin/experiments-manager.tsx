@@ -10,7 +10,6 @@ import {
     Header,
     KeyValuePairs,
     Link,
-    Modal,
     Pagination,
     Popover,
     SpaceBetween,
@@ -18,11 +17,15 @@ import {
     Table,
     TableProps,
 } from "@cloudscape-design/components";
-import { generateClient } from "aws-amplify/api";
+import { useCollection } from "@cloudscape-design/collection-hooks";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import * as mutations from "../../graphql/mutations";
 import * as queries from "../../graphql/queries";
+import ConfirmModal from "../confirm-modal";
+import { TableEmptyState } from "../table-parts";
+import { formatDate } from "../../common/format";
+import { apiClient } from "../../common/api-client";
 
 interface Experiment {
     experimentId: string;
@@ -47,11 +50,6 @@ interface Experiment {
 const PAGE_SIZE_STORAGE_KEY = 'experiments-page-size';
 const DEFAULT_PAGE_SIZE = 100;
 
-/**
- * Save page size to localStorage
- * @param size - The page size to save
- * Note: This function will be used in task 4 for pagination preferences
- */
 const savePageSize = (size: number): void => {
     try {
         localStorage.setItem(PAGE_SIZE_STORAGE_KEY, size.toString());
@@ -61,11 +59,6 @@ const savePageSize = (size: number): void => {
     }
 };
 
-/**
- * Load page size from localStorage
- * @returns The saved page size, or default (100) if not found or invalid
- * Note: This function will be used in task 4 for pagination preferences
- */
 const loadPageSize = (): number => {
     try {
         const saved = localStorage.getItem(PAGE_SIZE_STORAGE_KEY);
@@ -97,7 +90,6 @@ interface DetailsTabProps {
 function DetailsTab({ experiment }: DetailsTabProps) {
     const [presignedUrlLoading, setPresignedUrlLoading] = useState(false);
     const [presignedUrlError, setPresignedUrlError] = useState<string | null>(null);
-    const apiClient = generateClient();
 
     const handleViewS3File = async () => {
         if (!experiment?.generatedCasesS3Url) return;
@@ -135,16 +127,6 @@ function DetailsTab({ experiment }: DetailsTabProps) {
         if (typeof value === "number") return value.toString();
         if (typeof value === "string") return value || "-";
         return "-";
-    };
-
-    // Format dates using toLocaleString()
-    const formatDate = (dateString: string | undefined): string => {
-        if (!dateString) return "-";
-        try {
-            return new Date(dateString).toLocaleString();
-        } catch {
-            return dateString;
-        }
     };
 
     return (
@@ -293,16 +275,10 @@ export default function ExperimentsManager() {
     const [loading, setLoading] = useState(true);
     const [selectedItems, setSelectedItems] = useState<Experiment[]>([]);
     const [showDeleteModal, setShowDeleteModal] = useState(false);
-    const [currentPageIndex, setCurrentPageIndex] = useState(1);
     const [error, setError] = useState<string | null>(null);
-    const [sortingColumn, setSortingColumn] = useState<TableProps.SortingColumn<Experiment>>({
-        sortingField: "createdAt",
-    });
-    const [sortingDescending, setSortingDescending] = useState(true);
     const [pageSize, setPageSize] = useState<number>(loadPageSize());
 
     const navigate = useNavigate();
-    const apiClient = generateClient();
 
     useEffect(() => {
         loadExperiments();
@@ -315,16 +291,7 @@ export default function ExperimentsManager() {
             const result: any = await apiClient.graphql({
                 query: queries.listExperiments,
             });
-            const experimentsList = result.data.listExperiments || [];
-
-            // Sort experiments by createdAt in descending order (newest first)
-            const sortedExperiments = [...experimentsList].sort((a, b) => {
-                const dateA = new Date(a.createdAt).getTime();
-                const dateB = new Date(b.createdAt).getTime();
-                return dateB - dateA; // Descending order
-            });
-
-            setExperiments(sortedExperiments);
+            setExperiments(result.data.listExperiments || []);
         } catch (err) {
             console.error("Error loading experiments:", err);
             setError("Failed to load experiments");
@@ -446,59 +413,28 @@ export default function ExperimentsManager() {
         {
             id: "createdAt",
             header: "Created",
-            cell: (item) => new Date(item.createdAt).toLocaleString(),
+            cell: (item) => formatDate(item.createdAt),
             sortingField: "createdAt",
         },
         {
             id: "updatedAt",
             header: "Updated",
-            cell: (item) => new Date(item.updatedAt).toLocaleString(),
+            cell: (item) => formatDate(item.updatedAt),
             sortingField: "updatedAt",
         },
     ];
 
-    const paginatedItems = experiments.slice(
-        (currentPageIndex - 1) * pageSize,
-        currentPageIndex * pageSize,
-    );
-
-    const handleSortingChange = (detail: TableProps.SortingState<Experiment>) => {
-        setSortingColumn(detail.sortingColumn);
-        setSortingDescending(detail.isDescending ?? false);
-
-        // Sort the experiments array
-        const sorted = [...experiments].sort((a, b) => {
-            const field = detail.sortingColumn.sortingField as keyof Experiment;
-            const aValue = a[field];
-            const bValue = b[field];
-
-            // Handle undefined/null values
-            if (aValue === undefined || aValue === null) return 1;
-            if (bValue === undefined || bValue === null) return -1;
-
-            // Compare values
-            let comparison = 0;
-            if (typeof aValue === 'string' && typeof bValue === 'string') {
-                comparison = aValue.localeCompare(bValue);
-            } else if (field === 'createdAt' || field === 'updatedAt') {
-                const dateA = new Date(aValue as string).getTime();
-                const dateB = new Date(bValue as string).getTime();
-                comparison = dateA - dateB;
-            } else {
-                comparison = aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
-            }
-
-            return detail.isDescending ? -comparison : comparison;
-        });
-
-        setExperiments(sorted);
-        setCurrentPageIndex(1); // Reset to first page when sorting changes
-    };
+    // Timestamps are ISO-8601, so the default string comparison sorts them chronologically.
+    const { items, collectionProps, paginationProps } = useCollection(experiments, {
+        pagination: { pageSize },
+        sorting: {
+            defaultState: { sortingColumn: { sortingField: "createdAt" }, isDescending: true },
+        },
+    });
 
     const handlePageSizeChange = (newPageSize: number) => {
         setPageSize(newPageSize);
         savePageSize(newPageSize);
-        setCurrentPageIndex(1); // Reset to first page when page size changes
     };
 
     return (
@@ -509,26 +445,24 @@ export default function ExperimentsManager() {
                 </Alert>
             )}
             <Table
+                {...collectionProps}
                 columnDefinitions={columnDefinitions}
-                items={paginatedItems}
+                items={items}
                 loading={loading}
                 loadingText="Loading experiments"
                 selectionType="multi"
                 selectedItems={selectedItems}
                 onSelectionChange={({ detail }) => setSelectedItems(detail.selectedItems)}
-                sortingColumn={sortingColumn}
-                sortingDescending={sortingDescending}
-                onSortingChange={({ detail }) => handleSortingChange(detail)}
                 empty={
-                    <Box textAlign="center" color="inherit">
-                        <b>No experiments</b>
-                        <Box padding={{ bottom: "s" }} variant="p" color="inherit">
-                            No experiments to display.
-                        </Box>
-                        <Button onClick={() => navigate("/experiments/create")}>
-                            Create experiment
-                        </Button>
-                    </Box>
+                    <TableEmptyState
+                        title="No experiments"
+                        subtitle="No experiments to display."
+                        action={
+                            <Button onClick={() => navigate("/experiments/create")}>
+                                Create experiment
+                            </Button>
+                        }
+                    />
                 }
                 header={
                     <Header
@@ -557,13 +491,7 @@ export default function ExperimentsManager() {
                         Experiments Generated
                     </Header>
                 }
-                pagination={
-                    <Pagination
-                        currentPageIndex={currentPageIndex}
-                        onChange={({ detail }) => setCurrentPageIndex(detail.currentPageIndex)}
-                        pagesCount={Math.ceil(experiments.length / pageSize)}
-                    />
-                }
+                pagination={<Pagination {...paginationProps} />}
                 preferences={
                     <CollectionPreferences
                         title="Preferences"
@@ -591,27 +519,16 @@ export default function ExperimentsManager() {
                 }
             />
 
-            <Modal
+            <ConfirmModal
                 visible={showDeleteModal}
                 onDismiss={() => setShowDeleteModal(false)}
+                onConfirm={handleDelete}
                 header={"Delete experiment" + (selectedItems.length > 1 ? "s" : "")}
-                footer={
-                    <Box float="right">
-                        <SpaceBetween direction="horizontal" size="xs">
-                            <Button variant="link" onClick={() => setShowDeleteModal(false)}>
-                                Cancel
-                            </Button>
-                            <Button variant="primary" onClick={handleDelete}>
-                                Delete
-                            </Button>
-                        </SpaceBetween>
-                    </Box>
-                }
             >
                 {selectedItems.length === 1
                     ? `Do you want to delete the experiment "${selectedItems[0].name}"?`
                     : `Do you want to delete ${selectedItems.length} experiments?`}
-            </Modal>
+            </ConfirmModal>
 
             {/* Show details when exactly one experiment is selected */}
             {selectedItems.length === 1 && (

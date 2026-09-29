@@ -6,7 +6,6 @@
 import { Alert, Button, SpaceBetween, StatusIndicator } from "@cloudscape-design/components";
 import SupportPromptGroup from "@cloudscape-design/chat-components/support-prompt-group";
 import type { IconProps } from "@cloudscape-design/components/icon";
-import { generateClient } from "aws-amplify/api";
 import { fetchUserAttributes } from "aws-amplify/auth";
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { v4 as uuidv4 } from "uuid";
@@ -29,6 +28,7 @@ import ChatInputPanel, { ChatInputPanelHandle, ChatScrollState } from "./chat-in
 import ChatMessage from "./chat-message";
 import VoiceConversationView from "./VoiceConversationView";
 import { AgentOption, ChatBotHistoryItem, ChatBotMessageType, EndpointOption, Feedback, ToolActionItem } from "./types";
+import { apiClient } from "../../common/api-client";
 
 /**
  * Empty-state starter prompts (T3). Labels resolve from i18next at render time and
@@ -121,7 +121,6 @@ export default function Chat(props: { sessionId?: string; initialAgentRuntimeId?
 
     const favoriteQualifierRef = useRef<string | null>(null);
     const sessionEndpointRef = useRef<string | null>(null);
-    const client = generateClient();
 
     // ================================================================
     // Voice mode state
@@ -152,7 +151,7 @@ export default function Chat(props: { sessionId?: string; initialAgentRuntimeId?
     const loadRuntimeAgents = async () => {
         try {
             setAgentsLoading(true);
-            const response = await client.graphql({
+            const response = await apiClient.graphql({
                 query: listRuntimeAgentsQuery,
             });
 
@@ -221,7 +220,7 @@ export default function Chat(props: { sessionId?: string; initialAgentRuntimeId?
         if (messageHistory.length === 0 && !agentRuntimeId) {
             const loadFavoriteRuntime = async () => {
                 try {
-                    const result = await client.graphql({ query: getFavoriteRuntimeQuery });
+                    const result = await apiClient.graphql({ query: getFavoriteRuntimeQuery });
                     const favorite = result.data.getFavoriteRuntime;
                     if (favorite) {
                         favoriteQualifierRef.current = favorite.endpointName;
@@ -259,7 +258,7 @@ export default function Chat(props: { sessionId?: string; initialAgentRuntimeId?
         }
 
         setEndpointsLoading(true);
-        client
+        apiClient
             .graphql({
                 query: listAgentEndpointsQuery,
                 variables: { agentRuntimeId },
@@ -343,7 +342,7 @@ export default function Chat(props: { sessionId?: string; initialAgentRuntimeId?
         // Step 2: Load agent config to check model
         const checkModel = async () => {
             try {
-                const result = await client.graphql({
+                const result = await apiClient.graphql({
                     query: getDefaultRuntimeConfigurationQuery,
                     variables: { agentName: selectedAgent.label },
                 });
@@ -490,7 +489,6 @@ export default function Chat(props: { sessionId?: string; initialAgentRuntimeId?
             }
 
             setSession({ id: props.sessionId, loading: true });
-            const apiClient = generateClient();
 
             try {
                 const result = await apiClient.graphql({
@@ -741,7 +739,6 @@ export default function Chat(props: { sessionId?: string; initialAgentRuntimeId?
             setMessageHistory(historyItems);
 
             // Persist to DynamoDB via GraphQL mutation
-            const apiClient = generateClient();
             await apiClient.graphql({
                 query: saveVoiceSessionMut,
                 variables: {

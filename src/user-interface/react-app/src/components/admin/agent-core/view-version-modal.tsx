@@ -23,6 +23,7 @@ import { useEffect, useState } from "react";
 import { RuntimeSummary } from "../../../API";
 import { AgentCoreRuntimeConfiguration } from "../../wizard/types";
 import AgentConfigView, { AgentReferenceTarget } from "./agent-config-view";
+import { parseQualifierMap } from "../../../common/utils";
 
 export interface VersionInfo {
     version: string;
@@ -143,7 +144,7 @@ export default function ViewVersionModal({
     const drillInto = async (runtime: RuntimeSummary, endpointName?: string) => {
         setLoadingConfig(true);
         try {
-            const qtv = JSON.parse(runtime.qualifierToVersion || "{}");
+            const qtv = parseQualifierMap(runtime.qualifierToVersion);
             // The endpoint named on the reference, defaulting to DEFAULT.
             const pinnedEndpoint = endpointName || "DEFAULT";
             const version = qtv[pinnedEndpoint] ?? qtv["DEFAULT"] ?? Object.values(qtv)[0] ?? "";

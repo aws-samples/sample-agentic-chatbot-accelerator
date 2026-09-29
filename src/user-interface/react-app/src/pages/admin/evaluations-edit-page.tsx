@@ -5,8 +5,7 @@
 //
 // -----------------------------------------------------------------------
 import { BreadcrumbGroup, Spinner } from "@cloudscape-design/components";
-import { generateClient } from "aws-amplify/api";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { CHATBOT_NAME } from "../../common/constants";
@@ -22,6 +21,7 @@ import {
     getEvaluator as getEvaluatorQuery,
     getEvaluatorTestCases as getEvaluatorTestCasesQuery,
 } from "../../graphql/queries";
+import { apiClient } from "../../common/api-client";
 
 // Parse the stored "evaluatorType" (comma-separated) + combined "customRubric"
 // (sections like "[OutputEvaluator]\n<rubric>\n\n---\n\n[...]") back into the
@@ -57,7 +57,6 @@ export default function EvaluationsEditPage() {
     const navigate = useNavigate();
     const onFollow = useOnFollow();
     const { evaluatorId } = useParams<{ evaluatorId: string }>();
-    const apiClient = useMemo(() => generateClient(), []);
 
     const [isSaving, setIsSaving] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
@@ -121,7 +120,7 @@ export default function EvaluationsEditPage() {
         };
 
         load();
-    }, [evaluatorId, apiClient, navigate]);
+    }, [evaluatorId, navigate]);
 
     const handleSubmit = async (config: EvaluatorConfiguration) => {
         if (!evaluatorId) return;

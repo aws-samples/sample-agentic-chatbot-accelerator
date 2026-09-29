@@ -7,11 +7,8 @@
 import { useCollection } from "@cloudscape-design/collection-hooks";
 import {
     Alert,
-    Box,
     Button,
-    CollectionPreferences,
     Container,
-    Flashbar,
     Header,
     Modal,
     Pagination,
@@ -22,7 +19,6 @@ import {
 } from "@cloudscape-design/components";
 import { useCallback, useContext, useEffect, useState } from "react";
 
-import { generateClient } from "aws-amplify/api";
 
 import { AppContext } from "../../common/app-context";
 import { Utils } from "../../common/utils";
@@ -47,6 +43,10 @@ import { DataSourceConfig, KbConfig } from "../admin/configure/types";
 import KnowledgeBaseCreationWizard from "../wizard/kb-creation-wizard";
 import { KnowledgeBaseCreationData } from "../wizard/types";
 import { OperationStatus } from "./configure/types";
+import { PageSizePreferences, TableEmptyState } from "../table-parts";
+import ConfirmModal from "../confirm-modal";
+import OperationStatusFlash from "./configure/operation-status-flash";
+import { apiClient } from "../../common/api-client";
 
 export interface KBManagerProps {
     readonly toolsOpen: boolean;
@@ -94,7 +94,6 @@ export default function KBManager(props: KBManagerProps) {
 
     // ---------------------------------------------------------------------------------- //
 
-    const apiClient = generateClient();
 
     // ---------------------------------------------------------------------------------- //
     //                      Callback to load list of knowledge bases
@@ -204,42 +203,20 @@ export default function KBManager(props: KBManagerProps) {
     };
 
     const deleteDsModal = (
-        <Modal
-            onDismiss={() => resetDsDeletionState()}
+        <ConfirmModal
             visible={showDsModalDelete}
-            footer={
-                <Box float="right">
-                    <SpaceBetween direction="horizontal" size="xs">
-                        {" "}
-                        <Button variant="link" onClick={() => resetDsDeletionState()}>
-                            {"Cancel"}
-                        </Button>
-                        <Button variant="primary" onClick={deleteSelectedDataSource}>
-                            {"OK"}
-                        </Button>
-                    </SpaceBetween>{" "}
-                </Box>
-            }
+            onDismiss={() => resetDsDeletionState()}
+            onConfirm={deleteSelectedDataSource}
+            confirmLabel="OK"
             header={`Select the data source that you want to remove`}
         >
             <SpaceBetween direction="vertical" size="m">
-                {delStatus && (
-                    <Flashbar
-                        items={[
-                            {
-                                type: delStatus === "failed" ? "error" : "success",
-                                content:
-                                    delStatus === "failed"
-                                        ? "Failed to remove the data source"
-                                        : delStatus === "in-progress"
-                                          ? `Deletion in progress...`
-                                          : "Successful",
-                                loading: delStatus === "in-progress",
-                                id: `message-ds-${delStatus}`,
-                            },
-                        ]}
-                    />
-                )}
+                <OperationStatusFlash
+                    status={delStatus}
+                    id="message-ds"
+                    failed="Failed to remove the data source"
+                    inProgress="Deletion in progress..."
+                />
                 <Select
                     data-locator="select-data-source"
                     placeholder="Select a Data Source"
@@ -260,8 +237,8 @@ export default function KBManager(props: KBManagerProps) {
                         label: ds.name,
                     }))}
                 ></Select>
-            </SpaceBetween>{" "}
-        </Modal>
+            </SpaceBetween>
+        </ConfirmModal>
     );
 
     const handleKbCreation = async (config: KnowledgeBaseCreationData) => {
@@ -269,7 +246,6 @@ export default function KBManager(props: KBManagerProps) {
             setShowKbCreationWizard(false);
             setShowKbCreationModal(true);
             setCreationStatus("in-progress");
-            const apiClient = generateClient();
             await apiClient.graphql({
                 query: createKnowledgeBaseMut,
                 variables: {
@@ -326,53 +302,28 @@ export default function KBManager(props: KBManagerProps) {
     };
 
     const deleteKbModal = (
-        <Modal
-            onDismiss={() => setShowKbModalDelete(false)}
+        <ConfirmModal
             visible={showKbModalDelete}
-            footer={
-                <Box float="right">
-                    <SpaceBetween direction="horizontal" size="xs">
-                        {" "}
-                        <Button variant="link" onClick={() => setShowKbModalDelete(false)}>
-                            {"Cancel"}
-                        </Button>
-                        <Button
-                            variant="primary"
-                            onClick={deleteSelectedKbs}
-                            disabled={delStatus !== undefined}
-                        >
-                            {"OK"}
-                        </Button>
-                    </SpaceBetween>{" "}
-                </Box>
-            }
+            onDismiss={() => setShowKbModalDelete(false)}
+            onConfirm={deleteSelectedKbs}
+            confirmLabel="OK"
+            disabled={delStatus !== undefined}
             header={"Delete Knowledge Base" + (selectedItems.length > 1 ? "s" : "")}
         >
             <SpaceBetween direction="vertical" size="m">
-                {delStatus && (
-                    <Flashbar
-                        items={[
-                            {
-                                type: delStatus === "failed" ? "error" : "success",
-                                content:
-                                    delStatus === "failed"
-                                        ? "Failed to remove a Knowledge Base"
-                                        : delStatus === "in-progress"
-                                          ? `Deletion in progress...`
-                                          : "Successful",
-                                loading: delStatus === "in-progress",
-                                id: `message-kb-${delStatus}`,
-                            },
-                        ]}
-                    />
-                )}
+                <OperationStatusFlash
+                    status={delStatus}
+                    id="message-kb"
+                    failed="Failed to remove a Knowledge Base"
+                    inProgress="Deletion in progress..."
+                />
                 {`Do you want to delete ${
                     selectedItems.length == 1
                         ? `the Knowledge Base ${selectedItems[0].name} ?`
                         : `${selectedItems.length} Knowledge Bases?`
                 }`}
-            </SpaceBetween>{" "}
-        </Modal>
+            </SpaceBetween>
+        </ConfirmModal>
     );
 
     const createKbModal = (
@@ -382,23 +333,12 @@ export default function KBManager(props: KBManagerProps) {
             header={"Knowledge Base Creation Process"}
         >
             <SpaceBetween direction="vertical" size="m">
-                {creationStatus && (
-                    <Flashbar
-                        items={[
-                            {
-                                type: creationStatus === "failed" ? "error" : "success",
-                                content:
-                                    creationStatus === "failed"
-                                        ? "Failed to create a Knowledge Base"
-                                        : creationStatus === "in-progress"
-                                          ? `Creation in progress...`
-                                          : "Successful",
-                                loading: creationStatus === "in-progress",
-                                id: `message-kb-${creationStatus}`,
-                            },
-                        ]}
-                    />
-                )}
+                <OperationStatusFlash
+                    status={creationStatus}
+                    id="message-kb"
+                    failed="Failed to create a Knowledge Base"
+                    inProgress="Creation in progress..."
+                />
             </SpaceBetween>{" "}
         </Modal>
     );
@@ -449,27 +389,6 @@ export default function KBManager(props: KBManagerProps) {
     // ---------------------------------------------------------------------------------- //
     //                          Table fancy stuff
     // ---------------------------------------------------------------------------------- //
-    const EmptyState = ({
-        title,
-        subtitle,
-        action,
-    }: {
-        title: string;
-        subtitle?: string;
-        action: React.ReactNode;
-    }) => {
-        return (
-            <Box textAlign="center" color="inherit">
-                <Box variant="strong" textAlign="center" color="inherit">
-                    {title}
-                </Box>
-                <Box variant="p" padding={{ bottom: "s" }} color="inherit">
-                    {subtitle}
-                </Box>
-                {action}
-            </Box>
-        );
-    };
 
     const { items, actions, collectionProps, filterProps, filteredItemsCount, paginationProps } =
         useCollection(knowledgeBases, {
@@ -485,7 +404,7 @@ export default function KBManager(props: KBManagerProps) {
             },
             filtering: {
                 empty: (
-                    <EmptyState
+                    <TableEmptyState
                         title={`No knowledge bases found`}
                         action={
                             <Button
@@ -500,7 +419,7 @@ export default function KBManager(props: KBManagerProps) {
                     />
                 ),
                 noMatch: (
-                    <EmptyState
+                    <TableEmptyState
                         title="No matches"
                         action={
                             <Button onClick={() => actions.setFiltering("")}>Clear filter</Button>
@@ -539,23 +458,7 @@ export default function KBManager(props: KBManagerProps) {
                 resizableColumns
                 pagination={<Pagination {...paginationProps} />}
                 preferences={
-                    <CollectionPreferences
-                        onConfirm={({ detail }) =>
-                            setPreferences({ pageSize: detail.pageSize ?? 20 })
-                        }
-                        title="Preferences"
-                        confirmLabel="Confirm"
-                        cancelLabel="Cancel"
-                        preferences={preferences}
-                        pageSizePreference={{
-                            title: "Page size",
-                            options: [
-                                { value: 10, label: "10" },
-                                { value: 20, label: "20" },
-                                { value: 50, label: "50" },
-                            ],
-                        }}
-                    />
+                    <PageSizePreferences preferences={preferences} onChange={setPreferences} />
                 }
                 header={
                     <Header

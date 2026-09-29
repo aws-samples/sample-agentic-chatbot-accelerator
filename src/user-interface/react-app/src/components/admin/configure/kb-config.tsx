@@ -3,20 +3,19 @@
 //
 // SPDX-License-Identifier: MIT-0
 // ----------------------------------------------------------------------
-import { generateClient } from "aws-amplify/api";
 
 import { createKnowledgeBase as createKnowledgeBaseMut } from "../../../graphql/mutations";
 import { KbConfig } from "./types";
 
 import { ConfigurationCommonManager } from "./common";
+import { apiClient } from "../../../common/api-client";
 
 export function KbConfigurationManager(props: {
     configDialog: KbConfig;
     setConfigDialog: React.Dispatch<React.SetStateAction<KbConfig>>;
 }) {
     const handleSave = async (config: KbConfig) => {
-        const client = generateClient();
-        const response = await client.graphql({
+        const response = await apiClient.graphql({
             query: createKnowledgeBaseMut,
             variables: {
                 kbName: config.id,

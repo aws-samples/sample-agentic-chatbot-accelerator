@@ -14,15 +14,15 @@ import {
     SpaceBetween,
     Textarea,
 } from "@cloudscape-design/components";
-import { generateClient } from "aws-amplify/api";
-import { useContext, useEffect, useState } from "react";
+import { useContext, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AppContext } from "../../common/app-context";
 import { CHATBOT_NAME } from "../../common/constants";
 import useOnFollow from "../../common/hooks/use-on-follow";
 import BaseAppLayout from "../../components/base-app-layout";
-import { groupModelOptionsByProvider } from "../../components/wizard/wizard-utils";
+import { groupModelOptionsByProvider, toModelOptions } from "../../components/wizard/wizard-utils";
 import * as mutations from "../../graphql/mutations";
+import { apiClient } from "../../common/api-client";
 
 export default function CreateExperimentPage() {
     const appConfig = useContext(AppContext);
@@ -35,29 +35,21 @@ export default function CreateExperimentPage() {
     const [numCases, setNumCases] = useState("10");
     const [numTopics, setNumTopics] = useState("3");
     const [modelId, setModelId] = useState("");
-    const [modelOptions, setModelOptions] = useState<{ label: string; value: string }[]>([]);
+    const modelOptions = useMemo(
+        () => toModelOptions(appConfig?.experimentsConfig?.supportedModels),
+        [appConfig],
+    );
 
     useEffect(() => {
-        const experimentsConfig = appConfig?.experimentsConfig;
-        if (experimentsConfig?.supportedModels && appConfig) {
-            const models = Object.entries(experimentsConfig.supportedModels).map(
-                ([label, value]) => ({
-                    label,
-                    value: value as string,
-                }),
-            );
-            setModelOptions(models);
-            if (models.length > 0) {
-                setModelId(models[0].value);
-            }
+        if (modelOptions.length > 0) {
+            setModelId(modelOptions[0].value);
         }
-    }, [appConfig]);
+    }, [modelOptions]);
 
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const navigate = useNavigate();
     const onFollow = useOnFollow();
-    const apiClient = generateClient();
 
     const validateForm = (): boolean => {
         if (!name) {

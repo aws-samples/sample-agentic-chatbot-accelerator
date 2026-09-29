@@ -11,8 +11,7 @@ import {
     Header,
     SpaceBetween,
 } from "@cloudscape-design/components";
-import { generateClient } from "aws-amplify/api";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArchitectureType } from "../../API";
 import { CHATBOT_NAME } from "../../common/constants";
@@ -22,12 +21,13 @@ import AgentCoreRuntimeCreatorWizard from "../../components/wizard/agent-core-ru
 import { AgentCoreRuntimeConfiguration } from "../../components/wizard/types";
 import { createAgentCoreRuntime as createAgentCoreRuntimeMut } from "../../graphql/mutations";
 import { getDefaultRuntimeConfiguration as getDefaultRuntimeConfigurationQuery } from "../../graphql/queries";
+import { Utils } from "../../common/utils";
+import { apiClient } from "../../common/api-client";
 
 export default function AgentCoreWizardPage() {
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
     const onFollow = useOnFollow();
-    const apiClient = useMemo(() => generateClient(), []);
 
     const [isCreating, setIsCreating] = useState(false);
     const [initialData, setInitialData] = useState<AgentCoreRuntimeConfiguration | undefined>(
@@ -125,7 +125,7 @@ export default function AgentCoreWizardPage() {
                 setIsLoadingInitialData(false);
             }
         }
-    }, [fromAgentName, apiClient, navigate]);
+    }, [fromAgentName, navigate]);
 
     useEffect(() => {
         loadInitialData();
@@ -182,11 +182,7 @@ export default function AgentCoreWizardPage() {
             navigate(`/agent-core?subscribeAgent=${encodeURIComponent(config.agentName)}`);
         } catch (err) {
             console.error("Failed to create agent:", err);
-            const errorMessage =
-                err instanceof Error
-                    ? err.message
-                    : "An unexpected error occurred while creating the agent.";
-            setError(`Failed to create agent: ${errorMessage}`);
+            setError(`Failed to create agent: ${Utils.getErrorMessage(err)}`);
             setIsCreating(false);
         }
     };

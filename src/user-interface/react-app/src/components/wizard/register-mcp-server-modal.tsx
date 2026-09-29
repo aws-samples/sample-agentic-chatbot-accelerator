@@ -15,11 +15,11 @@ import {
     SpaceBetween,
     Textarea,
 } from "@cloudscape-design/components";
-import { generateClient } from "aws-amplify/api";
 import { useContext, useState } from "react";
 import { McpAuthType, ResponseStatus } from "../../API";
 import { AppContext } from "../../common/app-context";
 import { registerMcpServer as registerMcpServerMutation } from "../../graphql/mutations";
+import { apiClient } from "../../common/api-client";
 
 const AUTH_TYPE_OPTIONS = [
     { label: "SigV4 (IAM auth) — recommended", value: McpAuthType.SIGV4 },
@@ -51,7 +51,6 @@ export function RegisterMcpServerModal({
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const apiClient = generateClient();
 
     const nameValid = /^[a-zA-Z0-9_-]{1,64}$/.test(name);
     const isSigV4 = authType.value === McpAuthType.SIGV4;
