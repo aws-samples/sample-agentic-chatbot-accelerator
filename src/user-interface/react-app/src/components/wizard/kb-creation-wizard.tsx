@@ -20,7 +20,7 @@ import {
 } from "@cloudscape-design/components";
 import { useState } from "react";
 import { KnowledgeBaseCreationData } from "./types";
-import { safeDeepSet } from "./wizard-utils";
+import { safeDeepSet, wizardI18nStrings } from "./wizard-utils";
 
 interface KnowledgeBaseCreationWizardProps {
     onSubmit: (config: KnowledgeBaseCreationData) => void;
@@ -470,16 +470,7 @@ export default function KnowledgeBaseCreationWizard({
     return (
         <Modal visible={true} onDismiss={onCancel} header="Create Knowledge Base" size="max">
             <Wizard
-                i18nStrings={{
-                    stepNumberLabel: (stepNumber) => `Step ${stepNumber}`,
-                    collapsedStepsLabel: (stepNumber, stepsCount) =>
-                        `Step ${stepNumber} of ${stepsCount}`,
-                    navigationAriaLabel: "Steps",
-                    cancelButton: "Cancel",
-                    previousButton: "Previous",
-                    nextButton: "Next",
-                    submitButton: "Create Knowledge Base",
-                }}
+                i18nStrings={wizardI18nStrings("Create Knowledge Base")}
                 onNavigate={({ detail }) => setActiveStepIndex(detail.requestedStepIndex)}
                 activeStepIndex={activeStepIndex}
                 onCancel={onCancel}

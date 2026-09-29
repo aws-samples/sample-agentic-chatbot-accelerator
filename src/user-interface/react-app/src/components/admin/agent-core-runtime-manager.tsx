@@ -10,7 +10,6 @@ import {
     Badge,
     Box,
     Button,
-    CollectionPreferences,
     Container,
     FormField,
     Header,
@@ -27,10 +26,9 @@ import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "r
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { v4 as uuidv4 } from "uuid";
 
-import { generateClient } from "aws-amplify/api";
 import { ArchitectureType, RuntimeSummary } from "../../API";
 import { AppContext } from "../../common/app-context";
-import { Utils } from "../../common/utils";
+import { Utils, parseQualifierMap } from "../../common/utils";
 import {
     createAgentCoreRuntime as createAgentCoreRuntimeMut,
     deleteAgentRuntimeEndpoints as deleteAgentRuntimeEndpointsMut,
@@ -53,6 +51,8 @@ import { isTransientStatus } from "./agent-core/runtime-status";
 import RuntimeUpdateWatcher from "./agent-core/runtime-update-watcher";
 import TagVersionModal from "./agent-core/tag-version-modal";
 import ViewVersionModal, { VersionInfo } from "./agent-core/view-version-modal";
+import { PageSizePreferences, TableEmptyState, filterProperty } from "../table-parts";
+import { apiClient } from "../../common/api-client";
 
 /**
  * How long an unresolved seed stays in the in-flight set before being dropped. Bounds a forged
@@ -115,7 +115,6 @@ export default function AgentCoreEndpointManager(_props: AgentManagerProps) {
     } | null>(null);
 
     // functions
-    const apiClient = useMemo(() => generateClient(), []);
     // a watcher refetch can resolve after unmount
     const isMounted = useRef(true);
     const hasLoaded = useRef(false);
@@ -237,7 +236,7 @@ export default function AgentCoreEndpointManager(_props: AgentManagerProps) {
 
         inFlightRead.current = read;
         return read;
-    }, [appContext, apiClient, replaceSeeds]);
+    }, [appContext, replaceSeeds]);
 
     // Update selectedItems when agents data changes
     useEffect(() => {
@@ -269,7 +268,7 @@ export default function AgentCoreEndpointManager(_props: AgentManagerProps) {
             console.log("No favorite runtime set or error fetching:", Utils.getErrorMessage(error));
             setFavoriteRuntime(null);
         }
-    }, [apiClient]);
+    }, []);
 
     useEffect(() => {
         fetchAgents();
@@ -277,8 +276,7 @@ export default function AgentCoreEndpointManager(_props: AgentManagerProps) {
     }, []);
 
     const handleSetFavorite = async (agent: RuntimeSummary) => {
-        const qualifierToVersion = JSON.parse(agent.qualifierToVersion);
-        const endpoints = Object.keys(qualifierToVersion);
+        const endpoints = Object.keys(parseQualifierMap(agent.qualifierToVersion));
 
         if (endpoints.length === 1) {
             // Only one endpoint, set it as favorite directly
@@ -611,53 +609,12 @@ export default function AgentCoreEndpointManager(_props: AgentManagerProps) {
     };
 
     // Table properties
-    const EmptyState = ({
-        title,
-        subtitle,
-        action,
-    }: {
-        title: string;
-        subtitle?: string;
-        action: React.ReactNode;
-    }) => {
-        return (
-            <Box textAlign="center" color="inherit">
-                <Box variant="strong" textAlign="center" color="inherit">
-                    {title}
-                </Box>
-                <Box variant="p" padding={{ bottom: "s" }} color="inherit">
-                    {subtitle}
-                </Box>
-                {action}
-            </Box>
-        );
-    };
 
     const FILTERING_PROPERTIES = [
-        {
-            key: "agentName",
-            propertyLabel: "Agent Name",
-            groupValuesLabel: "Agent Name values",
-            operators: [":", "!:", "=", "!="],
-        },
-        {
-            key: "status",
-            propertyLabel: "Status",
-            groupValuesLabel: "Status values",
-            operators: [":", "!:", "=", "!="],
-        },
-        {
-            key: "agentRuntimeId",
-            propertyLabel: "Runtime ID",
-            groupValuesLabel: "Runtime ID values",
-            operators: [":", "!:", "=", "!="],
-        },
-        {
-            key: "architectureType",
-            propertyLabel: "Architecture",
-            groupValuesLabel: "Architecture values",
-            operators: [":", "!:", "=", "!="],
-        },
+        filterProperty("agentName", "Agent Name"),
+        filterProperty("status", "Status"),
+        filterProperty("agentRuntimeId", "Runtime ID"),
+        filterProperty("architectureType", "Architecture"),
     ];
 
     const {
@@ -681,7 +638,7 @@ export default function AgentCoreEndpointManager(_props: AgentManagerProps) {
         propertyFiltering: {
             filteringProperties: FILTERING_PROPERTIES,
             empty: (
-                <EmptyState
+                <TableEmptyState
                     title="No agents found"
                     action={
                         <Button onClick={() => navigate("/agent-core/create")}>Create Agent</Button>
@@ -689,7 +646,7 @@ export default function AgentCoreEndpointManager(_props: AgentManagerProps) {
                 />
             ),
             noMatch: (
-                <EmptyState
+                <TableEmptyState
                     title="No matches"
                     action={
                         <Button
@@ -729,23 +686,7 @@ export default function AgentCoreEndpointManager(_props: AgentManagerProps) {
                     resizableColumns
                     pagination={<Pagination {...paginationProps} />}
                     preferences={
-                        <CollectionPreferences
-                            onConfirm={({ detail }) =>
-                                setPreferences({ pageSize: detail.pageSize ?? 20 })
-                            }
-                            title="Preferences"
-                            confirmLabel="Confirm"
-                            cancelLabel="Cancel"
-                            preferences={preferences}
-                            pageSizePreference={{
-                                title: "Page size",
-                                options: [
-                                    { value: 10, label: "10" },
-                                    { value: 20, label: "20" },
-                                    { value: 50, label: "50" },
-                                ],
-                            }}
-                        />
+                        <PageSizePreferences preferences={preferences} onChange={setPreferences} />
                     }
                     header={
                         <Header
@@ -855,14 +796,9 @@ export default function AgentCoreEndpointManager(_props: AgentManagerProps) {
                                 // versionId is an opaque UUID, so we surface the
                                 // qualifier name as the primary label and keep only a
                                 // short id prefix as a muted hint.
-                                let qualifierToVersion: Record<string, string> = {};
-                                try {
-                                    qualifierToVersion = JSON.parse(item.qualifierToVersion || "{}");
-                                } catch {
-                                    qualifierToVersion = {};
-                                }
-
-                                const entries = Object.entries(qualifierToVersion).sort(
+                                const entries = Object.entries(
+                                    parseQualifierMap(item.qualifierToVersion),
+                                ).sort(
                                     ([a], [b]) =>
                                         a === "DEFAULT" ? -1 : b === "DEFAULT" ? 1 : a.localeCompare(b),
                                 );

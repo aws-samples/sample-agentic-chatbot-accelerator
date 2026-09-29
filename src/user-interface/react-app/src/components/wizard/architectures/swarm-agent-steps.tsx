@@ -17,8 +17,17 @@ import {
 } from "@cloudscape-design/components";
 import { RuntimeSummary } from "../../../API";
 import { AgentCoreRuntimeConfiguration, SwarmConfiguration } from "../types";
-import { CONVERSATION_MANAGER_OPTIONS, STEP_MIN_HEIGHT } from "../wizard-utils";
+import {
+    AGENT_NAME_MAX_LENGTH,
+    CONVERSATION_MANAGER_OPTIONS,
+    DEFAULT_MAX_HANDOFFS,
+    orchestratorTimeoutsValid,
+    STEP_MIN_HEIGHT,
+    agentNameError,
+} from "../wizard-utils";
 import ReviewStep from "./review-step";
+import { getEndpointOptions } from "../../../common/utils";
+import { AgentNameField, OrchestratorLimitFields } from "../wizard-shared-components";
 
 interface SwarmAgentStepsProps {
     config: AgentCoreRuntimeConfiguration;
@@ -53,31 +62,12 @@ export function getSwarmAgentSteps({
             content: (
                 <div style={{ minHeight: STEP_MIN_HEIGHT }}>
                     <SpaceBetween direction="vertical" size="l">
-                        <Container header={<Header variant="h2">Agent Name</Header>}>
-                            <FormField
-                                label="Agent Name"
-                                description="Enter a unique name for your swarm agent"
-                                errorText={
-                                    config.agentName.trim() === ""
-                                        ? "Agent name is required"
-                                        : !/^[a-zA-Z][a-zA-Z0-9_]{0,47}$/.test(config.agentName)
-                                          ? "Agent name must start with a letter and contain only letters, numbers, and underscores (max 48 characters)"
-                                          : ""
-                                }
-                            >
-                                <Input
-                                    value={config.agentName}
-                                    onChange={({ detail }) =>
-                                        setConfig((prev) => ({
-                                            ...prev,
-                                            agentName: detail.value,
-                                        }))
-                                    }
-                                    placeholder="Enter agent name..."
-                                    invalid={config.agentName.trim() === ""}
-                                />
-                            </FormField>
-                        </Container>
+                        <AgentNameField
+                            value={config.agentName}
+                            onChange={(agentName) => setConfig((prev) => ({ ...prev, agentName }))}
+                            description="Enter a unique name for your swarm agent"
+                            maxLength={AGENT_NAME_MAX_LENGTH}
+                        />
 
                         <Container header={<Header variant="h2">Agent Source</Header>}>
                             <SpaceBetween direction="vertical" size="l">
@@ -135,46 +125,8 @@ export function getSwarmAgentSteps({
                                                                 a.agentName ===
                                                                 item.agentName,
                                                         );
-                                                        const endpointOptions: {
-                                                            label: string;
-                                                            value: string;
-                                                        }[] = [];
-                                                        if (agent?.qualifierToVersion) {
-                                                            try {
-                                                                const qtv = JSON.parse(
-                                                                    agent.qualifierToVersion,
-                                                                );
-                                                                if (
-                                                                    qtv &&
-                                                                    typeof qtv === "object"
-                                                                ) {
-                                                                    endpointOptions.push(
-                                                                        ...Object.keys(
-                                                                            qtv,
-                                                                        ).map((key) => ({
-                                                                            label: key,
-                                                                            value: key,
-                                                                        })),
-                                                                    );
-                                                                }
-                                                            } catch (error) {
-                                                                console.error(
-                                                                    "Failed to parse qualifierToVersion:",
-                                                                    error,
-                                                                );
-                                                            }
-                                                        }
-                                                        if (
-                                                            !endpointOptions.some(
-                                                                (o) =>
-                                                                    o.value === "DEFAULT",
-                                                            )
-                                                        ) {
-                                                            endpointOptions.unshift({
-                                                                label: "DEFAULT",
-                                                                value: "DEFAULT",
-                                                            });
-                                                        }
+                                                        const endpointOptions =
+                                                            getEndpointOptions(agent);
                                                         return (
                                                             <Select
                                                                 expandToViewport
@@ -273,79 +225,23 @@ export function getSwarmAgentSteps({
                                                 ...prev,
                                                 orchestrator: {
                                                     ...prev.orchestrator,
-                                                    maxHandoffs: parseInt(detail.value) || 15,
+                                                    maxHandoffs: parseInt(detail.value) || DEFAULT_MAX_HANDOFFS,
                                                 },
                                             }))
                                         }
                                     />
                                 </FormField>
-                                <FormField
-                                    label="Max Iterations"
-                                    description="Maximum total iterations"
-                                >
-                                    <Input
-                                        type="number"
-                                        value={swarmConfig.orchestrator.maxIterations.toString()}
-                                        onChange={({ detail }) =>
-                                            setSwarmConfig((prev) => ({
-                                                ...prev,
-                                                orchestrator: {
-                                                    ...prev.orchestrator,
-                                                    maxIterations: parseInt(detail.value) || 50,
-                                                },
-                                            }))
-                                        }
-                                    />
-                                </FormField>
-                                <FormField
-                                    label="Execution Timeout (s)"
-                                    description="Total execution timeout in seconds"
-                                    errorText={
-                                        swarmConfig.orchestrator.executionTimeoutSeconds <= 0
-                                            ? "Must be greater than 0"
-                                            : ""
+                                <OrchestratorLimitFields
+                                    orchestrator={swarmConfig.orchestrator}
+                                    onChange={(patch) =>
+                                        setSwarmConfig((prev) => ({
+                                            ...prev,
+                                            orchestrator: { ...prev.orchestrator, ...patch },
+                                        }))
                                     }
-                                >
-                                    <Input
-                                        type="number"
-                                        value={swarmConfig.orchestrator.executionTimeoutSeconds.toString()}
-                                        onChange={({ detail }) =>
-                                            setSwarmConfig((prev) => ({
-                                                ...prev,
-                                                orchestrator: {
-                                                    ...prev.orchestrator,
-                                                    executionTimeoutSeconds:
-                                                        parseFloat(detail.value) || 300,
-                                                },
-                                            }))
-                                        }
-                                    />
-                                </FormField>
-                                <FormField
-                                    label="Node Timeout (s)"
-                                    description="Per-agent timeout in seconds"
-                                    errorText={
-                                        swarmConfig.orchestrator.nodeTimeoutSeconds >
-                                        swarmConfig.orchestrator.executionTimeoutSeconds
-                                            ? "Node timeout must not exceed execution timeout"
-                                            : ""
-                                    }
-                                >
-                                    <Input
-                                        type="number"
-                                        value={swarmConfig.orchestrator.nodeTimeoutSeconds.toString()}
-                                        onChange={({ detail }) =>
-                                            setSwarmConfig((prev) => ({
-                                                ...prev,
-                                                orchestrator: {
-                                                    ...prev.orchestrator,
-                                                    nodeTimeoutSeconds:
-                                                        parseFloat(detail.value) || 60,
-                                                },
-                                            }))
-                                        }
-                                    />
-                                </FormField>
+                                    maxIterationsDescription="Maximum total iterations"
+                                    nodeTimeoutDescription="Per-agent timeout in seconds"
+                                />
                             </ColumnLayout>
                         </Container>
 
@@ -414,16 +310,11 @@ export function isSwarmStepValid(
 ): boolean {
     // stepIndex 0 = Swarm Configuration
     if (stepIndex === 0) {
-        const agentNamePattern = /^[a-zA-Z][a-zA-Z0-9_]{0,47}$/;
         const hasAgentName =
-            config.agentName.trim() !== "" && agentNamePattern.test(config.agentName);
+            agentNameError(config.agentName, AGENT_NAME_MAX_LENGTH) === "";
         const hasAgents = swarmConfig.agentReferences.length > 0;
         const hasEntryAgent = swarmConfig.entryAgent.trim() !== "";
-        const validTimeouts =
-            swarmConfig.orchestrator.executionTimeoutSeconds > 0 &&
-            swarmConfig.orchestrator.nodeTimeoutSeconds > 0 &&
-            swarmConfig.orchestrator.nodeTimeoutSeconds <=
-            swarmConfig.orchestrator.executionTimeoutSeconds;
+        const validTimeouts = orchestratorTimeoutsValid(swarmConfig.orchestrator);
         return hasAgentName && hasAgents && hasEntryAgent && validTimeouts;
     }
     return true;

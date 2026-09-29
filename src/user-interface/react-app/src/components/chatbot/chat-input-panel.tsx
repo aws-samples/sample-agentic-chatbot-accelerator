@@ -5,7 +5,6 @@
 // ----------------------------------------------------------------------
 import { Button, FormField, Select, SpaceBetween, StatusIndicator } from "@cloudscape-design/components";
 import PromptInput, { PromptInputProps } from "@cloudscape-design/components/prompt-input";
-import { generateClient } from "aws-amplify/api";
 import { Dispatch, SetStateAction, forwardRef, useContext, useEffect, useImperativeHandle, useRef, useState } from "react";
 
 import { fetchUserAttributes } from "aws-amplify/auth";
@@ -31,6 +30,7 @@ import {
 } from "./types";
 import { appendToolAction, markToolComplete, updateMessageHistoryRef } from "./utils";
 import { resolveRuntimeVersion } from "../../common/utils";
+import { apiClient } from "../../common/api-client";
 
 // Values match WebSocket.readyState, plus UNINSTANTIATED before the first connect.
 enum ReadyState {
@@ -119,7 +119,6 @@ const ChatInputPanel = forwardRef<ChatInputPanelHandle, ChatInputPanelProps>(fun
     // `running` through a ref rather than the stale prop.
     const runningRef = useRef(props.running);
     runningRef.current = props.running;
-    const client = generateClient();
 
     // Expose imperative handle so chat.tsx can close the text WS before voice mode
     // and trigger response regeneration (T4).
@@ -262,7 +261,7 @@ const ChatInputPanel = forwardRef<ChatInputPanelHandle, ChatInputPanelProps>(fun
                     }
 
                     if (lastMessage.executionTimeMs) {
-                        client
+                        apiClient
                             .graphql({
                                 query: updateMessageExecutionTime,
                                 variables: {
@@ -291,7 +290,7 @@ const ChatInputPanel = forwardRef<ChatInputPanelHandle, ChatInputPanelProps>(fun
                                 ...ta,
                                 status: ta.status && ta.status !== "running" ? ta.status : "success",
                             }));
-                            client
+                            apiClient
                                 .graphql({
                                     query: saveToolActions,
                                     variables: {

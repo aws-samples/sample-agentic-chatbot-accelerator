@@ -13,7 +13,6 @@ import {
     CopyToClipboard,
     FileUpload,
     FileUploadProps,
-    Flashbar,
     Input,
     Modal,
     SpaceBetween,
@@ -28,6 +27,7 @@ import { AdminOpsResult, ResponseStatus } from "../../../API";
 
 import { StorageHelper } from "../../../common/helpers/storage-helper";
 import { aceLoader } from "./ace";
+import OperationStatusFlash from "./operation-status-flash";
 
 const codeeditor_i18nStrings = {
     loadingState: "Loading code editor",
@@ -235,23 +235,12 @@ export function ConfigurationCommonManager<T extends BaseConfig>(
             header={`${props.configType} Configuration`}
         >
             <>
-                {status && (
-                    <Flashbar
-                        items={[
-                            {
-                                type: status === "failed" ? "error" : "success",
-                                content:
-                                    status === "failed"
-                                        ? error
-                                        : status === "in-progress"
-                                          ? `${props.configType === "Metadata" ? "Update" : "Creation"} of ${props.configType} in progress...`
-                                          : "Successful",
-                                loading: status === "in-progress",
-                                id: `message-${status}`,
-                            },
-                        ]}
-                    />
-                )}
+                <OperationStatusFlash
+                    status={status}
+                    id="message"
+                    failed={error}
+                    inProgress={`${props.configType === "Metadata" ? "Update" : "Creation"} of ${props.configType} in progress...`}
+                />
                 <Container header={`${props.configType} Manager`}>
                     <SpaceBetween size="m">
                         {props.additionalControls}

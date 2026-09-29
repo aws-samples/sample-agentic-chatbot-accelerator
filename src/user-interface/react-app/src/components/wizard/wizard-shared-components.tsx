@@ -18,13 +18,123 @@ import {
     Textarea,
 } from "@cloudscape-design/components";
 import { useState } from "react";
+import { GraphOrchestratorConfig } from "./types";
 import {
+    agentNameError,
+    DEFAULT_ORCHESTRATOR_LIMITS,
     CONVERSATION_MANAGER_OPTIONS,
     getDefaultReasoningEffort,
     getReasoningCapability,
     getReasoningEffortOptions,
     groupModelOptionsByProvider,
 } from "./wizard-utils";
+
+// -------------------------------------------------------------------
+// AgentNameField
+// -------------------------------------------------------------------
+
+export function AgentNameField({
+    value,
+    onChange,
+    description,
+    maxLength,
+}: {
+    value: string;
+    onChange: (value: string) => void;
+    description: string;
+    maxLength: number;
+}) {
+    return (
+        <Container header={<Header variant="h2">Agent Name</Header>}>
+            <FormField
+                label="Agent Name"
+                description={description}
+                errorText={agentNameError(value, maxLength)}
+            >
+                <Input
+                    value={value}
+                    onChange={({ detail }) => onChange(detail.value)}
+                    placeholder="Enter agent name..."
+                    invalid={value.trim() === ""}
+                />
+            </FormField>
+        </Container>
+    );
+}
+
+// -------------------------------------------------------------------
+// OrchestratorLimitFields — iterations and timeouts (swarm + graph)
+// -------------------------------------------------------------------
+
+export function OrchestratorLimitFields({
+    orchestrator,
+    onChange,
+    maxIterationsDescription,
+    nodeTimeoutDescription,
+}: {
+    orchestrator: GraphOrchestratorConfig;
+    onChange: (patch: Partial<GraphOrchestratorConfig>) => void;
+    maxIterationsDescription: string;
+    nodeTimeoutDescription: string;
+}) {
+    const { maxIterations, executionTimeoutSeconds, nodeTimeoutSeconds } = orchestrator;
+    return (
+        <>
+            <FormField label="Max Iterations" description={maxIterationsDescription}>
+                <Input
+                    type="number"
+                    value={maxIterations.toString()}
+                    onChange={({ detail }) =>
+                        onChange({
+                            maxIterations:
+                                parseInt(detail.value) || DEFAULT_ORCHESTRATOR_LIMITS.maxIterations,
+                        })
+                    }
+                />
+            </FormField>
+            <FormField
+                label="Execution Timeout (s)"
+                description="Total execution timeout in seconds"
+                errorText={executionTimeoutSeconds <= 0 ? "Must be greater than 0" : ""}
+            >
+                <Input
+                    type="number"
+                    value={executionTimeoutSeconds.toString()}
+                    onChange={({ detail }) =>
+                        onChange({
+                            executionTimeoutSeconds:
+                                parseFloat(detail.value) ||
+                                DEFAULT_ORCHESTRATOR_LIMITS.executionTimeoutSeconds,
+                        })
+                    }
+                />
+            </FormField>
+            <FormField
+                label="Node Timeout (s)"
+                description={nodeTimeoutDescription}
+                errorText={
+                    nodeTimeoutSeconds > executionTimeoutSeconds
+                        ? "Node timeout must not exceed execution timeout"
+                        : nodeTimeoutSeconds <= 0
+                          ? "Must be greater than 0"
+                          : ""
+                }
+            >
+                <Input
+                    type="number"
+                    value={nodeTimeoutSeconds.toString()}
+                    onChange={({ detail }) =>
+                        onChange({
+                            nodeTimeoutSeconds:
+                                parseFloat(detail.value) ||
+                                DEFAULT_ORCHESTRATOR_LIMITS.nodeTimeoutSeconds,
+                        })
+                    }
+                />
+            </FormField>
+        </>
+    );
+}
 
 // -------------------------------------------------------------------
 // AgentConfigSection — Model, Instructions, Conversation Manager, Memory

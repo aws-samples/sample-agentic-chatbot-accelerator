@@ -30,6 +30,7 @@ import {
     PredefinedStateClass,
 } from "../types";
 import GraphMinimap from "./graph-minimap";
+import { getEndpointOptions } from "../../../common/utils";
 
 // ── Node kind helpers ─────────────────────────────────────────────────────────
 
@@ -312,24 +313,8 @@ export default function GraphDesigner({
     const warnings = getWarnings();
 
     // ── Endpoint options for agent nodes ──────────────────────────────────────
-    const getEndpointOptions = (agentName: string) => {
-        const agent = availableAgents.find((a) => a.agentName === agentName);
-        const options: { label: string; value: string }[] = [];
-        if (agent?.qualifierToVersion) {
-            try {
-                const qtv = JSON.parse(agent.qualifierToVersion);
-                if (qtv && typeof qtv === "object") {
-                    options.push(...Object.keys(qtv).map((key) => ({ label: key, value: key })));
-                }
-            } catch {
-                // ignore parse errors
-            }
-        }
-        if (!options.some((o) => o.value === "DEFAULT")) {
-            options.unshift({ label: "DEFAULT", value: "DEFAULT" });
-        }
-        return options;
-    };
+    const endpointOptionsFor = (agentName: string) =>
+        getEndpointOptions(availableAgents.find((a) => a.agentName === agentName));
 
     // ── Dynamic Map local state ───────────────────────────────────────────────
     const [newDmId, setNewDmId] = React.useState("");
@@ -781,7 +766,7 @@ export default function GraphDesigner({
                                                     <Select
                                                         expandToViewport
                                                         selectedOption={
-                                                            getEndpointOptions(
+                                                            endpointOptionsFor(
                                                                 item.agentName!,
                                                             ).find(
                                                                 (o) =>
@@ -798,7 +783,7 @@ export default function GraphDesigner({
                                                                     "DEFAULT",
                                                             )
                                                         }
-                                                        options={getEndpointOptions(
+                                                        options={endpointOptionsFor(
                                                             item.agentName!,
                                                         )}
                                                     />

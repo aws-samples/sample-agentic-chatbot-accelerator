@@ -13,7 +13,6 @@ import {
     StatusIndicator,
     Table,
 } from "@cloudscape-design/components";
-import { generateClient } from "aws-amplify/api";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -22,6 +21,9 @@ import { Evaluator, EvaluatorRun } from "../../../common/types";
 import { Utils } from "../../../common/utils";
 import { listEvaluatorRuns as listEvaluatorRunsQuery } from "../../../graphql/queries";
 import { deleteEvaluatorRun as deleteEvaluatorRunMutation } from "../../../graphql/mutations";
+import { evaluationStatusType, isRunStatusInFlight } from "../../../common/evaluation-status";
+import { formatDuration } from "../../../common/format";
+import { apiClient } from "../../../common/api-client";
 
 interface RunHistoryModalProps {
     visible: boolean;
@@ -29,37 +31,14 @@ interface RunHistoryModalProps {
     evaluator: Evaluator;
 }
 
-const IN_FLIGHT_RUN_STATUSES = ["Running", "Queued"];
-
 const isRunInFlight = (run: EvaluatorRun): boolean =>
-    IN_FLIGHT_RUN_STATUSES.includes(run.status);
-
-const getStatusType = (
-    status?: string,
-): "success" | "warning" | "error" | "loading" | "info" => {
-    if (!status) return "info";
-    const s = status.toLowerCase();
-    if (s === "running" || s === "queued") return "loading";
-    if (s === "completed") return "success";
-    if (s === "failed") return "error";
-    return "info";
-};
-
-const formatDuration = (ms?: number): string => {
-    if (!ms) return "-";
-    if (ms < 1000) return `${ms}ms`;
-    const seconds = Math.floor(ms / 1000);
-    if (seconds < 60) return `${seconds}s`;
-    const minutes = Math.floor(seconds / 60);
-    return `${minutes}m ${seconds % 60}s`;
-};
+    isRunStatusInFlight(run.status);
 
 export default function RunHistoryModal({
     visible,
     onDismiss,
     evaluator,
 }: RunHistoryModalProps) {
-    const apiClient = useMemo(() => generateClient(), []);
     const navigate = useNavigate();
     const [runs, setRuns] = useState<EvaluatorRun[]>([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -99,7 +78,7 @@ export default function RunHistoryModal({
         } finally {
             if (isMounted.current) setIsLoading(false);
         }
-    }, [apiClient, evaluator.evaluatorId]);
+    }, [evaluator.evaluatorId]);
 
     useEffect(() => {
         if (visible) {
@@ -187,7 +166,7 @@ export default function RunHistoryModal({
                         id: "status",
                         header: "Status",
                         cell: (item) => (
-                            <StatusIndicator type={getStatusType(item.status)}>
+                            <StatusIndicator type={evaluationStatusType(item.status)}>
                                 {item.status}
                             </StatusIndicator>
                         ),

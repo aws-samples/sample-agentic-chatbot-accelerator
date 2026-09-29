@@ -3,20 +3,19 @@
 //
 // SPDX-License-Identifier: MIT-0
 // ----------------------------------------------------------------------
-import { generateClient } from "aws-amplify/api";
 
 import { createDataSource as createDataSourceMut } from "../../../graphql/mutations";
 import { DataSourceConfig } from "./types";
 
 import { ConfigurationCommonManager } from "./common";
+import { apiClient } from "../../../common/api-client";
 
 export function DataSourceConfigurationManager(props: {
     configDialog: DataSourceConfig;
     setConfigDialog: React.Dispatch<React.SetStateAction<DataSourceConfig>>;
 }) {
     const handleSave = async (config: DataSourceConfig) => {
-        const client = generateClient();
-        const response = await client.graphql({
+        const response = await apiClient.graphql({
             query: createDataSourceMut,
             variables: {
                 kbId: config.kbId,

@@ -7,9 +7,7 @@
 
 import { useCollection } from "@cloudscape-design/collection-hooks";
 import {
-    Box,
     Button,
-    CollectionPreferences,
     Container,
     Header,
     Pagination,
@@ -18,10 +16,9 @@ import {
     StatusIndicator,
     Table,
 } from "@cloudscape-design/components";
-import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { generateClient } from "aws-amplify/api";
 import { AppContext } from "../../common/app-context";
 import { useEvaluationRunWatcher } from "../../common/hooks/use-evaluation-run-watcher";
 import { Evaluator } from "../../common/types";
@@ -31,8 +28,9 @@ import { listEvaluators as listEvaluatorsQuery } from "../../graphql/queries";
 import DeleteEvaluatorModal from "./evaluations/delete-evaluator-modal";
 import ViewEvaluatorModal from "./evaluations/view-evaluator-modal";
 import RunHistoryModal from "./evaluations/run-history-modal";
-
-const IN_FLIGHT_RUN_STATUSES = ["Running", "Queued"];
+import { PageSizePreferences, TableEmptyState, filterProperty } from "../table-parts";
+import { evaluationStatusType, isRunStatusInFlight } from "../../common/evaluation-status";
+import { apiClient } from "../../common/api-client";
 
 export interface EvaluationsManagerProps {
     readonly toolsOpen: boolean;
@@ -44,7 +42,7 @@ interface InFlightRun {
 }
 
 const hasInFlightRun = (evaluator: Evaluator): boolean =>
-    IN_FLIGHT_RUN_STATUSES.includes(evaluator.lastRunStatus ?? "");
+    isRunStatusInFlight(evaluator.lastRunStatus);
 
 /**
  * Merge the in-flight runs a list response shows into the already tracked ones.
@@ -135,7 +133,6 @@ export default function EvaluationsManager(props: EvaluationsManagerProps) {
     /** Runs still in flight, derived from the fetched evaluator list — no persisted client state. */
     const [trackedRuns, setTrackedRuns] = useState<InFlightRun[]>([]);
 
-    const apiClient = useMemo(() => generateClient(), []);
     // a watcher refetch can resolve after unmount
     const isMounted = useRef(true);
     const hasLoaded = useRef(false);
@@ -196,7 +193,7 @@ export default function EvaluationsManager(props: EvaluationsManagerProps) {
         } finally {
             if (isMounted.current) setIsLoading(false);
         }
-    }, [appContext, apiClient]);
+    }, [appContext]);
 
     useEffect(() => {
         fetchEvaluators();
@@ -302,53 +299,12 @@ export default function EvaluationsManager(props: EvaluationsManagerProps) {
     };
 
     // Table Empty State
-    const EmptyState = ({
-        title,
-        subtitle,
-        action,
-    }: {
-        title: string;
-        subtitle?: string;
-        action: React.ReactNode;
-    }) => {
-        return (
-            <Box textAlign="center" color="inherit">
-                <Box variant="strong" textAlign="center" color="inherit">
-                    {title}
-                </Box>
-                <Box variant="p" padding={{ bottom: "s" }} color="inherit">
-                    {subtitle}
-                </Box>
-                {action}
-            </Box>
-        );
-    };
 
     const FILTERING_PROPERTIES = [
-        {
-            key: "name",
-            propertyLabel: "Name",
-            groupValuesLabel: "Name values",
-            operators: [":", "!:", "=", "!="],
-        },
-        {
-            key: "evaluatorType",
-            propertyLabel: "Type",
-            groupValuesLabel: "Type values",
-            operators: [":", "!:", "=", "!="],
-        },
-        {
-            key: "lastRunStatus",
-            propertyLabel: "Last Run Status",
-            groupValuesLabel: "Status values",
-            operators: [":", "!:", "=", "!="],
-        },
-        {
-            key: "agentRuntimeName",
-            propertyLabel: "Agent Runtime",
-            groupValuesLabel: "Agent Runtime values",
-            operators: [":", "!:", "=", "!="],
-        },
+        filterProperty("name", "Name"),
+        filterProperty("evaluatorType", "Type"),
+        filterProperty("lastRunStatus", "Last Run Status", "Status values"),
+        filterProperty("agentRuntimeName", "Agent Runtime"),
     ];
 
     const {
@@ -372,7 +328,7 @@ export default function EvaluationsManager(props: EvaluationsManagerProps) {
         propertyFiltering: {
             filteringProperties: FILTERING_PROPERTIES,
             empty: (
-                <EmptyState
+                <TableEmptyState
                     title="No evaluators found"
                     subtitle="Create your first evaluator to start testing your agents"
                     action={
@@ -383,7 +339,7 @@ export default function EvaluationsManager(props: EvaluationsManagerProps) {
                 />
             ),
             noMatch: (
-                <EmptyState
+                <TableEmptyState
                     title="No matches"
                     action={
                         <Button
@@ -398,15 +354,6 @@ export default function EvaluationsManager(props: EvaluationsManagerProps) {
             ),
         },
     });
-
-    const getStatusType = (status?: string): "success" | "warning" | "error" | "loading" | "info" => {
-        if (!status) return "info";
-        const lowerStatus = status.toLowerCase();
-        if (lowerStatus === "creating" || lowerStatus === "running" || lowerStatus.endsWith("ing")) return "loading";
-        if (lowerStatus === "ready" || lowerStatus === "completed" || lowerStatus === "passed") return "success";
-        if (lowerStatus === "failed") return "error";
-        return "info";
-    };
 
     return (
         <>
@@ -433,23 +380,7 @@ export default function EvaluationsManager(props: EvaluationsManagerProps) {
                     resizableColumns
                     pagination={<Pagination {...paginationProps} />}
                     preferences={
-                        <CollectionPreferences
-                            onConfirm={({ detail }) =>
-                                setPreferences({ pageSize: detail.pageSize ?? 20 })
-                            }
-                            title="Preferences"
-                            confirmLabel="Confirm"
-                            cancelLabel="Cancel"
-                            preferences={preferences}
-                            pageSizePreference={{
-                                title: "Page size",
-                                options: [
-                                    { value: 10, label: "10" },
-                                    { value: 20, label: "20" },
-                                    { value: 50, label: "50" },
-                                ],
-                            }}
-                        />
+                        <PageSizePreferences preferences={preferences} onChange={setPreferences} />
                     }
                     header={
                         <Header
@@ -475,8 +406,7 @@ export default function EvaluationsManager(props: EvaluationsManagerProps) {
                                     <Button
                                         disabled={
                                             selectedItems.length !== 1 ||
-                                            selectedItems[0].lastRunStatus === "Running" ||
-                                            selectedItems[0].lastRunStatus === "Queued"
+                                            isRunStatusInFlight(selectedItems[0].lastRunStatus)
                                         }
                                         iconName="caret-right-filled"
                                         variant="inline-link"
@@ -496,8 +426,7 @@ export default function EvaluationsManager(props: EvaluationsManagerProps) {
                                     <Button
                                         disabled={
                                             selectedItems.length !== 1 ||
-                                            selectedItems[0].lastRunStatus === "Running" ||
-                                            selectedItems[0].lastRunStatus === "Queued"
+                                            isRunStatusInFlight(selectedItems[0].lastRunStatus)
                                         }
                                         iconName="edit"
                                         variant="inline-link"
@@ -509,8 +438,7 @@ export default function EvaluationsManager(props: EvaluationsManagerProps) {
                                         disabled={
                                             selectedItems.length !== 1 ||
                                             !selectedItems[0].lastRunId ||
-                                            selectedItems[0].lastRunStatus === "Running" ||
-                                            selectedItems[0].lastRunStatus === "Queued"
+                                            isRunStatusInFlight(selectedItems[0].lastRunStatus)
                                         }
                                         iconName="view-full"
                                         variant="inline-link"
@@ -586,7 +514,7 @@ export default function EvaluationsManager(props: EvaluationsManagerProps) {
                             header: "Last Run",
                             cell: (item) => (
                                 item.lastRunStatus ? (
-                                    <StatusIndicator type={getStatusType(item.lastRunStatus)}>
+                                    <StatusIndicator type={evaluationStatusType(item.lastRunStatus)}>
                                         {item.lastRunStatus}
                                     </StatusIndicator>
                                 ) : <span>Never run</span>

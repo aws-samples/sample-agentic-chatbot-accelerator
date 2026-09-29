@@ -11,9 +11,10 @@
 // interval depends on the health of the real-time path. Feature wrappers supply
 // the vocabulary; this module holds the policy.
 //
-import { CONNECTION_STATE_CHANGE, ConnectionState, generateClient } from "aws-amplify/api";
+import { CONNECTION_STATE_CHANGE, ConnectionState } from "aws-amplify/api";
 import { Hub } from "aws-amplify/utils";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { apiClient } from "../api-client";
 
 /** First poll delay while the real-time path is unhealthy, doubling to POLL_MAX_MS. */
 const POLL_INITIAL_MS = 5_000;
@@ -88,8 +89,7 @@ export function useStatusWatcher<TPayload = unknown>(
     useEffect(() => {
         if (!subscriptionKey) return;
 
-        const client = generateClient();
-        const subscription = client
+        const subscription = apiClient
             .graphql({ query: document, variables: { [keyVariableName]: subscriptionKey } })
             .subscribe({
                 next: ({ data }) => {

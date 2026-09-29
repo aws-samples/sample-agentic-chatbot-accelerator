@@ -17,7 +17,6 @@ import {
     Table,
     Tabs,
 } from "@cloudscape-design/components";
-import { generateClient } from "aws-amplify/api";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
@@ -34,6 +33,9 @@ import {
 import { Utils } from "../../common/utils";
 import BaseAppLayout from "../../components/base-app-layout";
 import { getEvaluatorRun as getEvaluatorRunQuery } from "../../graphql/queries";
+import { isRunStatusInFlight, scoreStatusType } from "../../common/evaluation-status";
+import { formatDuration } from "../../common/format";
+import { apiClient } from "../../common/api-client";
 
 // Map a fetched EvaluatorRun onto the summary shape the results rendering
 // expects. Mirrors the mapping the run-history modal already performs:
@@ -77,7 +79,6 @@ export default function EvaluationRunResultsPage() {
         evaluatorId: string;
         runId: string;
     }>();
-    const apiClient = useMemo(() => generateClient(), []);
 
     const [isLoading, setIsLoading] = useState(true);
     const [run, setRun] = useState<EvaluatorRun | null>(null);
@@ -123,7 +124,7 @@ export default function EvaluationRunResultsPage() {
         } finally {
             if (isMounted.current) setIsLoading(false);
         }
-    }, [evaluatorId, runId, apiClient, navigate]);
+    }, [evaluatorId, runId, navigate]);
 
     useEffect(() => {
         if (!evaluatorId || !runId) {
@@ -134,7 +135,7 @@ export default function EvaluationRunResultsPage() {
         void loadRun();
     }, [evaluatorId, runId, navigate, loadRun]);
 
-    const isRunInFlight = run?.status === "Running" || run?.status === "Queued";
+    const isRunInFlight = isRunStatusInFlight(run?.status);
 
     useEvaluationRunWatcher({
         // no run can start from this page, so a terminal run needs no transport at all
@@ -227,26 +228,6 @@ function RunResultsInfo() {
     );
 }
 
-const formatDuration = (ms: number): string => {
-    if (ms < 1000) return `${ms}ms`;
-    const seconds = Math.floor(ms / 1000);
-    if (seconds < 60) return `${seconds}s`;
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${minutes}m ${remainingSeconds}s`;
-};
-
-const getPassRateColor = (rate: number): "success" | "warning" | "error" => {
-    if (rate >= 80) return "success";
-    if (rate >= 50) return "warning";
-    return "error";
-};
-
-// Shared score → StatusIndicator color mapping (>=80 success, >=50 warning,
-// else error).
-const getScoreColor = (score: number): "success" | "warning" | "error" =>
-    score >= 80 ? "success" : score >= 50 ? "warning" : "error";
-
 // Human-readable evaluator label: drop the trailing "Evaluator" suffix.
 const evaluatorLabel = (evaluatorType: string): string =>
     evaluatorType.replace(/Evaluator$/, "") || evaluatorType;
@@ -275,7 +256,7 @@ function ScoreIndicator({
         return <StatusIndicator type="info">N/A</StatusIndicator>;
     }
     return (
-        <StatusIndicator type={getScoreColor(score)}>{score}%</StatusIndicator>
+        <StatusIndicator type={scoreStatusType(score)}>{score}%</StatusIndicator>
     );
 }
 
@@ -328,7 +309,7 @@ function RunResultsContent({
     // Pass/fail counts are written only at finalize, while TotalCases is written at
     // run creation — so mid-run the derivations below would report every case as
     // failed and a red 0.0% pass rate. Suppress them until the run has produced them.
-    const isInFlight = run.status === "Running" || run.status === "Queued";
+    const isInFlight = isRunStatusInFlight(run.status);
     const completedUnits = run.completedUnits ?? 0;
     const totalUnits = run.totalUnits ?? 0;
 
@@ -389,7 +370,7 @@ function RunResultsContent({
                             <div>
                                 <Box variant="awsui-key-label">Pass Rate</Box>
                                 <StatusIndicator
-                                    type={getPassRateColor(passRate)}
+                                    type={scoreStatusType(passRate)}
                                 >
                                     {passRate.toFixed(1)}%
                                 </StatusIndicator>

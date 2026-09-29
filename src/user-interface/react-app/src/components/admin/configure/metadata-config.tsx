@@ -5,7 +5,6 @@
 // ----------------------------------------------------------------------
 import { MetadataConfig } from "./types";
 
-import { generateClient } from "aws-amplify/api";
 import {
     syncKnowledgeBase as syncKnowledgeBaseMut,
     updateMetadata as updateMetadataMut,
@@ -14,14 +13,14 @@ import { checkOnSyncInProgress as checkOnSyncInProgressQuery } from "../../../gr
 import { ConfigurationCommonManager } from "./common";
 
 import { ResponseStatus } from "../../../API";
+import { apiClient } from "../../../common/api-client";
 
 export function MetadataUpdateManager(props: {
     configDialog: MetadataConfig;
     setConfigDialog: React.Dispatch<React.SetStateAction<MetadataConfig>>;
 }) {
     const handleSave = async (config: MetadataConfig) => {
-        const client = generateClient();
-        const response = await client.graphql({
+        const response = await apiClient.graphql({
             query: updateMetadataMut,
             variables: {
                 documentId: config.id,
@@ -34,7 +33,7 @@ export function MetadataUpdateManager(props: {
         console.log("Update metadata status ", ResponseStatus.SUCCESSFUL);
 
         if (response.data.updateMetadata.status === ResponseStatus.SUCCESSFUL) {
-            const syncInProgress = await client.graphql({
+            const syncInProgress = await apiClient.graphql({
                 query: checkOnSyncInProgressQuery,
                 variables: {
                     kbId: config.kbId,
@@ -45,7 +44,7 @@ export function MetadataUpdateManager(props: {
 
             if (syncInProgress.data.checkOnSyncInProgress === false) {
                 console.log("Starting sync");
-                const startSyncResponse = await client.graphql({
+                const startSyncResponse = await apiClient.graphql({
                     query: syncKnowledgeBaseMut,
                     variables: {
                         kbId: config.kbId,

@@ -18,6 +18,8 @@ import {
     StatusIndicator,
 } from "@cloudscape-design/components";
 import { Evaluator } from "../../../common/types";
+import { evaluationStatusType } from "../../../common/evaluation-status";
+import { formatDate } from "../../../common/format";
 
 interface ViewEvaluatorModalProps {
     visible: boolean;
@@ -35,20 +37,6 @@ export default function ViewEvaluatorModal({
     onDismiss,
     evaluator,
 }: ViewEvaluatorModalProps) {
-    const getStatusType = (status?: string): "success" | "warning" | "error" | "loading" | "info" => {
-        if (!status) return "info";
-        const lowerStatus = status.toLowerCase();
-        if (lowerStatus === "creating" || lowerStatus === "running" || lowerStatus.endsWith("ing")) return "loading";
-        if (lowerStatus === "ready" || lowerStatus === "completed" || lowerStatus === "passed") return "success";
-        if (lowerStatus === "failed") return "error";
-        return "info";
-    };
-
-    const formatDate = (dateStr?: string): string => {
-        if (!dateStr) return "-";
-        return new Date(dateStr).toLocaleString();
-    };
-
     // Parse evaluator types (can be comma-separated for multiple types)
     const evaluatorTypes = evaluator.evaluatorType?.split(",").map((t: string) => t.trim()) || [];
 
@@ -83,7 +71,7 @@ export default function ViewEvaluatorModal({
                         <SpaceBetween direction="vertical" size="s">
                             <div>
                                 <Box variant="awsui-key-label">Last Run Status</Box>
-                                <StatusIndicator type={getStatusType(evaluator.lastRunStatus)}>
+                                <StatusIndicator type={evaluationStatusType(evaluator.lastRunStatus)}>
                                     {evaluator.lastRunStatus || "Never run"}
                                 </StatusIndicator>
                             </div>
@@ -184,7 +172,7 @@ export default function ViewEvaluatorModal({
                                 </div>
                                 <div>
                                     <Box variant="awsui-key-label">Last Run Status</Box>
-                                    <StatusIndicator type={getStatusType(evaluator.lastRunStatus)}>
+                                    <StatusIndicator type={evaluationStatusType(evaluator.lastRunStatus)}>
                                         {evaluator.lastRunStatus || "-"}
                                     </StatusIndicator>
                                 </div>

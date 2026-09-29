@@ -3,7 +3,6 @@
 //
 // SPDX-License-Identifier: MIT-0
 // ----------------------------------------------------------------------
-import { generateClient } from "aws-amplify/api";
 import { useContext, useEffect, useMemo, useState } from "react";
 
 import {
@@ -47,7 +46,16 @@ import {
     SearchType,
     SwarmConfiguration,
 } from "./types";
-import { DANGEROUS_KEYS, STEP_MIN_HEIGHT, safeDeepSet } from "./wizard-utils";
+import {
+    DANGEROUS_KEYS,
+    DEFAULT_MAX_HANDOFFS,
+    DEFAULT_ORCHESTRATOR_LIMITS,
+    STEP_MIN_HEIGHT,
+    safeDeepSet,
+    toModelOptions,
+    wizardI18nStrings,
+} from "./wizard-utils";
+import { apiClient } from "../../common/api-client";
 
 interface AgentCoreRuntimeCreatorWizardProps {
     onSubmit: (config: AgentCoreRuntimeConfiguration) => void;
@@ -81,10 +89,14 @@ export default function AgentCoreRuntimeCreatorWizard({
     const [availableDeterministicNodes, setAvailableDeterministicNodes] = useState<
         { key: string; label: string; description: string }[]
     >([]);
-    const [modelOptions, setModelOptions] = useState<{ label: string; value: string }[]>([]);
-    const [rerankingModelOptions, setRerankingModelOptions] = useState<
-        { label: string; value: string }[]
-    >([]);
+    const modelOptions = useMemo(
+        () => toModelOptions(appConfig?.aws_bedrock_supported_models),
+        [appConfig],
+    );
+    const rerankingModelOptions = useMemo(
+        () => toModelOptions(appConfig?.aws_bedrock_supported_reranking_models),
+        [appConfig],
+    );
     const [configureModalVisible, setConfigureModalVisible] = useState(false);
     const [selectedKbForConfig, setSelectedKbForConfig] = useState<string | null>(null);
     const [selectedToolForConfig, setSelectedToolForConfig] = useState<string | null>(null);
@@ -99,12 +111,7 @@ export default function AgentCoreRuntimeCreatorWizard({
             agents: [],
             agentReferences: [],
             entryAgent: "",
-            orchestrator: {
-                maxHandoffs: 15,
-                maxIterations: 50,
-                executionTimeoutSeconds: 300,
-                nodeTimeoutSeconds: 60,
-            },
+            orchestrator: { maxHandoffs: DEFAULT_MAX_HANDOFFS, ...DEFAULT_ORCHESTRATOR_LIMITS },
             conversationManager: "sliding_window",
         },
     );
@@ -114,11 +121,7 @@ export default function AgentCoreRuntimeCreatorWizard({
             edges: [],
             entryPoint: "",
             stateSchema: {},
-            orchestrator: {
-                maxIterations: 50,
-                executionTimeoutSeconds: 300,
-                nodeTimeoutSeconds: 60,
-            },
+            orchestrator: DEFAULT_ORCHESTRATOR_LIMITS,
         },
     );
     const [agentsAsToolsConfig, setAgentsAsToolsConfig] = useState<AgentsAsToolsConfiguration>(
@@ -179,7 +182,6 @@ export default function AgentCoreRuntimeCreatorWizard({
         structuredOutput: initialData?.structuredOutput,
     });
 
-    const apiClient = useMemo(() => generateClient(), []);
 
     // ----------------------------------------------------------------
     // Data fetching
@@ -233,42 +235,27 @@ export default function AgentCoreRuntimeCreatorWizard({
         return () => {
             isCancelled = true;
         };
-    }, [appConfig, apiClient]);
+    }, [appConfig]);
 
     useEffect(() => {
-        if (appConfig && appConfig.aws_bedrock_supported_models) {
-            const models = Object.entries(appConfig.aws_bedrock_supported_models).map(
-                ([label, value]) => ({ label, value }),
+        if (!config.modelInferenceParameters.modelId) {
+            const defaultModel = modelOptions.find(
+                (m) =>
+                    m.label.toLowerCase().includes("claude") &&
+                    m.label.toLowerCase().includes("sonnet") &&
+                    m.label.toLowerCase().includes("4.6"),
             );
-            setModelOptions(models);
-
-            if (!config.modelInferenceParameters.modelId) {
-                const defaultModel = models.find(
-                    (m) =>
-                        m.label.toLowerCase().includes("claude") &&
-                        m.label.toLowerCase().includes("sonnet") &&
-                        m.label.toLowerCase().includes("4.6"),
-                );
-                if (defaultModel) {
-                    setConfig((prev) => ({
-                        ...prev,
-                        modelInferenceParameters: {
-                            ...prev.modelInferenceParameters,
-                            modelId: defaultModel.value,
-                        },
-                    }));
-                }
-            }
-
-            if (appConfig.aws_bedrock_supported_reranking_models) {
-                setRerankingModelOptions(
-                    Object.entries(appConfig.aws_bedrock_supported_reranking_models).map(
-                        ([label, value]) => ({ label, value }),
-                    ),
-                );
+            if (defaultModel) {
+                setConfig((prev) => ({
+                    ...prev,
+                    modelInferenceParameters: {
+                        ...prev.modelInferenceParameters,
+                        modelId: defaultModel.value,
+                    },
+                }));
             }
         }
-    }, [appConfig, config.modelInferenceParameters.modelId]);
+    }, [modelOptions, config.modelInferenceParameters.modelId]);
 
     const updateToolParameter = (toolName: string, paramPath: string, value: any) => {
         setConfig((prev) => {
@@ -526,16 +513,7 @@ export default function AgentCoreRuntimeCreatorWizard({
     // ----------------------------------------------------------------
     const wizardContent = (
         <Wizard
-            i18nStrings={{
-                stepNumberLabel: (stepNumber) => `Step ${stepNumber}`,
-                collapsedStepsLabel: (stepNumber, stepsCount) =>
-                    `Step ${stepNumber} of ${stepsCount}`,
-                navigationAriaLabel: "Steps",
-                cancelButton: "Cancel",
-                previousButton: "Previous",
-                nextButton: "Next",
-                submitButton: "Create Runtime",
-            }}
+            i18nStrings={wizardI18nStrings("Create Runtime")}
             // Gate progression here rather than via isLoadingNextStep: accept
             // backward/same navigation freely, but only allow moving forward when
             // the current step is valid. This keeps the Next button geometry stable

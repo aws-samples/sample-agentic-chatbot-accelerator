@@ -16,7 +16,6 @@ import {
     Spinner,
     StatusIndicator,
 } from "@cloudscape-design/components";
-import { generateClient } from "aws-amplify/api";
 import { DateTime } from "luxon";
 import { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -29,6 +28,7 @@ import {
     renameSession as renameSessionMut,
 } from "../../graphql/mutations";
 import { listSessions as listSessionQuery } from "../../graphql/queries";
+import { apiClient } from "../../common/api-client";
 
 /**
  * In-chat conversation history (T6 — Cloudscape "Conversational history" pattern).
@@ -79,10 +79,9 @@ export default function ConversationHistory() {
 
     const listSessions = useCallback(async () => {
         if (!appContext) return;
-        const client = generateClient();
         try {
             setError(undefined);
-            const result = await client.graphql({ query: listSessionQuery });
+            const result = await apiClient.graphql({ query: listSessionQuery });
             setSessions(result.data!.listSessions);
         } catch (err) {
             console.log(Utils.getErrorMessage(err));
@@ -101,9 +100,8 @@ export default function ConversationHistory() {
     }, [appContext, listSessions]);
 
     const deleteSession = async (id: string) => {
-        const client = generateClient();
         try {
-            await client.graphql({ query: deleteSessionMut, variables: { id } });
+            await apiClient.graphql({ query: deleteSessionMut, variables: { id } });
             await listSessions();
         } catch (err) {
             console.error("Failed to delete session:", err);
@@ -112,9 +110,8 @@ export default function ConversationHistory() {
 
     const submitRename = async () => {
         if (!renameId) return;
-        const client = generateClient();
         try {
-            await client.graphql({
+            await apiClient.graphql({
                 query: renameSessionMut,
                 variables: { id: renameId, title: renameValue },
             });

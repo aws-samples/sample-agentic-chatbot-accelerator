@@ -12,11 +12,11 @@ import {
     StatusIndicator,
     Textarea,
 } from "@cloudscape-design/components";
-import { generateClient } from "aws-amplify/api";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { publishFeedback as publishFeedbackMut } from "../../graphql/mutations";
 import { ChatBotHistoryItem } from "./types";
+import { apiClient } from "../../common/api-client";
 
 export interface MessageToolboxProps {
     message: ChatBotHistoryItem;
@@ -33,7 +33,6 @@ export default function MessageToolbox(props: MessageToolboxProps) {
     // ===============================================================
     //                        Feedback
     // ===============================================================
-    const client = generateClient();
     const { t } = useTranslation("ACA");
 
     const [sentiment, setSentiment] = useState(props.message?.feedback?.sentiment || "");
@@ -71,7 +70,7 @@ export default function MessageToolbox(props: MessageToolboxProps) {
         let mutationSuccessful = false;
 
         try {
-            const response = await client.graphql({
+            const response = await apiClient.graphql({
                 query: publishFeedbackMut,
                 variables: {
                     feedback: JSON.stringify({ ...props.message.feedback }),

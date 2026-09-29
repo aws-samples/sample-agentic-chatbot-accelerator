@@ -11,7 +11,6 @@
 // animated waveform, and a sticky footer with recording controls.
 //
 import { Alert, Box, Button, FormField, Select, SpaceBetween, StatusIndicator } from "@cloudscape-design/components";
-import { generateClient } from "aws-amplify/api";
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { AppContext } from "../../common/app-context";
 import { useVoiceAgent, VoiceConversationTurn } from "../../common/hooks/useVoiceAgent";
@@ -21,6 +20,7 @@ import { AgentOption, EndpointOption } from "./types";
 import { maskSensitiveInfo } from "./utils";
 import { resolveRuntimeVersion } from "../../common/utils";
 import MarkdownContent from "./side-view/markdown-content";
+import { apiClient } from "../../common/api-client";
 
 export interface VoiceConversationViewProps {
     agentRuntimeId: string;
@@ -85,7 +85,6 @@ export default function VoiceConversationView({
     const { isRecording, isConnected, conversationTurns, activeSpeaker, startVoice, stopVoice, error } =
         useVoiceAgent(voiceOptions);
 
-    const client = useMemo(() => generateClient(), []);
 
     // Helper: filter out context-replay artifacts from new turns after a resume.
     // When the agent reconnects on resume, it may replay tool events from its context
@@ -187,7 +186,7 @@ export default function VoiceConversationView({
         // Check model to determine if sonic
         let isSonic = false;
         try {
-            const result = await client.graphql({
+            const result = await apiClient.graphql({
                 query: getDefaultRuntimeConfigurationQuery,
                 variables: { agentName: selectedAgent.label },
             });

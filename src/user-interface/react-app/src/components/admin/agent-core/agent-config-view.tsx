@@ -13,7 +13,6 @@ import {
     Table,
 } from "@cloudscape-design/components";
 import CopyToClipboard from "@cloudscape-design/components/copy-to-clipboard";
-import { generateClient } from "aws-amplify/api";
 import { useContext, useEffect, useState } from "react";
 import { McpServer, RuntimeSummary } from "../../../API";
 import { AppContext } from "../../../common/app-context";
@@ -26,8 +25,9 @@ import {
     SwarmConfiguration,
 } from "../../wizard/types";
 import { getReasoningCapability } from "../../wizard/wizard-utils";
+import { apiClient } from "../../../common/api-client";
+import { DEFAULT_ORCHESTRATOR_LIMITS } from "../../wizard/wizard-utils";
 
-const apiClient = generateClient();
 
 const isSwarmConfig = (config: any): config is SwarmConfiguration => {
     return (
@@ -119,17 +119,10 @@ export default function AgentConfigView({
     const refOrText = (target: AgentReferenceTarget): React.ReactNode =>
         renderAgentReference ? renderAgentReference(target) : target.display;
 
-    const getModelName = (modelId: string) => {
-        if (!appContext?.aws_bedrock_supported_models) return modelId;
-
-        for (const [label, id] of Object.entries(appContext.aws_bedrock_supported_models)) {
-            if (id === modelId) {
-                return label;
-            }
-        }
-
-        return modelId; // fallback to showing the ID if no match found
-    };
+    const getModelName = (modelId: string) =>
+        Object.entries(appContext?.aws_bedrock_supported_models ?? {}).find(
+            ([, id]) => id === modelId,
+        )?.[0] ?? modelId;
 
     const isThinkingEnabled = (reasoningBudget: string | null | undefined): boolean => {
         return (
@@ -311,6 +304,105 @@ export default function AgentConfigView({
         },
     ];
 
+    // ── Sections shared by every architecture ──────────────────────────
+    const renderModelGrid = (mip: any) => (
+        <ColumnLayout columns={4} variant="text-grid">
+            <div>
+                <Box variant="awsui-key-label">Model</Box>
+                <Box>{getModelName(mip?.modelId || "")}</Box>
+            </div>
+            <div>
+                <Box variant="awsui-key-label">Temperature</Box>
+                <Box>{mip?.parameters?.temperature ?? "N/A"}</Box>
+            </div>
+            <div>
+                <Box variant="awsui-key-label">Max Tokens</Box>
+                <Box>{mip?.parameters?.maxTokens ?? "N/A"}</Box>
+            </div>
+            <div>
+                <Box variant="awsui-key-label">Thinking</Box>
+                <Box>{renderThinkingStatus(mip?.reasoningBudget, mip?.modelId)}</Box>
+            </div>
+        </ColumnLayout>
+    );
+
+    const renderInstructions = (label: string, instructions: string | undefined) => (
+        <FormField
+            label={
+                <SpaceBetween direction="horizontal" size="xs" alignItems="center">
+                    <span>{label}</span>
+                    <CopyToClipboard
+                        textToCopy={instructions || ""}
+                        variant="icon"
+                        copySuccessText="Instructions copied"
+                        copyErrorText="Failed to copy"
+                    />
+                </SpaceBetween>
+            }
+        >
+            <ExpandableSection headerText="Show instructions" defaultExpanded={false}>
+                <Box padding="m" variant="code">
+                    <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordWrap: "break-word" }}>
+                        {instructions}
+                    </pre>
+                </Box>
+            </ExpandableSection>
+        </FormField>
+    );
+
+    const renderToolsTable = (tools: string[], toolParameters?: Record<string, any>) => (
+        <Table
+            variant="embedded"
+            items={tools.map((name) => ({ name, parameters: toolParameters?.[name] || {} }))}
+            columnDefinitions={[
+                {
+                    id: "name",
+                    header: "Tool Name",
+                    cell: (item) => item.name,
+                    isRowHeader: true,
+                },
+                {
+                    id: "parameters",
+                    header: "Parameters",
+                    cell: (item) =>
+                        Object.keys(item.parameters).length === 0 ? (
+                            <Box color="text-status-inactive">None</Box>
+                        ) : (
+                            renderValue(item.parameters)
+                        ),
+                },
+            ]}
+        />
+    );
+
+    // Swarm orchestrators also carry maxHandoffs; graph ones don't.
+    const renderOrchestratorSettings = (orchestrator: any, withHandoffs: boolean) => (
+        <FormField label="Orchestrator Settings">
+            <Box padding="m">
+                <ColumnLayout columns={withHandoffs ? 4 : 3} variant="text-grid">
+                    {withHandoffs && (
+                        <div>
+                            <Box variant="awsui-key-label">Max Handoffs</Box>
+                            <Box>{orchestrator.maxHandoffs ?? "N/A"}</Box>
+                        </div>
+                    )}
+                    <div>
+                        <Box variant="awsui-key-label">Max Iterations</Box>
+                        <Box>{orchestrator.maxIterations ?? "N/A"}</Box>
+                    </div>
+                    <div>
+                        <Box variant="awsui-key-label">Execution Timeout</Box>
+                        <Box>{orchestrator.executionTimeoutSeconds ?? "N/A"}s</Box>
+                    </div>
+                    <div>
+                        <Box variant="awsui-key-label">Node Timeout</Box>
+                        <Box>{orchestrator.nodeTimeoutSeconds ?? "N/A"}s</Box>
+                    </div>
+                </ColumnLayout>
+            </Box>
+        </FormField>
+    );
+
     // ── Swarm ──────────────────────────────────────────────────────────
     if (isSwarmConfig(config)) {
         return (
@@ -327,7 +419,6 @@ export default function AgentConfigView({
                     <FormField label="Inline Agents">
                         <SpaceBetween direction="vertical" size="xs">
                             {config.agents.map((inlineAgent, idx) => {
-                                const params = inlineAgent.modelInferenceParameters?.parameters;
                                 const inlineMcp = buildMcpItems(inlineAgent.mcpServers || []);
                                 const inlineToolParams = inlineAgent.toolParameters || {};
                                 return (
@@ -337,36 +428,7 @@ export default function AgentConfigView({
                                         headerText={inlineAgent.name}
                                     >
                                         <SpaceBetween direction="vertical" size="m">
-                                            <ColumnLayout columns={4} variant="text-grid">
-                                                <div>
-                                                    <Box variant="awsui-key-label">Model</Box>
-                                                    <Box>
-                                                        {getModelName(
-                                                            inlineAgent.modelInferenceParameters
-                                                                ?.modelId || "",
-                                                        )}
-                                                    </Box>
-                                                </div>
-                                                <div>
-                                                    <Box variant="awsui-key-label">Temperature</Box>
-                                                    <Box>{params?.temperature ?? "N/A"}</Box>
-                                                </div>
-                                                <div>
-                                                    <Box variant="awsui-key-label">Max Tokens</Box>
-                                                    <Box>{params?.maxTokens ?? "N/A"}</Box>
-                                                </div>
-                                                <div>
-                                                    <Box variant="awsui-key-label">Thinking</Box>
-                                                    <Box>
-                                                        {renderThinkingStatus(
-                                                            inlineAgent.modelInferenceParameters
-                                                                ?.reasoningBudget,
-                                                            inlineAgent.modelInferenceParameters
-                                                                ?.modelId,
-                                                        )}
-                                                    </Box>
-                                                </div>
-                                            </ColumnLayout>
+                                            {renderModelGrid(inlineAgent.modelInferenceParameters)}
 
                                             <div>
                                                 <Box variant="awsui-key-label">Tools</Box>
@@ -397,42 +459,10 @@ export default function AgentConfigView({
                                                 </div>
                                             )}
 
-                                            <FormField
-                                                label={
-                                                    <SpaceBetween
-                                                        direction="horizontal"
-                                                        size="xs"
-                                                        alignItems="center"
-                                                    >
-                                                        <span>Instructions</span>
-                                                        <CopyToClipboard
-                                                            textToCopy={
-                                                                inlineAgent.instructions || ""
-                                                            }
-                                                            variant="icon"
-                                                            copySuccessText="Instructions copied"
-                                                            copyErrorText="Failed to copy"
-                                                        />
-                                                    </SpaceBetween>
-                                                }
-                                            >
-                                                <ExpandableSection
-                                                    headerText="Show instructions"
-                                                    defaultExpanded={false}
-                                                >
-                                                    <Box padding="m" variant="code">
-                                                        <pre
-                                                            style={{
-                                                                margin: 0,
-                                                                whiteSpace: "pre-wrap",
-                                                                wordWrap: "break-word",
-                                                            }}
-                                                        >
-                                                            {inlineAgent.instructions}
-                                                        </pre>
-                                                    </Box>
-                                                </ExpandableSection>
-                                            </FormField>
+                                            {renderInstructions(
+                                                "Instructions",
+                                                inlineAgent.instructions,
+                                            )}
                                         </SpaceBetween>
                                     </ExpandableSection>
                                 );
@@ -469,30 +499,7 @@ export default function AgentConfigView({
                 )}
 
                 {config.orchestrator && (
-                    <FormField label="Orchestrator Settings">
-                        <Box padding="m">
-                            <ColumnLayout columns={4} variant="text-grid">
-                                <div>
-                                    <Box variant="awsui-key-label">Max Handoffs</Box>
-                                    <Box>{config.orchestrator.maxHandoffs ?? "N/A"}</Box>
-                                </div>
-                                <div>
-                                    <Box variant="awsui-key-label">Max Iterations</Box>
-                                    <Box>{config.orchestrator.maxIterations ?? "N/A"}</Box>
-                                </div>
-                                <div>
-                                    <Box variant="awsui-key-label">Execution Timeout</Box>
-                                    <Box>
-                                        {config.orchestrator.executionTimeoutSeconds ?? "N/A"}s
-                                    </Box>
-                                </div>
-                                <div>
-                                    <Box variant="awsui-key-label">Node Timeout</Box>
-                                    <Box>{config.orchestrator.nodeTimeoutSeconds ?? "N/A"}s</Box>
-                                </div>
-                            </ColumnLayout>
-                        </Box>
-                    </FormField>
+                    renderOrchestratorSettings(config.orchestrator, true)
                 )}
 
                 {config.conversationManager && (
@@ -510,37 +517,7 @@ export default function AgentConfigView({
             <SpaceBetween direction="vertical" size="m">
                 <FormField label="Model Configuration">
                     <Box padding="m">
-                        <ColumnLayout columns={4} variant="text-grid">
-                            <div>
-                                <Box variant="awsui-key-label">Model</Box>
-                                <Box>
-                                    {getModelName(config.modelInferenceParameters?.modelId || "")}
-                                </Box>
-                            </div>
-                            <div>
-                                <Box variant="awsui-key-label">Temperature</Box>
-                                <Box>
-                                    {config.modelInferenceParameters?.parameters?.temperature ??
-                                        "N/A"}
-                                </Box>
-                            </div>
-                            <div>
-                                <Box variant="awsui-key-label">Max Tokens</Box>
-                                <Box>
-                                    {config.modelInferenceParameters?.parameters?.maxTokens ??
-                                        "N/A"}
-                                </Box>
-                            </div>
-                            <div>
-                                <Box variant="awsui-key-label">Thinking</Box>
-                                <Box>
-                                    {renderThinkingStatus(
-                                        config.modelInferenceParameters?.reasoningBudget,
-                                        config.modelInferenceParameters?.modelId,
-                                    )}
-                                </Box>
-                            </div>
-                        </ColumnLayout>
+                        {renderModelGrid(config.modelInferenceParameters)}
                     </Box>
                 </FormField>
 
@@ -548,33 +525,7 @@ export default function AgentConfigView({
                     <Box padding="m">{renderMemoryStatus((config as any).useMemory)}</Box>
                 </FormField>
 
-                <FormField
-                    label={
-                        <SpaceBetween direction="horizontal" size="xs" alignItems="center">
-                            <span>Orchestrator Instructions</span>
-                            <CopyToClipboard
-                                textToCopy={config.instructions || ""}
-                                variant="icon"
-                                copySuccessText="Instructions copied"
-                                copyErrorText="Failed to copy"
-                            />
-                        </SpaceBetween>
-                    }
-                >
-                    <ExpandableSection headerText="Show instructions" defaultExpanded={false}>
-                        <Box padding="m" variant="code">
-                            <pre
-                                style={{
-                                    margin: 0,
-                                    whiteSpace: "pre-wrap",
-                                    wordWrap: "break-word",
-                                }}
-                            >
-                                {config.instructions}
-                            </pre>
-                        </Box>
-                    </ExpandableSection>
-                </FormField>
+                {renderInstructions("Orchestrator Instructions", config.instructions)}
 
                 {config.agentsAsTools && config.agentsAsTools.length > 0 && (
                     <FormField label="Agents as Tools">
@@ -605,31 +556,7 @@ export default function AgentConfigView({
 
                 {config.tools && config.tools.length > 0 && (
                     <FormField label="Additional Tools">
-                        <Table
-                            variant="embedded"
-                            items={config.tools.map((toolName: string) => ({
-                                name: toolName,
-                                parameters: config.toolParameters?.[toolName] || {},
-                            }))}
-                            columnDefinitions={[
-                                {
-                                    id: "name",
-                                    header: "Tool Name",
-                                    cell: (item: any) => item.name,
-                                    isRowHeader: true,
-                                },
-                                {
-                                    id: "parameters",
-                                    header: "Parameters",
-                                    cell: (item: any) => {
-                                        if (Object.keys(item.parameters).length === 0) {
-                                            return <Box color="text-status-inactive">None</Box>;
-                                        }
-                                        return renderValue(item.parameters);
-                                    },
-                                },
-                            ]}
-                        />
+                        {renderToolsTable(config.tools!, config.toolParameters)}
                     </FormField>
                 )}
 
@@ -804,80 +731,25 @@ export default function AgentConfigView({
                             entryPoint: config.entryPoint,
                             stateSchema: config.stateSchema || {},
                             stateClass: config.stateClass,
-                            orchestrator: config.orchestrator || {
-                                maxIterations: 50,
-                                executionTimeoutSeconds: 300,
-                                nodeTimeoutSeconds: 60,
-                            },
+                            orchestrator: config.orchestrator || DEFAULT_ORCHESTRATOR_LIMITS,
                         }}
                     />
                 </FormField>
 
                 {config.orchestrator && (
-                    <FormField label="Orchestrator Settings">
-                        <Box padding="m">
-                            <ColumnLayout columns={3} variant="text-grid">
-                                <div>
-                                    <Box variant="awsui-key-label">Max Iterations</Box>
-                                    <Box>{config.orchestrator.maxIterations ?? "N/A"}</Box>
-                                </div>
-                                <div>
-                                    <Box variant="awsui-key-label">Execution Timeout</Box>
-                                    <Box>
-                                        {config.orchestrator.executionTimeoutSeconds ?? "N/A"}s
-                                    </Box>
-                                </div>
-                                <div>
-                                    <Box variant="awsui-key-label">Node Timeout</Box>
-                                    <Box>{config.orchestrator.nodeTimeoutSeconds ?? "N/A"}s</Box>
-                                </div>
-                            </ColumnLayout>
-                        </Box>
-                    </FormField>
+                    renderOrchestratorSettings(config.orchestrator, false)
                 )}
             </SpaceBetween>
         );
     }
 
     // ── Single agent ───────────────────────────────────────────────────
-    const toolTableItems = (config.tools || []).map((toolName) => ({
-        name: toolName,
-        parameters: config.toolParameters?.[toolName] || {},
-    }));
     const mcpServerTableItems = config.mcpServers ? buildMcpItems(config.mcpServers) : [];
     return (
         <SpaceBetween direction="vertical" size="m">
             <FormField label="Model Configuration">
                 <Box padding="m">
-                    <ColumnLayout columns={4} variant="text-grid">
-                        <div>
-                            <Box variant="awsui-key-label">Model</Box>
-                            <Box>
-                                {getModelName(config.modelInferenceParameters?.modelId || "")}
-                            </Box>
-                        </div>
-                        <div>
-                            <Box variant="awsui-key-label">Temperature</Box>
-                            <Box>
-                                {config.modelInferenceParameters?.parameters?.temperature ?? "N/A"}
-                            </Box>
-                        </div>
-                        <div>
-                            <Box variant="awsui-key-label">Max Tokens</Box>
-                            <Box>
-                                {config.modelInferenceParameters?.parameters?.maxTokens ?? "N/A"}
-                            </Box>
-                        </div>
-                        <div>
-                            <Box variant="awsui-key-label">Thinking</Box>
-                            <Box>
-                                {renderThinkingStatus(
-                                    config.modelInferenceParameters?.reasoningBudget,
-                                    config.modelInferenceParameters?.modelId,
-                                )}
-                            </Box>
-                        </div>
-                    </ColumnLayout>
+                    {renderModelGrid(config.modelInferenceParameters)}
                 </Box>
             </FormField>
 
@@ -894,58 +766,11 @@ export default function AgentConfigView({
                 </Box>
             </FormField>
 
-            <FormField
-                label={
-                    <SpaceBetween direction="horizontal" size="xs" alignItems="center">
-                        <span>Agent Instructions</span>
-                        <CopyToClipboard
-                            textToCopy={config.instructions}
-                            variant="icon"
-                            copySuccessText="Instructions copied"
-                            copyErrorText="Failed to copy"
-                        />
-                    </SpaceBetween>
-                }
-            >
-                <ExpandableSection headerText="Show instructions" defaultExpanded={false}>
-                    <Box padding="m" variant="code">
-                        <pre
-                            style={{
-                                margin: 0,
-                                whiteSpace: "pre-wrap",
-                                wordWrap: "break-word",
-                            }}
-                        >
-                            {config.instructions}
-                        </pre>
-                    </Box>
-                </ExpandableSection>
-            </FormField>
+            {renderInstructions("Agent Instructions", config.instructions)}
 
-            {toolTableItems.length > 0 && (
+            {(config.tools || []).length > 0 && (
                 <FormField label="Tools and Parameters">
-                    <Table
-                        variant="embedded"
-                        items={toolTableItems}
-                        columnDefinitions={[
-                            {
-                                id: "name",
-                                header: "Tool Name",
-                                cell: (item) => item.name,
-                                isRowHeader: true,
-                            },
-                            {
-                                id: "parameters",
-                                header: "Parameters",
-                                cell: (item) => {
-                                    if (Object.keys(item.parameters).length === 0) {
-                                        return <Box color="text-status-inactive">None</Box>;
-                                    }
-                                    return renderValue(item.parameters);
-                                },
-                            },
-                        ]}
-                    />
+                    {renderToolsTable(config.tools || [], config.toolParameters)}
                 </FormField>
             )}
 

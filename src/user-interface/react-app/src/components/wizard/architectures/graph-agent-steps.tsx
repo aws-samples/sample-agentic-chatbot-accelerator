@@ -6,9 +6,7 @@
 import {
     ColumnLayout,
     Container,
-    FormField,
     Header,
-    Input,
     SpaceBetween,
 } from "@cloudscape-design/components";
 import { RuntimeSummary } from "../../../API";
@@ -18,9 +16,15 @@ import {
     PredefinedDeterministicNode,
     PredefinedStateClass,
 } from "../types";
-import { STEP_MIN_HEIGHT } from "../wizard-utils";
+import {
+    AGENT_NAME_MAX_LENGTH,
+    STEP_MIN_HEIGHT,
+    agentNameError,
+    orchestratorTimeoutsValid,
+} from "../wizard-utils";
 import GraphDesigner from "./graph-designer";
 import ReviewStep from "./review-step";
+import { AgentNameField, OrchestratorLimitFields } from "../wizard-shared-components";
 
 export interface GraphAgentStepsProps {
     config: AgentCoreRuntimeConfiguration;
@@ -50,35 +54,12 @@ export function getGraphAgentSteps({
             content: (
                 <div style={{ minHeight: STEP_MIN_HEIGHT }}>
                     <SpaceBetween direction="vertical" size="l">
-                        <Container
-                            header={<Header variant="h2">Agent Name</Header>}
-                        >
-                            <FormField
-                                label="Agent Name"
-                                description="Enter a unique name for your graph agent"
-                                errorText={
-                                    config.agentName.trim() === ""
-                                        ? "Agent name is required"
-                                        : !/^[a-zA-Z][a-zA-Z0-9_]{0,47}$/.test(
-                                                config.agentName,
-                                            )
-                                          ? "Agent name must start with a letter and contain only letters, numbers, and underscores (max 48 characters)"
-                                          : ""
-                                }
-                            >
-                                <Input
-                                    value={config.agentName}
-                                    onChange={({ detail }) =>
-                                        setConfig((prev) => ({
-                                            ...prev,
-                                            agentName: detail.value,
-                                        }))
-                                    }
-                                    placeholder="Enter agent name..."
-                                    invalid={config.agentName.trim() === ""}
-                                />
-                            </FormField>
-                        </Container>
+                        <AgentNameField
+                            value={config.agentName}
+                            onChange={(agentName) => setConfig((prev) => ({ ...prev, agentName }))}
+                            description="Enter a unique name for your graph agent"
+                            maxLength={AGENT_NAME_MAX_LENGTH}
+                        />
 
                         <GraphDesigner
                             graphConfig={graphConfig}
@@ -104,86 +85,17 @@ export function getGraphAgentSteps({
                     >
                         <SpaceBetween direction="vertical" size="l">
                             <ColumnLayout columns={2} variant="text-grid">
-                                <FormField
-                                    label="Max Iterations"
-                                    description="Maximum total iterations (recursion limit)"
-                                >
-                                    <Input
-                                        type="number"
-                                        value={graphConfig.orchestrator.maxIterations.toString()}
-                                        onChange={({ detail }) =>
-                                            setGraphConfig((prev) => ({
-                                                ...prev,
-                                                orchestrator: {
-                                                    ...prev.orchestrator,
-                                                    maxIterations:
-                                                        parseInt(
-                                                            detail.value,
-                                                        ) || 50,
-                                                },
-                                            }))
-                                        }
-                                    />
-                                </FormField>
-                                <FormField
-                                    label="Execution Timeout (s)"
-                                    description="Total execution timeout in seconds"
-                                    errorText={
-                                        graphConfig.orchestrator
-                                            .executionTimeoutSeconds <= 0
-                                            ? "Must be greater than 0"
-                                            : ""
+                                <OrchestratorLimitFields
+                                    orchestrator={graphConfig.orchestrator}
+                                    onChange={(patch) =>
+                                        setGraphConfig((prev) => ({
+                                            ...prev,
+                                            orchestrator: { ...prev.orchestrator, ...patch },
+                                        }))
                                     }
-                                >
-                                    <Input
-                                        type="number"
-                                        value={graphConfig.orchestrator.executionTimeoutSeconds.toString()}
-                                        onChange={({ detail }) =>
-                                            setGraphConfig((prev) => ({
-                                                ...prev,
-                                                orchestrator: {
-                                                    ...prev.orchestrator,
-                                                    executionTimeoutSeconds:
-                                                        parseFloat(
-                                                            detail.value,
-                                                        ) || 300,
-                                                },
-                                            }))
-                                        }
-                                    />
-                                </FormField>
-                                <FormField
-                                    label="Node Timeout (s)"
-                                    description="Per-node timeout in seconds"
-                                    errorText={
-                                        graphConfig.orchestrator
-                                            .nodeTimeoutSeconds >
-                                        graphConfig.orchestrator
-                                            .executionTimeoutSeconds
-                                            ? "Node timeout must not exceed execution timeout"
-                                            : graphConfig.orchestrator
-                                                    .nodeTimeoutSeconds <= 0
-                                              ? "Must be greater than 0"
-                                              : ""
-                                    }
-                                >
-                                    <Input
-                                        type="number"
-                                        value={graphConfig.orchestrator.nodeTimeoutSeconds.toString()}
-                                        onChange={({ detail }) =>
-                                            setGraphConfig((prev) => ({
-                                                ...prev,
-                                                orchestrator: {
-                                                    ...prev.orchestrator,
-                                                    nodeTimeoutSeconds:
-                                                        parseFloat(
-                                                            detail.value,
-                                                        ) || 60,
-                                                },
-                                            }))
-                                        }
-                                    />
-                                </FormField>
+                                    maxIterationsDescription="Maximum total iterations (recursion limit)"
+                                    nodeTimeoutDescription="Per-node timeout in seconds"
+                                />
                             </ColumnLayout>
                         </SpaceBetween>
                     </Container>
@@ -225,13 +137,11 @@ export function isGraphStepValid(
     config: AgentCoreRuntimeConfiguration,
     graphConfig: GraphConfiguration,
 ): boolean {
-    const agentNamePattern = /^[a-zA-Z][a-zA-Z0-9_]{0,47}$/;
 
     // Step 0: Graph Design
     if (stepIndex === 0) {
         const hasAgentName =
-            config.agentName.trim() !== "" &&
-            agentNamePattern.test(config.agentName);
+            agentNameError(config.agentName, AGENT_NAME_MAX_LENGTH) === "";
         const hasNodes = graphConfig.nodes.length > 0;
         const hasEntryPoint =
             graphConfig.entryPoint.trim() !== "" &&
@@ -262,11 +172,7 @@ export function isGraphStepValid(
     if (stepIndex === 1) {
         const { orchestrator } = graphConfig;
         return (
-            orchestrator.maxIterations >= 1 &&
-            orchestrator.executionTimeoutSeconds > 0 &&
-            orchestrator.nodeTimeoutSeconds > 0 &&
-            orchestrator.nodeTimeoutSeconds <=
-                orchestrator.executionTimeoutSeconds
+            orchestrator.maxIterations >= 1 && orchestratorTimeoutsValid(orchestrator)
         );
     }
 

@@ -13,10 +13,9 @@ import {
     StatusIndicator,
     Table,
 } from "@cloudscape-design/components";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { generateClient } from "aws-amplify/api";
 import { McpServer, ResponseStatus } from "../../../API";
 import { deleteMcpServer as deleteMcpServerMutation } from "../../../graphql/mutations";
 import {
@@ -25,6 +24,7 @@ import {
     listRuntimeAgents as listRuntimeAgentsQuery,
 } from "../../../graphql/queries";
 import { RegisterMcpServerModal } from "../../wizard/register-mcp-server-modal";
+import { apiClient } from "../../../common/api-client";
 
 export interface McpServerManagerProps {
     readonly toolsOpen: boolean;
@@ -36,7 +36,6 @@ interface McpServerWithUsage extends McpServer {
 
 export default function McpServerManager(_props: McpServerManagerProps) {
     const navigate = useNavigate();
-    const apiClient = useMemo(() => generateClient(), []);
 
     const [mcpServers, setMcpServers] = useState<McpServerWithUsage[]>([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -103,7 +102,7 @@ export default function McpServerManager(_props: McpServerManagerProps) {
         } finally {
             setIsLoading(false);
         }
-    }, [apiClient]);
+    }, []);
 
     useEffect(() => {
         fetchMcpServersWithUsage();

@@ -5,20 +5,19 @@
 //
 // -----------------------------------------------------------------------
 import { BreadcrumbGroup } from "@cloudscape-design/components";
-import { generateClient } from "aws-amplify/api";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { CHATBOT_NAME } from "../../common/constants";
 import useOnFollow from "../../common/hooks/use-on-follow";
 import BaseAppLayout from "../../components/base-app-layout";
 import CreateEvaluatorWizard, { EvaluatorConfiguration } from "../../components/wizard/create-evaluator-wizard";
 import { createEvaluator as createEvaluatorMutation } from "../../graphql/mutations";
+import { apiClient } from "../../common/api-client";
 
 export default function EvaluationsWizardPage() {
     const navigate = useNavigate();
     const onFollow = useOnFollow();
     const [isCreating, setIsCreating] = useState(false);
-    const apiClient = useMemo(() => generateClient(), []);
 
     const handleSubmit = async (config: EvaluatorConfiguration) => {
         setIsCreating(true);

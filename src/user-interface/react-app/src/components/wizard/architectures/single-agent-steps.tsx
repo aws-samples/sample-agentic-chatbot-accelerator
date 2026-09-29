@@ -3,8 +3,7 @@
 //
 // SPDX-License-Identifier: MIT-0
 // ----------------------------------------------------------------------
-import { generateClient } from "aws-amplify/api";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 import {
     Alert,
@@ -24,9 +23,22 @@ import {
 import { KnowledgeBase, McpServer, Tool } from "../../../API";
 import { listSkills as listSkillsQuery } from "../../../graphql/queries";
 import { AgentCoreRuntimeConfiguration } from "../types";
-import { AdditionalToolsSection, AgentConfigSection } from "../wizard-shared-components";
-import { PYTHON_TYPE_OPTIONS, STEP_MIN_HEIGHT, isReasoningEffortAccepted } from "../wizard-utils";
+import {
+    AdditionalToolsSection,
+    AgentConfigSection,
+    AgentNameField,
+} from "../wizard-shared-components";
+import {
+    bindModelParams,
+    toolSelectionActions,
+    PYTHON_TYPE_OPTIONS,
+    STEP_MIN_HEIGHT,
+    isReasoningEffortAccepted,
+    SINGLE_AGENT_NAME_MAX_LENGTH,
+    agentNameError,
+} from "../wizard-utils";
 import ReviewStep from "./review-step";
+import { apiClient } from "../../../common/api-client";
 
 interface SingleAgentStepsProps {
     config: AgentCoreRuntimeConfiguration;
@@ -54,55 +66,8 @@ export function getSingleAgentSteps({
     // -------------------------------------------------------------------
     // Tool / KB / MCP actions
     // -------------------------------------------------------------------
-    const addTool = (toolName: string | undefined) => {
-        if (!toolName || toolName === "retrieve_from_kb" || config.tools.includes(toolName)) return;
-        setConfig((prev) => ({
-            ...prev,
-            tools: [...prev.tools, toolName],
-            toolParameters: { ...prev.toolParameters, [toolName]: {} },
-        }));
-    };
-
-    const removeTool = (toolName: string) => {
-        setConfig((prev) => {
-            const newToolParameters = { ...prev.toolParameters };
-            delete newToolParameters[toolName];
-            return {
-                ...prev,
-                tools: prev.tools.filter((t) => t !== toolName),
-                toolParameters: newToolParameters,
-            };
-        });
-    };
-
-    const addMcpServer = (serverName: string | undefined) => {
-        if (!serverName || config.mcpServers.includes(serverName)) return;
-        setConfig((prev) => ({ ...prev, mcpServers: [...prev.mcpServers, serverName] }));
-    };
-
-    const removeMcpServer = (serverName: string) => {
-        setConfig((prev) => ({
-            ...prev,
-            mcpServers: prev.mcpServers.filter((s) => s !== serverName),
-        }));
-    };
-
-    const addKnowledgeBase = (kbId: string | undefined) => {
-        if (!kbId) return;
-        const toolName = `retrieve_from_kb_${kbId}`;
-        if (config.tools.includes(toolName)) return;
-        setConfig((prev) => ({
-            ...prev,
-            tools: [...prev.tools, toolName],
-            toolParameters: {
-                ...prev.toolParameters,
-                [toolName]: {
-                    retrieval_cfg: { vectorSearchConfiguration: { numberOfResults: "5" } },
-                    kb_id: kbId,
-                },
-            },
-        }));
-    };
+    const { addTool, removeTool, addMcpServer, removeMcpServer, addKnowledgeBase } =
+        toolSelectionActions(config, setConfig);
 
     // -------------------------------------------------------------------
     // Derived display data
@@ -150,82 +115,17 @@ export function getSingleAgentSteps({
             content: (
                 <div style={{ minHeight: STEP_MIN_HEIGHT }}>
                     <SpaceBetween direction="vertical" size="l">
-                        <Container header={<Header variant="h2">Agent Name</Header>}>
-                            <FormField
-                                label="Agent Name"
-                                description="Enter a unique name for your agent"
-                                errorText={
-                                    config.agentName.trim() === ""
-                                        ? "Agent name is required"
-                                        : !/^[a-zA-Z][a-zA-Z0-9_]{0,43}$/.test(config.agentName)
-                                          ? "Agent name must start with a letter and contain only letters, numbers, and underscores (max 44 characters; the A2A twin runtime appends '_a2a' and the combined name must fit AgentCore's 48-char limit)"
-                                          : ""
-                                }
-                            >
-                                <Input
-                                    value={config.agentName}
-                                    onChange={({ detail }) =>
-                                        setConfig((prev) => ({
-                                            ...prev,
-                                            agentName: detail.value,
-                                        }))
-                                    }
-                                    placeholder="Enter agent name..."
-                                    invalid={config.agentName.trim() === ""}
-                                />
-                            </FormField>
-                        </Container>
+                        <AgentNameField
+                            value={config.agentName}
+                            onChange={(agentName) => setConfig((prev) => ({ ...prev, agentName }))}
+                            description="Enter a unique name for your agent"
+                            maxLength={SINGLE_AGENT_NAME_MAX_LENGTH}
+                        />
 
                         <AgentConfigSection
                             label="Agent"
                             modelOptions={modelOptions}
-                            modelId={config.modelInferenceParameters.modelId}
-                            onModelChange={(modelId) =>
-                                setConfig((prev) => {
-                                    // Keep the effort only if the NEW model accepts the
-                                    // value already selected. Sharing a reasoning "type"
-                                    // is not enough: Opus 4.8's xhigh is rejected by
-                                    // Sonnet 5, which documents only low/medium/high.
-                                    const budget = prev.modelInferenceParameters.reasoningBudget;
-                                    const keepBudget =
-                                        budget != null &&
-                                        isReasoningEffortAccepted(modelId, budget);
-                                    return {
-                                        ...prev,
-                                        modelInferenceParameters: {
-                                            ...prev.modelInferenceParameters,
-                                            modelId,
-                                            ...(keepBudget ? {} : { reasoningBudget: undefined }),
-                                        },
-                                    };
-                                })
-                            }
-                            temperature={config.modelInferenceParameters.parameters.temperature}
-                            onTemperatureChange={(temperature) =>
-                                setConfig((prev) => ({
-                                    ...prev,
-                                    modelInferenceParameters: {
-                                        ...prev.modelInferenceParameters,
-                                        parameters: {
-                                            ...prev.modelInferenceParameters.parameters,
-                                            temperature,
-                                        },
-                                    },
-                                }))
-                            }
-                            maxTokens={config.modelInferenceParameters.parameters.maxTokens}
-                            onMaxTokensChange={(maxTokens) =>
-                                setConfig((prev) => ({
-                                    ...prev,
-                                    modelInferenceParameters: {
-                                        ...prev.modelInferenceParameters,
-                                        parameters: {
-                                            ...prev.modelInferenceParameters.parameters,
-                                            maxTokens,
-                                        },
-                                    },
-                                }))
-                            }
+                            {...bindModelParams(config.modelInferenceParameters, setConfig)}
                             instructions={config.instructions}
                             onInstructionsChange={(instructions) =>
                                 setConfig((prev) => ({ ...prev, instructions }))
@@ -241,16 +141,6 @@ export function getSingleAgentSteps({
                             useMemory={config.useMemory || false}
                             onUseMemoryChange={(useMemory) =>
                                 setConfig((prev) => ({ ...prev, useMemory }))
-                            }
-                            reasoningBudget={config.modelInferenceParameters.reasoningBudget}
-                            onReasoningBudgetChange={(reasoningBudget) =>
-                                setConfig((prev) => ({
-                                    ...prev,
-                                    modelInferenceParameters: {
-                                        ...prev.modelInferenceParameters,
-                                        reasoningBudget,
-                                    },
-                                }))
                             }
                         />
 
@@ -523,10 +413,8 @@ export function isSingleAgentStepValid(
 ): boolean {
     // Step 0: Agent Configuration
     if (stepIndex === 0) {
-        const agentNamePattern = /^[a-zA-Z][a-zA-Z0-9_]{0,43}$/;
         const basicValid =
-            config.agentName.trim() !== "" &&
-            agentNamePattern.test(config.agentName) &&
+            agentNameError(config.agentName, SINGLE_AGENT_NAME_MAX_LENGTH) === "" &&
             config.instructions.trim() !== "" &&
             config.modelInferenceParameters.modelId.trim() !== "";
         if (!basicValid) return false;
@@ -582,7 +470,6 @@ function SkillsSection({
     config: AgentCoreRuntimeConfiguration;
     setConfig: React.Dispatch<React.SetStateAction<AgentCoreRuntimeConfiguration>>;
 }) {
-    const apiClient = useMemo(() => generateClient(), []);
     const [availableSkills, setAvailableSkills] = useState<{ name: string; description: string }[]>(
         [],
     );
@@ -606,7 +493,7 @@ function SkillsSection({
             }
         };
         fetchSkills();
-    }, [apiClient]);
+    }, []);
 
     const attachedSkills = config.skills || [];
 

@@ -10,7 +10,6 @@ import {
     Alert,
     Box,
     Button,
-    CollectionPreferences,
     Header,
     Input,
     Modal,
@@ -20,7 +19,6 @@ import {
     Table,
     TableProps,
 } from "@cloudscape-design/components";
-import { generateClient } from "aws-amplify/api";
 import { DateTime } from "luxon";
 import { useCallback, useContext, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -36,6 +34,9 @@ import {
 } from "../../graphql/mutations";
 import { listSessions as listSessionQuery } from "../../graphql/queries";
 import RouterButton from "../wrappers/router-button";
+import { PageSizePreferences, filterProperty } from "../table-parts";
+import ConfirmModal from "../confirm-modal";
+import { apiClient } from "../../common/api-client";
 
 export interface SessionsProps {
     readonly toolsOpen: boolean;
@@ -47,30 +48,10 @@ export interface SessionsProps {
 type SessionRow = Session & { agentName: string };
 
 const FILTERING_PROPERTIES = [
-    {
-        key: "title",
-        propertyLabel: "Title",
-        groupValuesLabel: "Title values",
-        operators: [":", "!:", "=", "!="],
-    },
-    {
-        key: "agentName",
-        propertyLabel: "AgentName",
-        groupValuesLabel: "AgentName values",
-        operators: [":", "!:", "=", "!="],
-    },
-    {
-        key: "runtimeVersion",
-        propertyLabel: "RuntimeVersion",
-        groupValuesLabel: "RuntimeVersion values",
-        operators: [":", "!:", "=", "!="],
-    },
-    {
-        key: "endpoint",
-        propertyLabel: "Endpoint",
-        groupValuesLabel: "Endpoint values",
-        operators: [":", "!:", "=", "!="],
-    },
+    filterProperty("title", "Title"),
+    filterProperty("agentName", "AgentName"),
+    filterProperty("runtimeVersion", "RuntimeVersion"),
+    filterProperty("endpoint", "Endpoint"),
 ];
 
 export default function Sessions(props: SessionsProps) {
@@ -123,7 +104,6 @@ export default function Sessions(props: SessionsProps) {
     const listSessions = useCallback(async () => {
         if (!appContext) return;
 
-        const apiClient = generateClient();
         try {
             setGlobalError(undefined);
             const result = await apiClient.graphql({
@@ -156,7 +136,6 @@ export default function Sessions(props: SessionsProps) {
         if (!appContext) return;
 
         setIsLoading(true);
-        const apiClient = generateClient();
         await Promise.all(
             selectedItems.map((s) =>
                 apiClient.graphql({
@@ -174,7 +153,6 @@ export default function Sessions(props: SessionsProps) {
         if (!appContext) return;
 
         setIsLoading(true);
-        const apiClient = generateClient();
         await apiClient.graphql({ query: deleteUserSessionsMut });
         await listSessions();
         setIsLoading(false);
@@ -196,7 +174,6 @@ export default function Sessions(props: SessionsProps) {
                             variant="primary"
                             onClick={async () => {
                                 // console.log("Rename session", renameSessionId, "to:", renameValue);
-                                const apiClient = generateClient();
                                 try {
                                     await apiClient.graphql({
                                         query: renameSessionMut,
@@ -228,49 +205,29 @@ export default function Sessions(props: SessionsProps) {
 
     return (
         <>
-            <Modal
-                onDismiss={() => setShowModalDelete(false)}
+            <ConfirmModal
                 visible={showModalDelete}
-                footer={
-                    <Box float="right">
-                        <SpaceBetween direction="horizontal" size="xs">
-                            {" "}
-                            <Button variant="link" onClick={() => setShowModalDelete(false)}>
-                                {t("CHATBOT.SESSIONS.CANCEL_BUTTON")}
-                            </Button>
-                            <Button variant="primary" onClick={deleteSelectedSessions}>
-                                {t("CHATBOT.SESSIONS.OK_BUTTON")}
-                            </Button>
-                        </SpaceBetween>{" "}
-                    </Box>
-                }
+                onDismiss={() => setShowModalDelete(false)}
+                onConfirm={deleteSelectedSessions}
+                confirmLabel={t("CHATBOT.SESSIONS.OK_BUTTON")}
+                cancelLabel={t("CHATBOT.SESSIONS.CANCEL_BUTTON")}
                 header={"Delete session" + (selectedItems.length > 1 ? "s" : "")}
             >
                 {t("CHATBOT.SESSIONS.DELETE_MSG")}{" "}
                 {selectedItems.length == 1
                     ? `session ${selectedItems[0].id}?`
                     : `${selectedItems.length} sessions?`}
-            </Modal>
-            <Modal
-                onDismiss={() => setDeleteAllSessions(false)}
+            </ConfirmModal>
+            <ConfirmModal
                 visible={deleteAllSessions}
-                footer={
-                    <Box float="right">
-                        <SpaceBetween direction="horizontal" size="xs">
-                            {" "}
-                            <Button variant="link" onClick={() => setDeleteAllSessions(false)}>
-                                {t("CHATBOT.SESSIONS.CANCEL_BUTTON")}
-                            </Button>
-                            <Button variant="primary" onClick={deleteUserSessions}>
-                                {t("CHATBOT.SESSIONS.OK_BUTTON")}
-                            </Button>
-                        </SpaceBetween>{" "}
-                    </Box>
-                }
+                onDismiss={() => setDeleteAllSessions(false)}
+                onConfirm={deleteUserSessions}
+                confirmLabel={t("CHATBOT.SESSIONS.OK_BUTTON")}
+                cancelLabel={t("CHATBOT.SESSIONS.CANCEL_BUTTON")}
                 header={"Delete all sessions"}
             >
                 {`${t("CHATBOT.SESSIONS.DELETE_MSG")} ${sessions.length} sessions?`}
-            </Modal>
+            </ConfirmModal>
             {globalError && (
                 <Alert
                     statusIconAriaLabel="Error"
@@ -320,23 +277,7 @@ export default function Sessions(props: SessionsProps) {
                 resizableColumns
                 stickyHeader={true}
                 preferences={
-                    <CollectionPreferences
-                        onConfirm={({ detail }) =>
-                            setPreferences({ pageSize: detail.pageSize ?? 20 })
-                        }
-                        title="Preferences"
-                        confirmLabel="Confirm"
-                        cancelLabel="Cancel"
-                        preferences={preferences}
-                        pageSizePreference={{
-                            title: "Page size",
-                            options: [
-                                { value: 10, label: "10" },
-                                { value: 20, label: "20" },
-                                { value: 50, label: "50" },
-                            ],
-                        }}
-                    />
+                    <PageSizePreferences preferences={preferences} onChange={setPreferences} />
                 }
                 header={
                     <Header

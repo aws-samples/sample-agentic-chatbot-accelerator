@@ -3,8 +3,7 @@
 //
 // SPDX-License-Identifier: MIT-0
 // ----------------------------------------------------------------------
-import { generateClient } from "aws-amplify/api";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import {
     Alert,
@@ -33,6 +32,9 @@ import {
     listSkillResources as listSkillResourcesQuery,
     listSkills as listSkillsQuery,
 } from "../../graphql/queries";
+import ConfirmModal from "../confirm-modal";
+import { Utils } from "../../common/utils";
+import { apiClient } from "../../common/api-client";
 
 interface Skill {
     name: string;
@@ -42,7 +44,6 @@ interface Skill {
 }
 
 export default function SkillManager() {
-    const apiClient = useMemo(() => generateClient(), []);
 
     const [skills, setSkills] = useState<Skill[]>([]);
     const [loading, setLoading] = useState(false);
@@ -67,11 +68,11 @@ export default function SkillManager() {
             const result = await apiClient.graphql({ query: listSkillsQuery });
             setSkills(((result.data as any)?.listSkills as Skill[]) || []);
         } catch (err: any) {
-            setError(`Failed to load skills: ${err.message || err}`);
+            setError(`Failed to load skills: ${Utils.getErrorMessage(err)}`);
         } finally {
             setLoading(false);
         }
-    }, [apiClient]);
+    }, []);
 
     useEffect(() => {
         fetchSkills();
@@ -102,7 +103,7 @@ export default function SkillManager() {
             const bodyMatch = fullContent.match(/^---\s*\n.*?\n---\s*\n(.*)/s);
             setEditContent(bodyMatch ? bodyMatch[1].trim() : fullContent);
         } catch (err: any) {
-            setEditContent(`Error loading content: ${err.message || err}`);
+            setEditContent(`Error loading content: ${Utils.getErrorMessage(err)}`);
         }
     };
 
@@ -132,7 +133,7 @@ export default function SkillManager() {
             setEditorVisible(false);
             await fetchSkills();
         } catch (err: any) {
-            setError(`Failed to save skill: ${err.message || err}`);
+            setError(`Failed to save skill: ${Utils.getErrorMessage(err)}`);
         } finally {
             setSaving(false);
         }
@@ -150,7 +151,7 @@ export default function SkillManager() {
             setDeleteTarget(null);
             await fetchSkills();
         } catch (err: any) {
-            setError(`Failed to delete skill: ${err.message || err}`);
+            setError(`Failed to delete skill: ${Utils.getErrorMessage(err)}`);
         } finally {
             setDeleting(false);
         }
@@ -345,28 +346,18 @@ export default function SkillManager() {
             </Modal>
 
             {/* Delete confirmation */}
-            <Modal
+            <ConfirmModal
                 visible={deleteTarget !== null}
                 onDismiss={() => setDeleteTarget(null)}
+                onConfirm={handleDelete}
+                loading={deleting}
                 header="Delete Skill"
-                footer={
-                    <Box float="right">
-                        <SpaceBetween direction="horizontal" size="xs">
-                            <Button variant="link" onClick={() => setDeleteTarget(null)}>
-                                Cancel
-                            </Button>
-                            <Button variant="primary" onClick={handleDelete} loading={deleting}>
-                                Delete
-                            </Button>
-                        </SpaceBetween>
-                    </Box>
-                }
             >
                 <Box>
                     Are you sure you want to delete the skill <strong>{deleteTarget}</strong>? This
                     action cannot be undone.
                 </Box>
-            </Modal>
+            </ConfirmModal>
         </>
     );
 }
@@ -408,11 +399,11 @@ function SkillResourceManager({
             });
             setResources(((result.data as any)?.listSkillResources as SkillResource[]) || []);
         } catch (err: any) {
-            setError(`Failed to load resources: ${err.message || err}`);
+            setError(`Failed to load resources: ${Utils.getErrorMessage(err)}`);
         } finally {
             setLoading(false);
         }
-    }, [apiClient, skillName]);
+    }, [skillName]);
 
     useEffect(() => {
         fetchResources();
@@ -432,7 +423,7 @@ function SkillResourceManager({
             setUploadContent("");
             await fetchResources();
         } catch (err: any) {
-            setError(`Failed to upload resource: ${err.message || err}`);
+            setError(`Failed to upload resource: ${Utils.getErrorMessage(err)}`);
         } finally {
             setUploading(false);
         }
@@ -447,7 +438,7 @@ function SkillResourceManager({
             });
             await fetchResources();
         } catch (err: any) {
-            setError(`Failed to delete resource: ${err.message || err}`);
+            setError(`Failed to delete resource: ${Utils.getErrorMessage(err)}`);
         }
     };
 

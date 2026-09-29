@@ -3,7 +3,6 @@
 //
 // SPDX-License-Identifier: MIT-0
 // ----------------------------------------------------------------------
-import { generateClient } from "aws-amplify/api";
 
 import React, { Dispatch, SetStateAction, useRef } from "react";
 import { ChatBotHistoryItem, ChatBotMessageType, Reference, ToolActionItem } from "./types";
@@ -29,6 +28,7 @@ import { humanizeToolName, maskSensitiveInfo } from "./utils";
 import MarkdownContent from "./side-view/markdown-content";
 import ViewReference from "./side-view/reference";
 import StructuredOutputView from "./side-view/structured-output-view";
+import { apiClient } from "../../common/api-client";
 
 export interface ChatMessageProps {
     message: ChatBotHistoryItem;
@@ -43,7 +43,6 @@ export interface ChatMessageProps {
 export default function ChatMessage(props: ChatMessageProps) {
     const messageRef = useRef<HTMLDivElement>(null);
     const { t } = useTranslation("ACA");
-    const client = generateClient();
 
     let content = "";
 
@@ -181,7 +180,7 @@ export default function ChatMessage(props: ChatMessageProps) {
             if (reference.pageNumber && isNaN(Number(reference.pageNumber))) {
                 reference.pageNumber = undefined;
             }
-            const response = await client.graphql({
+            const response = await apiClient.graphql({
                 query: getPresignedUrlQuery,
                 variables: { s3Uri: reference.uri, pageNumber: reference.pageNumber },
             });
