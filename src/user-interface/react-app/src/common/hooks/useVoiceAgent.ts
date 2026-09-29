@@ -109,7 +109,6 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
     const workletNodeRef = useRef<AudioWorkletNode | null>(null);
     const playbackContextRef = useRef<AudioContext | null>(null);
     const audioQueueRef = useRef<Float32Array[]>([]);
-    const isPlayingRef = useRef(false);
     /** Tracks the next time (in AudioContext seconds) to schedule the next chunk */
     const nextPlayTimeRef = useRef(0);
     /** Timer to detect when audio playback has fully drained */
@@ -465,7 +464,6 @@ export function useVoiceAgent(options: UseVoiceAgentOptions): UseVoiceAgentRetur
 
         // Clear audio queue and scheduled playback state
         audioQueueRef.current = [];
-        isPlayingRef.current = false;
         nextPlayTimeRef.current = 0;
         if (drainTimerRef.current) {
             clearTimeout(drainTimerRef.current);

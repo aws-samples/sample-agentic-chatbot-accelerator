@@ -80,7 +80,6 @@ const STARTER_PROMPTS: { id: string; key: string }[] = [
  * - `running`: Boolean indicating if a message is being processed
  * - `session`: Object containing session ID, loading state, runtime ID, and endpoint
  * - `messageHistory`: Array of ChatBotHistoryItem objects representing conversation
- * - `initError`: String for initialization error messages
  * - `annex`: React element for optional side panel content
  *
  * Layout:
@@ -100,7 +99,6 @@ export default function Chat(props: { sessionId?: string; initialAgentRuntimeId?
         id: props.sessionId ?? uuidv4(),
         loading: typeof props.sessionId !== "undefined",
     });
-    const [initError] = useState<string | undefined>(undefined);
     const [messageHistory, setMessageHistory] = useState<ChatBotHistoryItem[]>([]);
     const { t } = useTranslation("ACA");
 
@@ -134,7 +132,6 @@ export default function Chat(props: { sessionId?: string; initialAgentRuntimeId?
     /** User display name from Cognito (for voice bubble labels) */
     const [userName, setUserName] = useState<string | undefined>(undefined);
     const chatContainerRef = useRef<HTMLDivElement>(null);
-    const messagesContainerRef = useRef<HTMLDivElement>(null);
     const lastUserMessageRef = useRef<HTMLDivElement>(null);
     /** Guard: suppress auto-enter voice mode after explicit agent change to non-sonic */
     const suppressAutoVoiceRef = useRef(false);
@@ -397,10 +394,6 @@ export default function Chat(props: { sessionId?: string; initialAgentRuntimeId?
     // - During streaming: auto-scroll to follow the growing response, but STOP once
     //   scrolling further would push the user's question off the top of the viewport.
     useLayoutEffect(() => {
-        if (ChatScrollState.skipNextHistoryUpdate) {
-            return;
-        }
-
         if (messageHistory.length < 2) {
             return;
         }
@@ -465,11 +458,6 @@ export default function Chat(props: { sessionId?: string; initialAgentRuntimeId?
         if (!container) return;
 
         const onContainerScroll = () => {
-            if (ChatScrollState.skipNextScrollEvent) {
-                ChatScrollState.skipNextScrollEvent = false;
-                return;
-            }
-
             const isAtBottom =
                 Math.abs(container.scrollHeight - container.scrollTop - container.clientHeight) <=
                 10;
@@ -836,15 +824,6 @@ export default function Chat(props: { sessionId?: string; initialAgentRuntimeId?
         >
             <div className={styles.chat_meta_container} ref={chatContainerRef}>
                 <div className={styles.chat_container}>
-                    {initError && (
-                        <Alert
-                            statusIconAriaLabel="Error"
-                            type="error"
-                            header="Unable to initialize the chatbot"
-                        >
-                            {initError}
-                        </Alert>
-                    )}
                     {agentsAvailable === null && (
                         <Alert type="info">
                             <StatusIndicator type="loading">
@@ -865,7 +844,7 @@ export default function Chat(props: { sessionId?: string; initialAgentRuntimeId?
                         </Alert>
                     )}
 
-                    <div ref={messagesContainerRef}>
+                    <div>
                         <SpaceBetween direction="vertical" size="m">
                             {messageHistory.map((message, idx) => {
                                 // Find the last user message to attach the scroll ref

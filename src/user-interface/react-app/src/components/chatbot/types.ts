@@ -11,25 +11,10 @@ export enum ChatBotMessageType {
 }
 
 export enum ChatBotAction {
-    Heartbeat = "heartbeat",
-    Run = "run",
     FinalResponse = "final_response",
     Error = "error",
     LLMNewToken = "on_new_llm_token",
     ToolAction = "tool_action",
-}
-
-export enum IngestionJobStatus {
-    Checking = "checking",
-    InProgress = "in_progress",
-    Ready = "ready",
-    Broken = "broken",
-}
-
-export enum Framework {
-    BEDROCK_MANAGED = "BEDROCK_MANAGED", // unused - legacy code
-    STRANDS = "STRANDS", // unused - legacy code
-    AGENT_CORE = "AGENT_CORE",
 }
 
 // -------------------------- Interfaces -----------------------------
@@ -42,10 +27,6 @@ export interface LLMToken {
 export interface Feedback {
     sentiment: string;
     notes: string;
-    // harmful?: boolean;
-    // incomplete?: boolean;
-    // inaccurate?: boolean;
-    // other?: boolean;
 }
 
 export interface ToolParameter {
@@ -93,10 +74,6 @@ export interface Reference {
     documentTitle: string;
 }
 
-export interface ChatInputState {
-    value: string;
-}
-
 export interface ChatBotMessageResponse {
     action: ChatBotAction;
     data: {
@@ -110,30 +87,6 @@ export interface ChatBotMessageResponse {
         invocationNumber?: number;
         reasoningContent?: string;
         structuredOutput?: string;
-    };
-}
-
-export interface ChatBotHeartbeatRequest {
-    action: ChatBotAction.Heartbeat;
-    framework: Framework;
-    data: {
-        sessionId: string;
-        agentRuntimeId?: string;
-        qualifier?: string;
-    };
-}
-
-export interface ChatBotRunRequest {
-    action: ChatBotAction.Run;
-    framework: Framework;
-    data: {
-        sessionId: string;
-        messageId: string;
-        text: string;
-        inferenceConfig?: string;
-        inferenceConfigName?: string;
-        agentRuntimeId?: string;
-        qualifier?: string;
     };
 }
 

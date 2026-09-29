@@ -295,11 +295,3 @@ export function getDefaultReasoningEffort(modelId: string): string | null {
 export function isReasoningEffortAccepted(modelId: string, effort: string): boolean {
     return getReasoningCapability(modelId)?.efforts.includes(effort) ?? false;
 }
-
-/**
- * Retained for call sites that only branch on "does this model reason at all".
- * Prefer getReasoningCapability when the accepted value set matters.
- */
-export function getReasoningType(modelId: string): "effort" | null {
-    return getReasoningCapability(modelId) ? "effort" : null;
-}
